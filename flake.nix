@@ -10,11 +10,21 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-      in {
-        devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
+        fhsEnv = pkgs.buildFHSUserEnv {
+          name = "fhs-env";
+          targetPkgs = pkgs: with pkgs; [
             nodejs_20
           ];
+          runScript = "bash";
+        };
+      in {
+        devShells = {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              nodejs_20
+            ];
+          };
+          fhs = fhsEnv.env;
         };
       }
     );
