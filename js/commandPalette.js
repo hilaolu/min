@@ -268,7 +268,10 @@ var commandPalette = {
       
       // Always add typed URL as first candidate (default selection)
       if (searchQuery && searchQuery.trim()) {
-        candidates.push(commandPalette.createURLCandidate(searchQuery))
+        const candidate = commandPalette.createURLCandidate(searchQuery)
+        if (candidate) {
+          candidates.push(candidate)
+        }
       }
 
       // Add history and bookmark results
@@ -306,7 +309,10 @@ var commandPalette = {
         const results = await places.searchPlaces(searchQuery, { limit: 20 })
         
         // Always add typed URL as first candidate (default selection)
-        candidates.push(commandPalette.createReloadCandidate(searchQuery, 'Load URL'))
+        const candidate = commandPalette.createReloadCandidate(searchQuery, 'Load URL')
+        if (candidate) {
+          candidates.push(candidate)
+        }
 
         // Add history and bookmark results
         candidates = candidates.concat(results.map(result => commandPalette.createReloadHistoryCandidate(result)))
@@ -331,15 +337,24 @@ var commandPalette = {
     var searchbar = require('searchbar/searchbar.js')
     var webviews = require('webviews.js')
     
+    // Validate URL before creating candidate
+    if (!url || !url.trim()) {
+      return null
+    }
+    
     return {
       id: 'open-url',
       title: `Open URL: ${url}`,
       description: `Open ${url} in a new tab`,
       icon: 'carbon:launch',
       action: () => {
-        var parsedUrl = urlParser.parse(url)
-        searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
-        webviews.focus()
+        try {
+          var parsedUrl = urlParser.parse(url)
+          searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+          webviews.focus()
+        } catch (e) {
+          console.error('Error opening URL:', e)
+        }
       }
     }
   },
@@ -376,15 +391,24 @@ var commandPalette = {
     var urlParser = require('util/urlParser.js')
     var webviews = require('webviews.js')
     
+    // Validate URL before creating candidate
+    if (!url || !url.trim()) {
+      return null
+    }
+    
     return {
       id: 'reload-url',
       title: `${description}: ${urlParser.prettyURL(urlParser.getSourceURL(url))}`,
       description: urlParser.basicURL(urlParser.getSourceURL(url)),
       icon: 'carbon:renew',
       action: () => {
-        const parsedUrl = urlParser.parse(url)
-        webviews.update(tabs.getSelected(), parsedUrl)
-        webviews.focus()
+        try {
+          const parsedUrl = urlParser.parse(url)
+          webviews.update(tabs.getSelected(), parsedUrl)
+          webviews.focus()
+        } catch (e) {
+          console.error('Error loading URL:', e)
+        }
       }
     }
   },
@@ -479,46 +503,19 @@ var commandPalette = {
 
   /**
    * Handle Enter key when no candidates are selected
-   * Attempts to open the typed URL or execute commands
+   * Fallback for edge cases where candidates might not be available
    */
   handleEnterWithNoCandidates: function () {
     const query = commandPalette.input.value.trim()
-    if (query.startsWith('>o ')) {
-      const url = query.substring(3).trim()
-      if (url) {
-        var urlParser = require('util/urlParser.js')
-        var parsedUrl = urlParser.parse(url)
-        var searchbar = require('searchbar/searchbar.js')
-        searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
-        var webviews = require('webviews.js')
-        webviews.focus()
-        commandPalette.hide()
-      }
-    } else if (query.startsWith('>goo ')) {
-      const searchQuery = query.substring(5).trim()
-      if (searchQuery) {
-        const gooCommand = availableCommands.find(cmd => cmd.id === 'goo')
-        if (gooCommand && gooCommand.action) {
-          gooCommand.action(searchQuery)
-          commandPalette.hide()
-        }
-      }
-    } else if (query.startsWith('>r ')) {
-      const url = query.substring(3).trim()
-      if (url) {
-        var urlParser = require('util/urlParser.js')
-        var parsedUrl = urlParser.parse(url)
-        var webviews = require('webviews.js')
-        webviews.update(tabs.getSelected(), parsedUrl)
-        webviews.focus()
-        commandPalette.hide()
-      }
-    } else if (query === '>r') {
+    
+    // Handle basic commands that don't need candidates
+    if (query === '>r') {
       // Reload current tab
       var webviews = require('webviews.js')
       webviews.callAsync(tabs.getSelected(), 'reload')
       commandPalette.hide()
     }
+    // For other commands, we should always have candidates now
   },
 
   /**
