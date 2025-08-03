@@ -180,6 +180,33 @@ var commandPalette = {
     }, 100)
   },
 
+  showWithPrefix: function (prefix) {
+    if (commandPalette.isVisible) return
+
+    commandPalette.isVisible = true
+    commandPalette.el.hidden = false
+    
+    // Add class to body to show overlay (like searchbar does)
+    document.body.classList.add('is-command-palette-mode')
+    
+    // Request webview placeholder to create blur effect (like tabEditor does)
+    var webviews = require('webviews.js')
+    webviews.requestPlaceholder('commandPalette')
+
+    // Reset state and set prefix
+    commandPalette.selectedIndex = 0
+    commandPalette.input.value = prefix
+    
+    // Trigger input handling to show appropriate results
+    commandPalette.handleInput()
+    
+    // Focus the input and select the prefix text
+    setTimeout(() => {
+      commandPalette.input.focus()
+      commandPalette.input.setSelectionRange(prefix.length, prefix.length)
+    }, 100)
+  },
+
   hide: function () {
     if (!commandPalette.isVisible) return
 
@@ -497,7 +524,7 @@ var commandPalette = {
 
 // Register the keyboard shortcut (Ctrl+.)
 keybindings.defineShortcut('showCommandPalette', function () {
-  commandPalette.show()
+  commandPalette.showWithPrefix('>')
 })
 
 module.exports = commandPalette 
