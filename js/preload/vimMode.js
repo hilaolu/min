@@ -82,16 +82,18 @@ function setupEventListeners() {
   })
 }
 
-// Handle keyup events for Vim commands
-function handleKeyup(e) {
-  if (e.key === 'Escape' && isLinkKeyMode) {
-    hideLinkKeys()
-    blockKeybindings.blur()
-  } else if (e.key === 'Escape' && isCurrentlyInInput()) {
-    e.target.blur()
-  } else if (!isCurrentlyInInput() && !isLinkKeyMode && 
-             VIM_CONFIG.alphabet.includes(e.key) && 
-             !e.ctrlKey && !e.metaKey) {
+  // Handle keyup events for Vim commands
+  function handleKeyup(e) {
+    if (e.ctrlKey && e.key === 'c') {
+      if (isLinkKeyMode) {
+        hideLinkKeys()
+        blockKeybindings.blur()
+      } else if (isCurrentlyInInput()) {
+        e.target.blur()
+      }
+    } else if (!isCurrentlyInInput() && !isLinkKeyMode && 
+               VIM_CONFIG.alphabet.includes(e.key) && 
+               !e.ctrlKey && !e.metaKey) {
     
     command += e.key
     var match = true
