@@ -129,9 +129,13 @@ var commandPalette = {
 
     commandPalette.isVisible = true
     commandPalette.el.hidden = false
-    modalMode.toggle(true, {
-      onDismiss: commandPalette.hide
-    })
+    
+    // Add class to body to show overlay (like searchbar does)
+    document.body.classList.add('is-command-palette-mode')
+    
+    // Request webview placeholder to create blur effect (like tabEditor does)
+    var webviews = require('webviews.js')
+    webviews.requestPlaceholder('commandPalette')
 
     // Reset state
     commandPalette.selectedIndex = 0
@@ -150,8 +154,12 @@ var commandPalette = {
 
     commandPalette.isVisible = false
     commandPalette.el.hidden = true
-    modalMode.toggle(false)
+    document.body.classList.remove('is-command-palette-mode')
     commandPalette.input.blur()
+    
+    // Hide webview placeholder (like tabEditor does)
+    var webviews = require('webviews.js')
+    webviews.hidePlaceholder('commandPalette')
   },
 
   handleInput: function () {

@@ -136,6 +136,7 @@ function beforeInputEventHandler (input) {
       (key === 'right' && input.key === 'ArrowRight') ||
       (key === 'up' && input.key === 'ArrowUp') ||
       (key === 'down' && input.key === 'ArrowDown') ||
+      (key === 'period' && input.key === '.') ||
       (key === 'alt' && (input.alt || input.key === 'Alt')) ||
       (key === 'option' && (input.alt || input.key === 'Alt')) ||
       (key === 'shift' && (input.shift || input.key === 'Shift')) ||
