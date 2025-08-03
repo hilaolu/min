@@ -8,7 +8,7 @@ var defaultKeyMap = {
   toggleTasks: 'shift+mod+e',
   goBack: 'mod+left',
   goForward: 'mod+right',
-  enterEditMode: ['mod+l', 'mod+k'],
+  enterEditMode: [],
   runShortcut: 'mod+e',
   completeSearchbar: 'mod+enter',
   copyPageURL: 'shift+mod+c',
