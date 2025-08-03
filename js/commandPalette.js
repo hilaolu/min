@@ -348,7 +348,7 @@ var commandPalette = {
         }
       }
 
-      // Add history and bookmark results
+      // Add history and bookmark results (limit to 10 total candidates)
       candidates = candidates.concat(results.map(result => ({
         id: `candidate-${result.url}`,
         title: result.title || urlParser.prettyURL(urlParser.getSourceURL(result.url)),
@@ -360,7 +360,8 @@ var commandPalette = {
         }
       })))
 
-      commandPalette.filteredCommands = candidates
+      // Limit to 10 candidates for keyboard shortcuts (0-9)
+      commandPalette.filteredCommands = candidates.slice(0, 10)
       commandPalette.renderSuggestions()
     } catch (e) {
       console.error('Error showing open candidates:', e)
@@ -371,6 +372,17 @@ var commandPalette = {
   },
 
   handleKeydown: function (e) {
+    // Handle Ctrl+0 to Ctrl+9 for quick candidate selection
+    if (e.ctrlKey && e.key >= '0' && e.key <= '9') {
+      e.preventDefault()
+      const index = e.key === '0' ? 9 : parseInt(e.key) - 1
+      if (index < commandPalette.filteredCommands.length) {
+        const selectedCommand = commandPalette.filteredCommands[index]
+        commandPalette.executeCommand(selectedCommand)
+      }
+      return
+    }
+
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
@@ -444,7 +456,11 @@ var commandPalette = {
         description = description.substring(0, 60) + '...'
       }
 
+      // Show keyboard shortcut number for candidates (0-9)
+      const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : ''
+
       suggestionEl.innerHTML = `
+        ${shortcutNumber}
         <i class="i ${command.icon} command-suggestion-icon"></i>
         <div class="command-suggestion-content">
           <div class="command-suggestion-title">${command.title}</div>

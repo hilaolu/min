@@ -259,7 +259,7 @@ function buildAppMenu (options = {}) {
         },
         {
           label: l('appMenuActualSize'),
-          accelerator: 'CmdOrCtrl+0',
+          accelerator: undefined,
           click: function (item, window) {
             sendIPCToWindow(window, 'zoomReset')
           }
