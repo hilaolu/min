@@ -33,7 +33,8 @@ var defaultKeyMap = {
   followLink: 'mod+enter',
   fillPassword: 'mod+\\',
   toggleTabAudio: 'shift+mod+m',
-  showHistory: 'shift+mod+h'
+  showHistory: 'shift+mod+h',
+  showCommandPalette: 'ctrl+period'
 }
 /* Utility function to override default mapping with user settings */
 function userKeyMap (settings) {

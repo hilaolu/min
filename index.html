@@ -248,6 +248,18 @@
       </button>
     </div>
 
+    <div id="command-palette" class="modal" hidden>
+      <div class="command-palette-container">
+        <div class="command-palette-input-container">
+          <span class="command-palette-prompt">&gt;</span>
+          <input type="text" id="command-palette-input" placeholder="Type a command..." />
+        </div>
+        <div id="command-palette-suggestions" class="command-palette-suggestions">
+          <!-- Command suggestions will be populated here -->
+        </div>
+      </div>
+    </div>
+
     <div id="download-bar" hidden>
       <div id="download-container" role="list" class="has-thin-scrollbar"></div>
       <button id="download-close-button" class="i carbon:close"></button>
