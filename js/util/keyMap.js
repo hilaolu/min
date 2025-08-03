@@ -1,6 +1,6 @@
 var defaultKeyMap = {
   quitMin: 'mod+q',
-  addTab: 'mod+t',
+  addTab: 'shift+mod+t',
   addPrivateTab: 'shift+mod+p',
   duplicateTab: 'shift+mod+d',
   addTask: 'mod+n',
@@ -34,7 +34,10 @@ var defaultKeyMap = {
   fillPassword: 'mod+\\',
   toggleTabAudio: 'shift+mod+m',
   showHistory: 'shift+mod+h',
-  showCommandPalette: 'ctrl+period'
+  showCommandPalette: 'ctrl+period',
+  showCommandPaletteBlank: 'mod+t',
+  showCommandPaletteWithBang: 'ctrl+period',
+  showCommandPaletteWithOpen: 'mod+o'
 }
 /* Utility function to override default mapping with user settings */
 function userKeyMap (settings) {

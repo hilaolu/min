@@ -269,6 +269,22 @@ const defaultKeybindings = {
         })
       }
     })
+
+    // Command palette shortcuts
+    keybindings.defineShortcut('showCommandPaletteBlank', function () {
+      var commandPalette = require('commandPalette.js')
+      commandPalette.show()
+    })
+
+    keybindings.defineShortcut('showCommandPaletteWithBang', function () {
+      var commandPalette = require('commandPalette.js')
+      commandPalette.showWithPrefix('>')
+    })
+
+    keybindings.defineShortcut('showCommandPaletteWithOpen', function () {
+      var commandPalette = require('commandPalette.js')
+      commandPalette.showWithPrefix('>o ')
+    })
   }
 }
 
