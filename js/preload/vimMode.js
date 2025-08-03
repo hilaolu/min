@@ -61,21 +61,34 @@ function setupEventListeners() {
 
   // Keydown handler (capture phase so we can suppress site handlers)
   document.addEventListener('keydown', function (e) {
-    // --- Scroll keys (j k d u) ---
-    if ((e.key === 'j' || e.key === 'k' || e.key === 'd' || e.key === 'u') &&
-        !isLinkKeyMode && !isCurrentlyInInput()) {
+    // --- Scroll keys (k l) and navigation keys (Ctrl+j Ctrl+;) ---
+    if (!isLinkKeyMode && !isCurrentlyInInput()) {
       // stop event so site scripts don't receive it
       e.preventDefault();
       e.stopPropagation();
 
-      if (e.key === 'j') {
-        window.scrollBy(0, VIM_CONFIG.scrollAmount)
-      } else if (e.key === 'k') {
+      if (e.key === 'k' && !e.ctrlKey) {
+        // k for up
         window.scrollBy(0, -VIM_CONFIG.scrollAmount)
-      } else if (e.key === 'd') {
-        window.scrollBy(0, VIM_CONFIG.quickScrollAmount)
-      } else if (e.key === 'u') {
+      } else if (e.key === 'l' && !e.ctrlKey) {
+        // l for down
+        window.scrollBy(0, VIM_CONFIG.scrollAmount)
+      } else if (e.ctrlKey && e.key === 'k') {
+        // Ctrl+k for up faster
         window.scrollBy(0, -VIM_CONFIG.quickScrollAmount)
+      } else if (e.ctrlKey && e.key === 'l') {
+        // Ctrl+l for down faster
+        window.scrollBy(0, VIM_CONFIG.quickScrollAmount)
+      } else if (e.ctrlKey && e.key === 'j') {
+        // Ctrl+j for back
+        window.history.back()
+      } else if (e.ctrlKey && e.key === ';') {
+        // Ctrl+; for forward
+        window.history.forward()
+      } else {
+        // Don't prevent default for other keys
+        e.stopPropagation = function() {} // Restore original behavior
+        return
       }
     }
     // Prevent site shortcuts for vim command letters and Ctrl+C
