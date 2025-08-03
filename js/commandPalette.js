@@ -1,116 +1,19 @@
 const EventEmitter = require('events')
 var keybindings = require('keybindings.js')
 var modalMode = require('modalMode.js')
+var availableCommands = require('commandPaletteCommands.js')
 
-// Available commands
-const availableCommands = [
-  {
-    id: 'w',
-    title: 'Close Tab',
-    description: 'Close the current tab',
-    shortcut: 'Ctrl+W',
-    icon: 'carbon:close',
-    action: () => {
-      var browserUI = require('browserUI.js')
-      browserUI.closeTab(tabs.getSelected())
-    }
-  },
-  {
-    id: 'r',
-    title: 'Reload Tab',
-    description: 'Reload the current tab',
-    shortcut: 'F5',
-    icon: 'carbon:renew',
-    action: () => {
-      var webviews = require('webviews.js')
-      webviews.callAsync(tabs.getSelected(), 'reload')
-    }
-  },
-  {
-    id: 'new-tab',
-    title: 'New Tab',
-    description: 'Open a new tab',
-    shortcut: 'Ctrl+T',
-    icon: 'carbon:new-tab',
-    action: () => {
-      var browserUI = require('browserUI.js')
-      browserUI.addTab()
-    }
-  },
-  {
-    id: 'new-window',
-    title: 'New Window',
-    description: 'Open a new window',
-    shortcut: 'Ctrl+Shift+N',
-    icon: 'carbon:new-window',
-    action: () => {
-      var browserUI = require('browserUI.js')
-      browserUI.addWindow()
-    }
-  },
-  {
-    id: 'bookmarks',
-    title: 'Show Bookmarks',
-    description: 'Open the bookmarks manager',
-    shortcut: 'Ctrl+Shift+B',
-    icon: 'carbon:bookmark',
-    action: () => {
-      var searchbar = require('searchbar/searchbar.js')
-      searchbar.showResults('!bookmarks')
-    }
-  },
-  {
-    id: 'history',
-    title: 'Show History',
-    description: 'Open the browsing history',
-    shortcut: 'Ctrl+Shift+H',
-    icon: 'carbon:time',
-    action: () => {
-      var searchbar = require('searchbar/searchbar.js')
-      searchbar.showResults('!history')
-    }
-  },
-  {
-    id: 'settings',
-    title: 'Settings',
-    description: 'Open browser settings',
-    shortcut: 'Ctrl+,',
-    icon: 'carbon:settings',
-    action: () => {
-      var searchbar = require('searchbar/searchbar.js')
-      searchbar.showResults('!settings')
-    }
-  },
-  {
-    id: 'find',
-    title: 'Find in Page',
-    description: 'Search for text on the current page',
-    shortcut: 'Ctrl+F',
-    icon: 'carbon:search',
-    action: () => {
-      var findinpage = require('findinpage.js')
-      findinpage.start()
-    }
-  },
-  {
-    id: 'o',
-    title: 'Open URL',
-    description: 'Open a URL in a new tab',
-    shortcut: '>o <url>',
-    icon: 'carbon:launch',
-    action: (url) => {
-      if (url) {
-        var urlParser = require('util/urlParser.js')
-        var parsedUrl = urlParser.parse(url)
-        var searchbar = require('searchbar/searchbar.js')
-        searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
-        var webviews = require('webviews.js')
-        webviews.focus()
-      }
-    }
-  }
-]
-
+/**
+ * Command palette module for vim-like command interface
+ * Provides quick access to browser functions via keyboard shortcuts
+ * 
+ * Features:
+ * - Vim-like command syntax (>w, >r, >o url, etc.)
+ * - Tab switching and searching
+ * - URL opening with history/bookmark candidates
+ * - Keyboard shortcuts (Ctrl+0-9) for quick selection
+ * - Intuitive shortcuts (Ctrl+T, Ctrl+., Ctrl+O)
+ */
 var commandPalette = {
   el: null,
   input: null,
@@ -120,6 +23,10 @@ var commandPalette = {
   filteredCommands: [],
   events: new EventEmitter(),
 
+  /**
+   * Initialize the command palette
+   * Sets up DOM elements and event listeners
+   */
   initialize: function () {
     commandPalette.el = document.getElementById('command-palette')
     commandPalette.input = document.getElementById('command-palette-input')
@@ -128,13 +35,6 @@ var commandPalette = {
     // Set up event listeners
     commandPalette.input.addEventListener('input', commandPalette.handleInput)
     commandPalette.input.addEventListener('keydown', commandPalette.handleKeydown)
-    
-    // Close on escape
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && commandPalette.isVisible) {
-        commandPalette.hide()
-      }
-    })
 
     // Close when clicking outside
     commandPalette.el.addEventListener('click', function (e) {
@@ -143,29 +43,28 @@ var commandPalette = {
       }
     })
 
-    // Initialize with empty list - tabs will be loaded when needed
+    // Initialize with empty list
     commandPalette.filteredCommands = []
     commandPalette.renderSuggestions()
   },
 
+  /**
+   * Show the command palette with empty input
+   */
   show: function () {
     if (commandPalette.isVisible) return
 
     commandPalette.isVisible = true
     commandPalette.el.hidden = false
     
-    // Add class to body to show overlay (like searchbar does)
     document.body.classList.add('is-command-palette-mode')
     
-    // Request webview placeholder to create blur effect (like tabEditor does)
     var webviews = require('webviews.js')
     webviews.requestPlaceholder('commandPalette')
 
-    // Reset state
     commandPalette.selectedIndex = 0
     commandPalette.input.value = ''
     
-    // Show tabs with safety check
     try {
       commandPalette.showTabs()
     } catch (e) {
@@ -174,39 +73,40 @@ var commandPalette = {
       commandPalette.renderSuggestions()
     }
 
-    // Focus the input
     setTimeout(() => {
       commandPalette.input.focus()
     }, 100)
   },
 
+  /**
+   * Show the command palette with a pre-filled prefix
+   * @param {string} prefix - The prefix to pre-fill in the input
+   */
   showWithPrefix: function (prefix) {
     if (commandPalette.isVisible) return
 
     commandPalette.isVisible = true
     commandPalette.el.hidden = false
     
-    // Add class to body to show overlay (like searchbar does)
     document.body.classList.add('is-command-palette-mode')
     
-    // Request webview placeholder to create blur effect (like tabEditor does)
     var webviews = require('webviews.js')
     webviews.requestPlaceholder('commandPalette')
 
-    // Reset state and set prefix
     commandPalette.selectedIndex = 0
     commandPalette.input.value = prefix
     
-    // Trigger input handling to show appropriate results
     commandPalette.handleInput()
     
-    // Focus the input and select the prefix text
     setTimeout(() => {
       commandPalette.input.focus()
       commandPalette.input.setSelectionRange(prefix.length, prefix.length)
     }, 100)
   },
 
+  /**
+   * Hide the command palette
+   */
   hide: function () {
     if (!commandPalette.isVisible) return
 
@@ -215,53 +115,57 @@ var commandPalette = {
     document.body.classList.remove('is-command-palette-mode')
     commandPalette.input.blur()
     
-    // Hide webview placeholder (like tabEditor does)
     var webviews = require('webviews.js')
     webviews.hidePlaceholder('commandPalette')
   },
 
+  /**
+   * Handle input changes in the command palette
+   * Routes to appropriate handlers based on input content
+   */
   handleInput: function () {
     const query = commandPalette.input.value.trim()
     
     if (query === '') {
-      // Show all tabs when no query
       commandPalette.showTabs()
+    } else if (query.startsWith('>')) {
+      commandPalette.handleVimCommand(query)
     } else {
-      // Check for vim-like commands (starting with >)
-      if (query.startsWith('>')) {
-        const vimCommand = query.substring(1).trim()
-        const parts = vimCommand.split(' ')
-        const commandName = parts[0].toLowerCase()
-        const commandArgs = parts.slice(1).join(' ')
-        
-        // Special handling for 'o' command
-        if (commandName === 'o') {
-          if (commandArgs) {
-            // Filter candidates based on the provided text
-            commandPalette.showOpenCandidates(commandArgs)
-          } else {
-            // Show candidates from history and bookmarks
-            commandPalette.showOpenCandidates()
-          }
-        } else {
-          // Handle other single-word commands
-          commandPalette.filteredCommands = availableCommands.filter(cmd => 
-            cmd.id.toLowerCase() === commandName
-          )
-          commandPalette.renderSuggestions()
-        }
-      } else {
-        // Fuzzy search through tabs
-        commandPalette.searchTabs(query)
-      }
+      commandPalette.searchTabs(query)
     }
 
     commandPalette.selectedIndex = 0
   },
 
+  /**
+   * Handle vim-like commands starting with '>'
+   * @param {string} query - The full query string
+   */
+  handleVimCommand: function (query) {
+    const vimCommand = query.substring(1).trim()
+    const parts = vimCommand.split(' ')
+    const commandName = parts[0].toLowerCase()
+    const commandArgs = parts.slice(1).join(' ')
+    
+    if (commandName === 'o') {
+      if (commandArgs) {
+        commandPalette.showOpenCandidates(commandArgs)
+      } else {
+        commandPalette.showOpenCandidates()
+      }
+    } else {
+      commandPalette.filteredCommands = availableCommands.filter(cmd => 
+        cmd.id.toLowerCase() === commandName
+      )
+      commandPalette.renderSuggestions()
+    }
+  },
+
+  /**
+   * Show all available tabs as candidates
+   */
   showTabs: function () {
     try {
-      // Check if tabs module is available
       if (typeof tabs === 'undefined' || !tabs.get) {
         console.warn('Tabs module not available')
         commandPalette.filteredCommands = []
@@ -287,15 +191,17 @@ var commandPalette = {
       commandPalette.renderSuggestions()
     } catch (e) {
       console.error('Error showing tabs:', e)
-      // Fallback to empty list
       commandPalette.filteredCommands = []
       commandPalette.renderSuggestions()
     }
   },
 
+  /**
+   * Search tabs by title or URL
+   * @param {string} query - Search query
+   */
   searchTabs: function (query) {
     try {
-      // Check if tabs module is available
       if (typeof tabs === 'undefined' || !tabs.get) {
         console.warn('Tabs module not available')
         commandPalette.filteredCommands = []
@@ -306,12 +212,9 @@ var commandPalette = {
       const allTabs = tabs.get()
       const searchQuery = query.toLowerCase()
       
-      // Fuzzy search through tabs
       const matchedTabs = allTabs.filter(tab => {
         const title = (tab.title || '').toLowerCase()
         const url = (tab.url || '').toLowerCase()
-        
-        // Check if query matches title or URL
         return title.includes(searchQuery) || url.includes(searchQuery)
       })
 
@@ -332,12 +235,15 @@ var commandPalette = {
       commandPalette.renderSuggestions()
     } catch (e) {
       console.error('Error searching tabs:', e)
-      // Fallback to empty list
       commandPalette.filteredCommands = []
       commandPalette.renderSuggestions()
     }
   },
 
+  /**
+   * Show URL candidates from history and bookmarks
+   * @param {string} searchQuery - Optional search query to filter results
+   */
   showOpenCandidates: async function (searchQuery = '') {
     try {
       var places = require('places/places.js')
@@ -345,14 +251,10 @@ var commandPalette = {
       var searchbar = require('searchbar/searchbar.js')
       var webviews = require('webviews.js')
       
-      // Get history and bookmarks filtered by search query (same as address bar)
-      const results = await places.searchPlaces(searchQuery, {
-        limit: 20
-      })
-
-      // Add the typed URL as the first candidate if it's not empty and doesn't match any existing results
+      const results = await places.searchPlaces(searchQuery, { limit: 20 })
       let candidates = []
       
+      // Add typed URL as first candidate if no exact match exists
       if (searchQuery && searchQuery.trim()) {
         const searchQueryLower = searchQuery.toLowerCase()
         const hasExactMatch = results.some(result => 
@@ -361,43 +263,72 @@ var commandPalette = {
         )
         
         if (!hasExactMatch) {
-          candidates.push({
-            id: 'open-url',
-            title: `Open URL: ${searchQuery}`,
-            description: `Open ${searchQuery} in a new tab`,
-            icon: 'carbon:launch',
-            action: () => {
-              var parsedUrl = urlParser.parse(searchQuery)
-              searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
-              webviews.focus()
-            }
-          })
+          candidates.push(commandPalette.createURLCandidate(searchQuery))
         }
       }
 
-      // Add history and bookmark results (limit to 10 total candidates)
-      candidates = candidates.concat(results.map(result => ({
-        id: `candidate-${result.url}`,
-        title: result.title || urlParser.prettyURL(urlParser.getSourceURL(result.url)),
-        description: urlParser.basicURL(urlParser.getSourceURL(result.url)),
-        icon: result.isBookmarked ? 'carbon:star-filled' : 'carbon:wikis',
-        action: () => {
-          searchbar.events.emit('url-selected', { url: result.url, background: true, openInForeground: true })
-          webviews.focus()
-        }
-      })))
+      // Add history and bookmark results
+      candidates = candidates.concat(results.map(result => commandPalette.createHistoryCandidate(result)))
 
       // Limit to 10 candidates for keyboard shortcuts (0-9)
       commandPalette.filteredCommands = candidates.slice(0, 10)
       commandPalette.renderSuggestions()
     } catch (e) {
       console.error('Error showing open candidates:', e)
-      // Fallback to empty list
       commandPalette.filteredCommands = []
       commandPalette.renderSuggestions()
     }
   },
 
+  /**
+   * Create a URL candidate for the typed URL
+   * @param {string} url - The URL to create a candidate for
+   * @returns {Object} Candidate object
+   */
+  createURLCandidate: function (url) {
+    var urlParser = require('util/urlParser.js')
+    var searchbar = require('searchbar/searchbar.js')
+    var webviews = require('webviews.js')
+    
+    return {
+      id: 'open-url',
+      title: `Open URL: ${url}`,
+      description: `Open ${url} in a new tab`,
+      icon: 'carbon:launch',
+      action: () => {
+        var parsedUrl = urlParser.parse(url)
+        searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+        webviews.focus()
+      }
+    }
+  },
+
+  /**
+   * Create a history candidate from a places result
+   * @param {Object} result - Places result object
+   * @returns {Object} Candidate object
+   */
+  createHistoryCandidate: function (result) {
+    var urlParser = require('util/urlParser.js')
+    var searchbar = require('searchbar/searchbar.js')
+    var webviews = require('webviews.js')
+    
+    return {
+      id: `candidate-${result.url}`,
+      title: result.title || urlParser.prettyURL(urlParser.getSourceURL(result.url)),
+      description: urlParser.basicURL(urlParser.getSourceURL(result.url)),
+      icon: result.isBookmarked ? 'carbon:star-filled' : 'carbon:wikis',
+      action: () => {
+        searchbar.events.emit('url-selected', { url: result.url, background: true, openInForeground: true })
+        webviews.focus()
+      }
+    }
+  },
+
+  /**
+   * Handle keyboard events in the command palette
+   * @param {KeyboardEvent} e - Keyboard event
+   */
   handleKeydown: function (e) {
     // Handle Ctrl+0 to Ctrl+9 for quick candidate selection (0-9)
     if (e.ctrlKey && e.key >= '0' && e.key <= '9') {
@@ -432,20 +363,7 @@ var commandPalette = {
           const selectedCommand = commandPalette.filteredCommands[commandPalette.selectedIndex]
           commandPalette.executeCommand(selectedCommand)
         } else {
-          // If no candidates are selected, try to open the typed URL
-          const query = commandPalette.input.value.trim()
-          if (query.startsWith('>o ')) {
-            const url = query.substring(3).trim()
-            if (url) {
-              var urlParser = require('util/urlParser.js')
-              var parsedUrl = urlParser.parse(url)
-              var searchbar = require('searchbar/searchbar.js')
-              searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
-              var webviews = require('webviews.js')
-              webviews.focus()
-              commandPalette.hide()
-            }
-          }
+          commandPalette.handleEnterWithNoCandidates()
         }
         break
 
@@ -456,6 +374,29 @@ var commandPalette = {
     }
   },
 
+  /**
+   * Handle Enter key when no candidates are selected
+   * Attempts to open the typed URL
+   */
+  handleEnterWithNoCandidates: function () {
+    const query = commandPalette.input.value.trim()
+    if (query.startsWith('>o ')) {
+      const url = query.substring(3).trim()
+      if (url) {
+        var urlParser = require('util/urlParser.js')
+        var parsedUrl = urlParser.parse(url)
+        var searchbar = require('searchbar/searchbar.js')
+        searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+        var webviews = require('webviews.js')
+        webviews.focus()
+        commandPalette.hide()
+      }
+    }
+  },
+
+  /**
+   * Render the command suggestions in the UI
+   */
   renderSuggestions: function () {
     commandPalette.suggestions.innerHTML = ''
 
@@ -468,62 +409,71 @@ var commandPalette = {
     }
 
     commandPalette.filteredCommands.forEach((command, index) => {
-      const suggestionEl = document.createElement('button')
-      suggestionEl.className = 'command-suggestion'
-      if (index === commandPalette.selectedIndex) {
-        suggestionEl.classList.add('selected')
-      }
-
-      // Check if this is a tab (has tab- prefix in id)
-      const isTab = command.id.startsWith('tab-')
-      
-      // Format the description for tabs (truncate long URLs)
-      let description = command.description
-      if (isTab && description.length > 60) {
-        description = description.substring(0, 60) + '...'
-      }
-
-      // Show keyboard shortcut number for candidates (0-9)
-      // Map: Ctrl+0 -> index 0, Ctrl+1 -> index 1, Ctrl+2 -> index 2, etc.
-      const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : ''
-
-      suggestionEl.innerHTML = `
-        ${shortcutNumber}
-        <i class="i ${command.icon} command-suggestion-icon"></i>
-        <div class="command-suggestion-content">
-          <div class="command-suggestion-title">${command.title}</div>
-          <div class="command-suggestion-description">${description}</div>
-        </div>
-        ${command.shortcut ? `<div class="command-suggestion-shortcut">${command.shortcut}</div>` : ''}
-      `
-
-      suggestionEl.addEventListener('click', () => {
-        commandPalette.executeCommand(command)
-      })
-
-      suggestionEl.addEventListener('mouseenter', () => {
-        commandPalette.selectedIndex = index
-        commandPalette.renderSuggestions()
-      })
-
+      const suggestionEl = commandPalette.createSuggestionElement(command, index)
       commandPalette.suggestions.appendChild(suggestionEl)
     })
   },
 
+  /**
+   * Create a suggestion element for the UI
+   * @param {Object} command - Command object
+   * @param {number} index - Index of the command
+   * @returns {HTMLElement} Suggestion element
+   */
+  createSuggestionElement: function (command, index) {
+    const suggestionEl = document.createElement('button')
+    suggestionEl.className = 'command-suggestion'
+    
+    const isTab = command.id.startsWith('tab-')
+    let description = command.description
+    if (isTab && description.length > 60) {
+      description = description.substring(0, 60) + '...'
+    }
+
+    // Show keyboard shortcut number for candidates (0-9)
+    const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : ''
+
+    suggestionEl.innerHTML = `
+      ${shortcutNumber}
+      <i class="i ${command.icon} command-suggestion-icon"></i>
+      <div class="command-suggestion-content">
+        <div class="command-suggestion-title">${command.title}</div>
+        <div class="command-suggestion-description">${description}</div>
+      </div>
+      ${command.shortcut ? `<div class="command-suggestion-shortcut">${command.shortcut}</div>` : ''}
+    `
+
+    // Add selected class after setting innerHTML
+    if (index === commandPalette.selectedIndex) {
+      suggestionEl.classList.add('selected')
+    }
+
+    suggestionEl.addEventListener('click', () => {
+      commandPalette.executeCommand(command)
+    })
+
+    suggestionEl.addEventListener('mouseenter', () => {
+      commandPalette.selectedIndex = index
+      commandPalette.renderSuggestions()
+    })
+
+    return suggestionEl
+  },
+
+  /**
+   * Execute a command and hide the palette
+   * @param {Object} command - Command object to execute
+   */
   executeCommand: function (command) {
     commandPalette.hide()
-    
-    // Emit event for external handling
     commandPalette.events.emit('command-executed', command)
-    
-    // Execute the command action
     if (command.action) {
       command.action()
     }
   }
 }
 
-// Register the keyboard shortcut (Ctrl+.)
+// Register keyboard shortcuts
 keybindings.defineShortcut('showCommandPalette', function () {
   commandPalette.showWithPrefix('>')
 })
