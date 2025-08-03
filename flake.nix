@@ -28,6 +28,10 @@
               alsa-lib # libasound.so
               glib # libglib-2.0.so libgobject-2.0.so libgio.so
               stdenv.cc.cc.lib # libgcc_s.so
+              udev
+              nspr
+              dbus
+              expat
             ] ++ (with xorg; [
               libX11 # libX11.so
               libXcomposite # libXcomposite.so
@@ -35,6 +39,7 @@
               libXext # libXext.so
               libXfixes # libXfixes.so
               libXrandr # libXrandr.so
+              libxcb
             ]);
           runScript = "bash";
         };
