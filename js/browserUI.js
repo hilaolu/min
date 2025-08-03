@@ -258,7 +258,7 @@ searchbar.events.on('url-selected', function (data) {
     })
     addTab(newTab, {
       enterEditMode: false,
-      openInBackground: true
+      openInBackground: !data.openInForeground
     })
   } else {
     webviews.update(tabs.getSelected(), data.url)
