@@ -93,7 +93,7 @@ function setupEventListeners() {
         exitToNormalMode()
       }
     } else if (!isCurrentlyInInput() && !isLinkKeyMode && 
-               VIM_CONFIG.alphabet.includes(e.key) && 
+               (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'F') && 
                !e.ctrlKey && !e.metaKey) {
     
     command += e.key
