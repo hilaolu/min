@@ -88,8 +88,9 @@ function setupEventListeners() {
       if (isLinkKeyMode) {
         hideLinkKeys()
         blockKeybindings.blur()
-      } else if (isCurrentlyInInput()) {
-        e.target.blur()
+      } else {
+        // Exit to normal mode - blur any focused element
+        exitToNormalMode()
       }
     } else if (!isCurrentlyInInput() && !isLinkKeyMode && 
                VIM_CONFIG.alphabet.includes(e.key) && 
@@ -280,6 +281,26 @@ function copyToClipboard(text) {
 
 function copyUrlToClipboard() {
   copyToClipboard(window.location.href)
+}
+
+// Exit to normal mode - blur any focused element
+function exitToNormalMode() {
+  // Blur any currently focused element
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur()
+  }
+  
+  // Focus the body to ensure we're in normal mode
+  document.body.focus()
+  
+  // Clear any ongoing commands
+  command = ''
+  typedText = ''
+  
+  // Ensure link key mode is off
+  if (isLinkKeyMode) {
+    hideLinkKeys()
+  }
 }
 
 // Initialize Vim mode when DOM is ready
