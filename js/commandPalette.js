@@ -207,29 +207,22 @@ var commandPalette = {
         const commandName = parts[0].toLowerCase()
         const commandArgs = parts.slice(1).join(' ')
         
-        // Special handling for 'o' command with URL argument
-        if (commandName === 'o' && commandArgs) {
-          commandPalette.filteredCommands = [{
-            id: 'open-url',
-            title: `Open URL: ${commandArgs}`,
-            description: `Open ${commandArgs} in a new tab`,
-            icon: 'carbon:launch',
-            action: () => {
-              var urlParser = require('util/urlParser.js')
-              var parsedUrl = urlParser.parse(commandArgs)
-              var searchbar = require('searchbar/searchbar.js')
-              searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
-              var webviews = require('webviews.js')
-              webviews.focus()
-            }
-          }]
+        // Special handling for 'o' command
+        if (commandName === 'o') {
+          if (commandArgs) {
+            // Filter candidates based on the provided text
+            commandPalette.showOpenCandidates(commandArgs)
+          } else {
+            // Show candidates from history and bookmarks
+            commandPalette.showOpenCandidates()
+          }
         } else {
           // Handle other single-word commands
           commandPalette.filteredCommands = availableCommands.filter(cmd => 
             cmd.id.toLowerCase() === commandName
           )
+          commandPalette.renderSuggestions()
         }
-        commandPalette.renderSuggestions()
       } else {
         // Fuzzy search through tabs
         commandPalette.searchTabs(query)
@@ -318,6 +311,65 @@ var commandPalette = {
     }
   },
 
+  showOpenCandidates: async function (searchQuery = '') {
+    try {
+      var places = require('places/places.js')
+      var urlParser = require('util/urlParser.js')
+      var searchbar = require('searchbar/searchbar.js')
+      var webviews = require('webviews.js')
+      
+      // Get history and bookmarks filtered by search query (same as address bar)
+      const results = await places.searchPlaces(searchQuery, {
+        limit: 20
+      })
+
+      // Add the typed URL as the first candidate if it's not empty and doesn't match any existing results
+      let candidates = []
+      
+      if (searchQuery && searchQuery.trim()) {
+        const searchQueryLower = searchQuery.toLowerCase()
+        const hasExactMatch = results.some(result => 
+          result.url.toLowerCase().includes(searchQueryLower) ||
+          (result.title && result.title.toLowerCase().includes(searchQueryLower))
+        )
+        
+        if (!hasExactMatch) {
+          candidates.push({
+            id: 'open-url',
+            title: `Open URL: ${searchQuery}`,
+            description: `Open ${searchQuery} in a new tab`,
+            icon: 'carbon:launch',
+            action: () => {
+              var parsedUrl = urlParser.parse(searchQuery)
+              searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+              webviews.focus()
+            }
+          })
+        }
+      }
+
+      // Add history and bookmark results
+      candidates = candidates.concat(results.map(result => ({
+        id: `candidate-${result.url}`,
+        title: result.title || urlParser.prettyURL(urlParser.getSourceURL(result.url)),
+        description: urlParser.basicURL(urlParser.getSourceURL(result.url)),
+        icon: result.isBookmarked ? 'carbon:star-filled' : 'carbon:wikis',
+        action: () => {
+          searchbar.events.emit('url-selected', { url: result.url, background: true, openInForeground: true })
+          webviews.focus()
+        }
+      })))
+
+      commandPalette.filteredCommands = candidates
+      commandPalette.renderSuggestions()
+    } catch (e) {
+      console.error('Error showing open candidates:', e)
+      // Fallback to empty list
+      commandPalette.filteredCommands = []
+      commandPalette.renderSuggestions()
+    }
+  },
+
   handleKeydown: function (e) {
     switch (e.key) {
       case 'ArrowDown':
@@ -340,6 +392,21 @@ var commandPalette = {
         if (commandPalette.filteredCommands.length > 0) {
           const selectedCommand = commandPalette.filteredCommands[commandPalette.selectedIndex]
           commandPalette.executeCommand(selectedCommand)
+        } else {
+          // If no candidates are selected, try to open the typed URL
+          const query = commandPalette.input.value.trim()
+          if (query.startsWith('>o ')) {
+            const url = query.substring(3).trim()
+            if (url) {
+              var urlParser = require('util/urlParser.js')
+              var parsedUrl = urlParser.parse(url)
+              var searchbar = require('searchbar/searchbar.js')
+              searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+              var webviews = require('webviews.js')
+              webviews.focus()
+              commandPalette.hide()
+            }
+          }
         }
         break
 
