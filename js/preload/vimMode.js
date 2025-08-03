@@ -2,7 +2,7 @@
 
 // Vim mode configuration
 const VIM_CONFIG = {
-  alphabet: 'abcdefghijklmnopqrstuvwxyz'.split(''),
+  alphabet: 'abdefghijklmnopqrstuvwxyz'.split(''),
   keyTimeout: 1000,
   scrollAmount: 60,
   quickScrollAmount: 400,
