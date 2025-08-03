@@ -2,8 +2,30 @@ const EventEmitter = require('events')
 var keybindings = require('keybindings.js')
 var modalMode = require('modalMode.js')
 
-// Sample commands - these will be expanded later
+// Available commands
 const availableCommands = [
+  {
+    id: 'w',
+    title: 'Close Tab',
+    description: 'Close the current tab',
+    shortcut: 'Ctrl+W',
+    icon: 'carbon:close',
+    action: () => {
+      var browserUI = require('browserUI.js')
+      browserUI.closeTab(tabs.getSelected())
+    }
+  },
+  {
+    id: 'r',
+    title: 'Reload Tab',
+    description: 'Reload the current tab',
+    shortcut: 'F5',
+    icon: 'carbon:renew',
+    action: () => {
+      var webviews = require('webviews.js')
+      webviews.callAsync(tabs.getSelected(), 'reload')
+    }
+  },
   {
     id: 'new-tab',
     title: 'New Tab',
@@ -11,8 +33,8 @@ const availableCommands = [
     shortcut: 'Ctrl+T',
     icon: 'carbon:new-tab',
     action: () => {
-      // Will be implemented later
-      console.log('New Tab command executed')
+      var browserUI = require('browserUI.js')
+      browserUI.addTab()
     }
   },
   {
@@ -22,7 +44,8 @@ const availableCommands = [
     shortcut: 'Ctrl+W',
     icon: 'carbon:close',
     action: () => {
-      console.log('Close Tab command executed')
+      var browserUI = require('browserUI.js')
+      browserUI.closeTab(tabs.getSelected())
     }
   },
   {
@@ -32,7 +55,8 @@ const availableCommands = [
     shortcut: 'Ctrl+Shift+N',
     icon: 'carbon:new-window',
     action: () => {
-      console.log('New Window command executed')
+      var browserUI = require('browserUI.js')
+      browserUI.addWindow()
     }
   },
   {
@@ -42,7 +66,8 @@ const availableCommands = [
     shortcut: 'Ctrl+Shift+B',
     icon: 'carbon:bookmark',
     action: () => {
-      console.log('Show Bookmarks command executed')
+      var searchbar = require('searchbar/searchbar.js')
+      searchbar.showResults('!bookmarks')
     }
   },
   {
@@ -52,7 +77,8 @@ const availableCommands = [
     shortcut: 'Ctrl+Shift+H',
     icon: 'carbon:time',
     action: () => {
-      console.log('Show History command executed')
+      var searchbar = require('searchbar/searchbar.js')
+      searchbar.showResults('!history')
     }
   },
   {
@@ -62,7 +88,8 @@ const availableCommands = [
     shortcut: 'Ctrl+,',
     icon: 'carbon:settings',
     action: () => {
-      console.log('Settings command executed')
+      var searchbar = require('searchbar/searchbar.js')
+      searchbar.showResults('!settings')
     }
   },
   {
@@ -72,7 +99,8 @@ const availableCommands = [
     shortcut: 'Ctrl+F',
     icon: 'carbon:search',
     action: () => {
-      console.log('Find in Page command executed')
+      var findinpage = require('findinpage.js')
+      findinpage.start()
     }
   },
   {
@@ -82,7 +110,8 @@ const availableCommands = [
     shortcut: 'F5',
     icon: 'carbon:renew',
     action: () => {
-      console.log('Reload Page command executed')
+      var webviews = require('webviews.js')
+      webviews.callAsync(tabs.getSelected(), 'reload')
     }
   }
 ]
@@ -163,16 +192,26 @@ var commandPalette = {
   },
 
   handleInput: function () {
-    const query = commandPalette.input.value.toLowerCase().trim()
+    const query = commandPalette.input.value.trim()
     
     if (query === '') {
       commandPalette.filteredCommands = [...availableCommands]
     } else {
-      commandPalette.filteredCommands = availableCommands.filter(cmd => 
-        cmd.title.toLowerCase().includes(query) ||
-        cmd.description.toLowerCase().includes(query) ||
-        cmd.id.toLowerCase().includes(query)
-      )
+      // Check for vim-like commands (starting with >)
+      if (query.startsWith('>')) {
+        const vimCommand = query.substring(1).trim().toLowerCase()
+        commandPalette.filteredCommands = availableCommands.filter(cmd => 
+          cmd.id.toLowerCase() === vimCommand
+        )
+      } else {
+        // Regular search
+        const searchQuery = query.toLowerCase()
+        commandPalette.filteredCommands = availableCommands.filter(cmd => 
+          cmd.title.toLowerCase().includes(searchQuery) ||
+          cmd.description.toLowerCase().includes(searchQuery) ||
+          cmd.id.toLowerCase().includes(searchQuery)
+        )
+      }
     }
 
     commandPalette.selectedIndex = 0
