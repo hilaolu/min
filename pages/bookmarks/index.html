@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title data-string="bookmarksPageTitle">Bookmarks | Min</title>
+    <link rel="stylesheet" href="../../css/base.css" />
+    <link rel="stylesheet" href="bookmarks.css" />
+    <link rel="stylesheet" href="../../ext/icons/iconfont.css" />
+  </head>
+  <body>
+    <div class="short-hero blue-gradient-background">
+      <div class="container">
+        <h2 data-string="bookmarksPageTitle">Bookmarks</h2>
+      </div>
+    </div>
+
+    <div class="bookmarks-container">
+      <div class="bookmarks-header">
+        <div class="search-container">
+          <input type="text" id="bookmark-search" placeholder="Search bookmarks..." />
+        </div>
+        <div class="bookmarks-actions">
+          <button id="import-bookmarks" class="action-button">
+            <i class="i carbon:import"></i>
+            <span data-string="importBookmarks">Import</span>
+          </button>
+          <button id="export-bookmarks" class="action-button">
+            <i class="i carbon:export"></i>
+            <span data-string="exportBookmarks">Export</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="bookmarks-content">
+        <div id="bookmarks-list" class="bookmarks-list">
+          <!-- Bookmarks will be populated here -->
+        </div>
+        
+        <div id="no-bookmarks" class="no-bookmarks" hidden>
+          <i class="i carbon:star"></i>
+          <h3 data-string="noBookmarksTitle">No bookmarks yet</h3>
+          <p data-string="noBookmarksDescription">Start bookmarking pages to see them here</p>
+        </div>
+      </div>
+    </div>
+
+    <script src="../../js/places/places.js"></script>
+    <script src="../../js/bookmarkConverter.js"></script>
+    <script src="../../dist/localization.build.js"></script>
+    <script src="bookmarks.js"></script>
+  </body>
+</html> 

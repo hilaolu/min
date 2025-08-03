@@ -61,6 +61,10 @@
     "searchHistory": "Search history",
     "importBookmarks": "Import bookmarks from HTML file",
     "exportBookmarks": "Export bookmarks",
+    "bookmarksPageTitle": "Bookmarks",
+    "noBookmarksTitle": "No bookmarks yet",
+    "noBookmarksDescription": "Start bookmarking pages to see them here",
+    "appMenuBookmarksPage": "Bookmarks Page",
     "runUserscript": "Run userscript",
     /* navbar */
     "openMenu": "Open menu", //application menu button on windows
