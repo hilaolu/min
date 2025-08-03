@@ -59,11 +59,15 @@ function setupEventListeners() {
     }
   }, false)
 
-  // Keydown handler for scrolling
+  // Keydown handler (capture phase so we can suppress site handlers)
   document.addEventListener('keydown', function (e) {
-    if ((e.key === 'j' || e.key === 'k' || e.key === 'd' || e.key === 'u') && 
+    // --- Scroll keys (j k d u) ---
+    if ((e.key === 'j' || e.key === 'k' || e.key === 'd' || e.key === 'u') &&
         !isLinkKeyMode && !isCurrentlyInInput()) {
-      
+      // stop event so site scripts don't receive it
+      e.preventDefault();
+      e.stopPropagation();
+
       if (e.key === 'j') {
         window.scrollBy(0, VIM_CONFIG.scrollAmount)
       } else if (e.key === 'k') {
@@ -74,17 +78,27 @@ function setupEventListeners() {
         window.scrollBy(0, -VIM_CONFIG.quickScrollAmount)
       }
     }
-  })
+    // Prevent site shortcuts for vim command letters and Ctrl+C
+    if (!isLinkKeyMode && !isCurrentlyInInput()) {
+      const keyLower = e.key.toLowerCase()
+      if (VIM_CONFIG.alphabet.includes(keyLower) || e.key === 'F' || (e.ctrlKey && e.key === 'c')) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+      }
+    }
+  }, true) // capture phase
 
-  // Keyup handler for commands
+  // Keyup handler for commands (capture phase as well)
   document.addEventListener('keyup', function (e) {
     handleKeyup(e)
-  })
+  }, true)
 }
 
   // Handle keyup events for Vim commands
   function handleKeyup(e) {
     if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault();
+      e.stopPropagation();
       if (isLinkKeyMode) {
         hideLinkKeys()
         blockKeybindings.blur()
@@ -92,9 +106,11 @@ function setupEventListeners() {
         // Exit to normal mode - blur any focused element
         exitToNormalMode()
       }
-    } else if (!isCurrentlyInInput() && !isLinkKeyMode && 
-               (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'F') && 
+    } else if (!isCurrentlyInInput() && !isLinkKeyMode &&
+               (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'F') &&
                !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    e.stopPropagation();
     
     command += e.key
     var match = true
@@ -136,7 +152,6 @@ function setupEventListeners() {
     } else if (match) {
       command = ''
     }
-    e.preventDefault()
   } else if (isLinkKeyMode && VIM_CONFIG.alphabet.includes(e.key)) {
     onTextTyped(e.key)
   }
