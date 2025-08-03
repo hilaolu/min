@@ -17,13 +17,13 @@ const availableCommands = [
   },
   {
     id: 'r',
-    title: 'Reload Tab',
-    description: 'Reload the current tab',
-    shortcut: 'F5',
+    title: 'Reload Tab / Load URL',
+    description: 'Reload current tab or load URL in current tab',
+    shortcut: '>r [url]',
     icon: 'carbon:renew',
     action: () => {
-      var webviews = require('webviews.js')
-      webviews.callAsync(tabs.getSelected(), 'reload')
+      // This is handled by the command palette logic
+      // The action will be executed when a candidate is selected
     }
   },
   {
