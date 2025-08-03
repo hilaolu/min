@@ -38,17 +38,6 @@ const availableCommands = [
     }
   },
   {
-    id: 'close-tab',
-    title: 'Close Tab',
-    description: 'Close the current tab',
-    shortcut: 'Ctrl+W',
-    icon: 'carbon:close',
-    action: () => {
-      var browserUI = require('browserUI.js')
-      browserUI.closeTab(tabs.getSelected())
-    }
-  },
-  {
     id: 'new-window',
     title: 'New Window',
     description: 'Open a new window',
@@ -102,17 +91,6 @@ const availableCommands = [
       var findinpage = require('findinpage.js')
       findinpage.start()
     }
-  },
-  {
-    id: 'reload',
-    title: 'Reload Page',
-    description: 'Refresh the current page',
-    shortcut: 'F5',
-    icon: 'carbon:renew',
-    action: () => {
-      var webviews = require('webviews.js')
-      webviews.callAsync(tabs.getSelected(), 'reload')
-    }
   }
 ]
 
@@ -148,8 +126,8 @@ var commandPalette = {
       }
     })
 
-    // Initialize with all commands
-    commandPalette.filteredCommands = [...availableCommands]
+    // Initialize with empty list - tabs will be loaded when needed
+    commandPalette.filteredCommands = []
     commandPalette.renderSuggestions()
   },
 
@@ -169,8 +147,15 @@ var commandPalette = {
     // Reset state
     commandPalette.selectedIndex = 0
     commandPalette.input.value = ''
-    commandPalette.filteredCommands = [...availableCommands]
-    commandPalette.renderSuggestions()
+    
+    // Show tabs with safety check
+    try {
+      commandPalette.showTabs()
+    } catch (e) {
+      console.error('Error showing tabs on command palette open:', e)
+      commandPalette.filteredCommands = []
+      commandPalette.renderSuggestions()
+    }
 
     // Focus the input
     setTimeout(() => {
@@ -195,7 +180,8 @@ var commandPalette = {
     const query = commandPalette.input.value.trim()
     
     if (query === '') {
-      commandPalette.filteredCommands = [...availableCommands]
+      // Show all tabs when no query
+      commandPalette.showTabs()
     } else {
       // Check for vim-like commands (starting with >)
       if (query.startsWith('>')) {
@@ -203,19 +189,93 @@ var commandPalette = {
         commandPalette.filteredCommands = availableCommands.filter(cmd => 
           cmd.id.toLowerCase() === vimCommand
         )
+        commandPalette.renderSuggestions()
       } else {
-        // Regular search
-        const searchQuery = query.toLowerCase()
-        commandPalette.filteredCommands = availableCommands.filter(cmd => 
-          cmd.title.toLowerCase().includes(searchQuery) ||
-          cmd.description.toLowerCase().includes(searchQuery) ||
-          cmd.id.toLowerCase().includes(searchQuery)
-        )
+        // Fuzzy search through tabs
+        commandPalette.searchTabs(query)
       }
     }
 
     commandPalette.selectedIndex = 0
-    commandPalette.renderSuggestions()
+  },
+
+  showTabs: function () {
+    try {
+      // Check if tabs module is available
+      if (typeof tabs === 'undefined' || !tabs.get) {
+        console.warn('Tabs module not available')
+        commandPalette.filteredCommands = []
+        commandPalette.renderSuggestions()
+        return
+      }
+      
+      const allTabs = tabs.get()
+      commandPalette.filteredCommands = allTabs.map(tab => ({
+        id: `tab-${tab.id}`,
+        title: tab.title || 'New Tab',
+        description: tab.url || 'min://newtab',
+        icon: 'carbon:document',
+        action: () => {
+          try {
+            var browserUI = require('browserUI.js')
+            browserUI.switchToTab(tab.id)
+          } catch (e) {
+            console.error('Error switching to tab:', e)
+          }
+        }
+      }))
+      commandPalette.renderSuggestions()
+    } catch (e) {
+      console.error('Error showing tabs:', e)
+      // Fallback to empty list
+      commandPalette.filteredCommands = []
+      commandPalette.renderSuggestions()
+    }
+  },
+
+  searchTabs: function (query) {
+    try {
+      // Check if tabs module is available
+      if (typeof tabs === 'undefined' || !tabs.get) {
+        console.warn('Tabs module not available')
+        commandPalette.filteredCommands = []
+        commandPalette.renderSuggestions()
+        return
+      }
+      
+      const allTabs = tabs.get()
+      const searchQuery = query.toLowerCase()
+      
+      // Fuzzy search through tabs
+      const matchedTabs = allTabs.filter(tab => {
+        const title = (tab.title || '').toLowerCase()
+        const url = (tab.url || '').toLowerCase()
+        
+        // Check if query matches title or URL
+        return title.includes(searchQuery) || url.includes(searchQuery)
+      })
+
+      commandPalette.filteredCommands = matchedTabs.map(tab => ({
+        id: `tab-${tab.id}`,
+        title: tab.title || 'New Tab',
+        description: tab.url || 'min://newtab',
+        icon: 'carbon:document',
+        action: () => {
+          try {
+            var browserUI = require('browserUI.js')
+            browserUI.switchToTab(tab.id)
+          } catch (e) {
+            console.error('Error switching to tab:', e)
+          }
+        }
+      }))
+      commandPalette.renderSuggestions()
+    } catch (e) {
+      console.error('Error searching tabs:', e)
+      // Fallback to empty list
+      commandPalette.filteredCommands = []
+      commandPalette.renderSuggestions()
+    }
   },
 
   handleKeydown: function (e) {
@@ -256,7 +316,7 @@ var commandPalette = {
     if (commandPalette.filteredCommands.length === 0) {
       const emptyEl = document.createElement('div')
       emptyEl.className = 'command-palette-empty'
-      emptyEl.textContent = 'No commands found'
+      emptyEl.textContent = 'No tabs or commands found'
       commandPalette.suggestions.appendChild(emptyEl)
       return
     }
@@ -268,13 +328,22 @@ var commandPalette = {
         suggestionEl.classList.add('selected')
       }
 
+      // Check if this is a tab (has tab- prefix in id)
+      const isTab = command.id.startsWith('tab-')
+      
+      // Format the description for tabs (truncate long URLs)
+      let description = command.description
+      if (isTab && description.length > 60) {
+        description = description.substring(0, 60) + '...'
+      }
+
       suggestionEl.innerHTML = `
         <i class="i ${command.icon} command-suggestion-icon"></i>
         <div class="command-suggestion-content">
           <div class="command-suggestion-title">${command.title}</div>
-          <div class="command-suggestion-description">${command.description}</div>
+          <div class="command-suggestion-description">${description}</div>
         </div>
-        <div class="command-suggestion-shortcut">${command.shortcut}</div>
+        ${command.shortcut ? `<div class="command-suggestion-shortcut">${command.shortcut}</div>` : ''}
       `
 
       suggestionEl.addEventListener('click', () => {
