@@ -266,17 +266,9 @@ var commandPalette = {
       const results = await places.searchPlaces(searchQuery, { limit: 20 })
       let candidates = []
       
-      // Add typed URL as first candidate if no exact match exists
+      // Always add typed URL as first candidate (default selection)
       if (searchQuery && searchQuery.trim()) {
-        const searchQueryLower = searchQuery.toLowerCase()
-        const hasExactMatch = results.some(result => 
-          result.url.toLowerCase().includes(searchQueryLower) ||
-          (result.title && result.title.toLowerCase().includes(searchQueryLower))
-        )
-        
-        if (!hasExactMatch) {
-          candidates.push(commandPalette.createURLCandidate(searchQuery))
-        }
+        candidates.push(commandPalette.createURLCandidate(searchQuery))
       }
 
       // Add history and bookmark results
@@ -313,16 +305,8 @@ var commandPalette = {
         // Has search query - follow >o logic but open in current tab
         const results = await places.searchPlaces(searchQuery, { limit: 20 })
         
-        // Add typed URL as first candidate if no exact match exists
-        const searchQueryLower = searchQuery.toLowerCase()
-        const hasExactMatch = results.some(result => 
-          result.url.toLowerCase().includes(searchQueryLower) ||
-          (result.title && result.title.toLowerCase().includes(searchQueryLower))
-        )
-        
-        if (!hasExactMatch) {
-          candidates.push(commandPalette.createReloadCandidate(searchQuery, 'Load URL'))
-        }
+        // Always add typed URL as first candidate (default selection)
+        candidates.push(commandPalette.createReloadCandidate(searchQuery, 'Load URL'))
 
         // Add history and bookmark results
         candidates = candidates.concat(results.map(result => commandPalette.createReloadHistoryCandidate(result)))
@@ -478,6 +462,7 @@ var commandPalette = {
       case 'Enter':
         e.preventDefault()
         if (commandPalette.filteredCommands.length > 0) {
+          // Always execute the selected candidate (first one is user's input by default)
           const selectedCommand = commandPalette.filteredCommands[commandPalette.selectedIndex]
           commandPalette.executeCommand(selectedCommand)
         } else {
