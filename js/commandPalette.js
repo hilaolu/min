@@ -399,10 +399,10 @@ var commandPalette = {
   },
 
   handleKeydown: function (e) {
-    // Handle Ctrl+0 to Ctrl+9 for quick candidate selection
+    // Handle Ctrl+0 to Ctrl+9 for quick candidate selection (0-9)
     if (e.ctrlKey && e.key >= '0' && e.key <= '9') {
       e.preventDefault()
-      const index = e.key === '0' ? 9 : parseInt(e.key) - 1
+      const index = parseInt(e.key)
       if (index < commandPalette.filteredCommands.length) {
         const selectedCommand = commandPalette.filteredCommands[index]
         commandPalette.executeCommand(selectedCommand)
@@ -484,6 +484,7 @@ var commandPalette = {
       }
 
       // Show keyboard shortcut number for candidates (0-9)
+      // Map: Ctrl+0 -> index 0, Ctrl+1 -> index 1, Ctrl+2 -> index 2, etc.
       const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : ''
 
       suggestionEl.innerHTML = `
