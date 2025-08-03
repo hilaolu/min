@@ -91,6 +91,23 @@ const availableCommands = [
       var findinpage = require('findinpage.js')
       findinpage.start()
     }
+  },
+  {
+    id: 'o',
+    title: 'Open URL',
+    description: 'Open a URL in a new tab',
+    shortcut: '>o <url>',
+    icon: 'carbon:launch',
+    action: (url) => {
+      if (url) {
+        var urlParser = require('util/urlParser.js')
+        var parsedUrl = urlParser.parse(url)
+        var searchbar = require('searchbar/searchbar.js')
+        searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+        var webviews = require('webviews.js')
+        webviews.focus()
+      }
+    }
   }
 ]
 
@@ -185,10 +202,33 @@ var commandPalette = {
     } else {
       // Check for vim-like commands (starting with >)
       if (query.startsWith('>')) {
-        const vimCommand = query.substring(1).trim().toLowerCase()
-        commandPalette.filteredCommands = availableCommands.filter(cmd => 
-          cmd.id.toLowerCase() === vimCommand
-        )
+        const vimCommand = query.substring(1).trim()
+        const parts = vimCommand.split(' ')
+        const commandName = parts[0].toLowerCase()
+        const commandArgs = parts.slice(1).join(' ')
+        
+        // Special handling for 'o' command with URL argument
+        if (commandName === 'o' && commandArgs) {
+          commandPalette.filteredCommands = [{
+            id: 'open-url',
+            title: `Open URL: ${commandArgs}`,
+            description: `Open ${commandArgs} in a new tab`,
+            icon: 'carbon:launch',
+            action: () => {
+              var urlParser = require('util/urlParser.js')
+              var parsedUrl = urlParser.parse(commandArgs)
+              var searchbar = require('searchbar/searchbar.js')
+              searchbar.events.emit('url-selected', { url: parsedUrl, background: true, openInForeground: true })
+              var webviews = require('webviews.js')
+              webviews.focus()
+            }
+          }]
+        } else {
+          // Handle other single-word commands
+          commandPalette.filteredCommands = availableCommands.filter(cmd => 
+            cmd.id.toLowerCase() === commandName
+          )
+        }
         commandPalette.renderSuggestions()
       } else {
         // Fuzzy search through tabs
