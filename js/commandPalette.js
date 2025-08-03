@@ -153,6 +153,12 @@ var commandPalette = {
       } else {
         commandPalette.showOpenCandidates()
       }
+    } else if (commandName === 'goo') {
+      // Show the command as a suggestion for Google search
+      commandPalette.filteredCommands = availableCommands.filter(cmd => 
+        cmd.id === 'goo'
+      )
+      commandPalette.renderSuggestions()
     } else {
       commandPalette.filteredCommands = availableCommands.filter(cmd => 
         cmd.id.toLowerCase() === commandName
@@ -376,7 +382,7 @@ var commandPalette = {
 
   /**
    * Handle Enter key when no candidates are selected
-   * Attempts to open the typed URL
+   * Attempts to open the typed URL or execute commands
    */
   handleEnterWithNoCandidates: function () {
     const query = commandPalette.input.value.trim()
@@ -390,6 +396,15 @@ var commandPalette = {
         var webviews = require('webviews.js')
         webviews.focus()
         commandPalette.hide()
+      }
+    } else if (query.startsWith('>goo ')) {
+      const searchQuery = query.substring(5).trim()
+      if (searchQuery) {
+        const gooCommand = availableCommands.find(cmd => cmd.id === 'goo')
+        if (gooCommand && gooCommand.action) {
+          gooCommand.action(searchQuery)
+          commandPalette.hide()
+        }
       }
     }
   },

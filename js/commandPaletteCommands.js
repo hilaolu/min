@@ -108,6 +108,32 @@ const availableCommands = [
         webviews.focus()
       }
     }
+  },
+  {
+    id: 'goo',
+    title: 'Google Search',
+    description: 'Search Google for the given string',
+    shortcut: '>goo <query>',
+    icon: 'carbon:search',
+    action: (query) => {
+      // Extract query from command palette input if not provided directly
+      let searchQuery = query
+      if (!searchQuery) {
+        var commandPalette = require('commandPalette.js')
+        const inputValue = commandPalette.input.value.trim()
+        if (inputValue.startsWith('>goo ')) {
+          searchQuery = inputValue.substring(5).trim()
+        }
+      }
+      
+      if (searchQuery) {
+        var searchbar = require('searchbar/searchbar.js')
+        var webviews = require('webviews.js')
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`
+        searchbar.events.emit('url-selected', { url: searchUrl, background: true, openInForeground: true })
+        webviews.focus()
+      }
+    }
   }
 ]
 
