@@ -159,6 +159,12 @@ var commandPalette = {
         cmd.id === 'goo'
       )
       commandPalette.renderSuggestions()
+    } else if (commandName === 'r') {
+      if (commandArgs) {
+        commandPalette.showReloadCandidates(commandArgs)
+      } else {
+        commandPalette.showReloadCandidates()
+      }
     } else {
       commandPalette.filteredCommands = availableCommands.filter(cmd => 
         cmd.id.toLowerCase() === commandName
@@ -287,6 +293,51 @@ var commandPalette = {
   },
 
   /**
+   * Show URL candidates for reloading in current tab
+   * @param {string} searchQuery - Optional search query to filter results
+   */
+  showReloadCandidates: async function (searchQuery = '') {
+    try {
+      var places = require('places/places.js')
+      var urlParser = require('util/urlParser.js')
+      
+      let candidates = []
+      
+      if (!searchQuery || !searchQuery.trim()) {
+        // No search query - show only current page
+        const currentTab = tabs.get(tabs.getSelected())
+        if (currentTab && currentTab.url) {
+          candidates.push(commandPalette.createReloadCandidate(currentTab.url, 'Current page'))
+        }
+      } else {
+        // Has search query - follow >o logic but open in current tab
+        const results = await places.searchPlaces(searchQuery, { limit: 20 })
+        
+        // Add typed URL as first candidate if no exact match exists
+        const searchQueryLower = searchQuery.toLowerCase()
+        const hasExactMatch = results.some(result => 
+          result.url.toLowerCase().includes(searchQueryLower) ||
+          (result.title && result.title.toLowerCase().includes(searchQueryLower))
+        )
+        
+        if (!hasExactMatch) {
+          candidates.push(commandPalette.createReloadCandidate(searchQuery, 'Load URL'))
+        }
+
+        // Add history and bookmark results
+        candidates = candidates.concat(results.map(result => commandPalette.createReloadHistoryCandidate(result)))
+      }
+
+      commandPalette.filteredCommands = candidates.slice(0, 10)
+      commandPalette.renderSuggestions()
+    } catch (e) {
+      console.error('Error showing reload candidates:', e)
+      commandPalette.filteredCommands = []
+      commandPalette.renderSuggestions()
+    }
+  },
+
+  /**
    * Create a URL candidate for the typed URL
    * @param {string} url - The URL to create a candidate for
    * @returns {Object} Candidate object
@@ -326,6 +377,50 @@ var commandPalette = {
       icon: result.isBookmarked ? 'carbon:star-filled' : 'carbon:wikis',
       action: () => {
         searchbar.events.emit('url-selected', { url: result.url, background: true, openInForeground: true })
+        webviews.focus()
+      }
+    }
+  },
+
+  /**
+   * Create a reload candidate for the current URL or typed URL
+   * @param {string} url - The URL to create a candidate for
+   * @param {string} description - Description for the candidate
+   * @returns {Object} Candidate object
+   */
+  createReloadCandidate: function (url, description) {
+    var urlParser = require('util/urlParser.js')
+    var webviews = require('webviews.js')
+    
+    return {
+      id: 'reload-url',
+      title: `${description}: ${urlParser.prettyURL(urlParser.getSourceURL(url))}`,
+      description: urlParser.basicURL(urlParser.getSourceURL(url)),
+      icon: 'carbon:renew',
+      action: () => {
+        const parsedUrl = urlParser.parse(url)
+        webviews.update(tabs.getSelected(), parsedUrl)
+        webviews.focus()
+      }
+    }
+  },
+
+  /**
+   * Create a reload history candidate from a places result
+   * @param {Object} result - Places result object
+   * @returns {Object} Candidate object
+   */
+  createReloadHistoryCandidate: function (result) {
+    var urlParser = require('util/urlParser.js')
+    var webviews = require('webviews.js')
+    
+    return {
+      id: `reload-candidate-${result.url}`,
+      title: result.title || urlParser.prettyURL(urlParser.getSourceURL(result.url)),
+      description: urlParser.basicURL(urlParser.getSourceURL(result.url)),
+      icon: result.isBookmarked ? 'carbon:star-filled' : 'carbon:renew',
+      action: () => {
+        webviews.update(tabs.getSelected(), result.url)
         webviews.focus()
       }
     }
@@ -423,6 +518,21 @@ var commandPalette = {
           commandPalette.hide()
         }
       }
+    } else if (query.startsWith('>r ')) {
+      const url = query.substring(3).trim()
+      if (url) {
+        var urlParser = require('util/urlParser.js')
+        var parsedUrl = urlParser.parse(url)
+        var webviews = require('webviews.js')
+        webviews.update(tabs.getSelected(), parsedUrl)
+        webviews.focus()
+        commandPalette.hide()
+      }
+    } else if (query === '>r') {
+      // Reload current tab
+      var webviews = require('webviews.js')
+      webviews.callAsync(tabs.getSelected(), 'reload')
+      commandPalette.hide()
     }
   },
 
