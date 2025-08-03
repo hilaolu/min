@@ -113,23 +113,7 @@ const defaultKeybindings = {
       tabEditor.show(tabs.getSelected(), '!bookmarks ')
     })
 
-    // cmd+x should switch to tab x. Cmd+9 should switch to the last tab
-
-    for (var i = 1; i < 9; i++) {
-      (function (i) {
-        // cmd+1 switched to the next tab in versions <= 1.34. If it is set as a custom shortcut to match this behavior, don't register the default shortcut.
-        if (i === 1 && (keyMap.switchToNextTab === 'mod+1' || (keyMap.switchToNextTab instanceof Array && keyMap.switchToNextTab.includes('mod+1')))) {
-          return
-        }
-
-        keybindings.defineShortcut({ keys: 'mod+' + i }, function (e) {
-          var newTab = tabs.getAtIndex(i - 1)
-          if (newTab) {
-            browserUI.switchToTab(newTab.id)
-          }
-        })
-      })(i)
-    }
+    // Removed mod+1 through mod+8 bindings to make way for Ctrl+0 to Ctrl+9 in command palette
 
     keybindings.defineShortcut('gotoLastTab', function (e) {
       browserUI.switchToTab(tabs.getAtIndex(tabs.count() - 1).id)
