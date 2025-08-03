@@ -347,6 +347,23 @@ var commandPalette = {
       return
     }
 
+    // Handle Ctrl+K (up) and Ctrl+L (down) for navigation
+    if (e.ctrlKey && (e.key === 'k' || e.key === 'l')) {
+      e.preventDefault()
+      if (e.key === 'k') {
+        // Ctrl+K: Move up
+        commandPalette.selectedIndex = Math.max(commandPalette.selectedIndex - 1, 0)
+      } else {
+        // Ctrl+L: Move down
+        commandPalette.selectedIndex = Math.min(
+          commandPalette.selectedIndex + 1,
+          commandPalette.filteredCommands.length - 1
+        )
+      }
+      commandPalette.renderSuggestions()
+      return
+    }
+
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
