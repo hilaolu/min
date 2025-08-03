@@ -168,6 +168,7 @@ require('sessionRestore.js').initialize()
 require('bookmarkConverter.js').initialize()
 require('newTabPage.js').initialize()
 require('macHandoff.js').initialize()
+require('commandPalette.js').initialize()
 
 // default searchbar plugins
 
