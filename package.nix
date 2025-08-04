@@ -5,6 +5,7 @@
 
   dpkg,
   autoPatchelfHook,
+  makeWrapper,
 
   libxkbcommon,
   libxcb,
@@ -58,14 +59,19 @@ stdenv.mkDerivation (finalAttrs: {
     alsa-lib # libasound.so
     glib # libglib-2.0.so libgobject-2.0.so libgio.so
     stdenv.cc.cc.lib # libgcc_s.so
+    makeWrapper
   ];
 
   unpackPhase = "
     dpkg-deb -x $src $out
     mv $out/usr/share $out
-    mkdir -p $out/bin
-    ln -s $out/opt/Min/min $out/bin/min
   ";
+
+  installPhase = ''
+    mkdir -p $out/bin
+    makeWrapper $out/opt/Min/min $out/bin/min \
+        --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform=wayland}}"
+  '';
 
   passthru.updateScript = nix-update-script { };
 
