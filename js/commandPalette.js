@@ -572,14 +572,15 @@ var commandPalette = {
       suggestionEl.classList.add('selected')
     }
 
-    suggestionEl.addEventListener('click', () => {
-      commandPalette.executeCommand(command)
-    })
-
-    suggestionEl.addEventListener('mouseenter', () => {
-      commandPalette.selectedIndex = index
-      commandPalette.renderSuggestions()
-    })
+    // Disable all mouse interactions to prevent interference with keyboard navigation
+    const preventMouseInteraction = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    
+    suggestionEl.addEventListener('click', preventMouseInteraction)
+    suggestionEl.addEventListener('mousedown', preventMouseInteraction)
+    suggestionEl.addEventListener('mouseenter', preventMouseInteraction)
 
     return suggestionEl
   },
