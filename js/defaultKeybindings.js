@@ -285,6 +285,11 @@ const defaultKeybindings = {
       var commandPalette = require('commandPalette.js')
       commandPalette.showWithPrefix('>o ')
     })
+
+    keybindings.defineShortcut('showCommandPaletteRepl', function () {
+      var commandPalette = require('commandPalette.js')
+      commandPalette.showWithPrefix('>>>')
+    })
   }
 }
 

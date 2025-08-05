@@ -13,6 +13,7 @@ var availableCommands = require('commandPaletteCommands.js')
  * - URL opening with history/bookmark candidates
  * - Keyboard shortcuts (Ctrl+0-9) for quick selection
  * - Intuitive shortcuts (Ctrl+T, Ctrl+., Ctrl+O)
+ * - REPL mode (>>>) for JavaScript execution in current tab
  */
 var commandPalette = {
   el: null,
@@ -22,6 +23,13 @@ var commandPalette = {
   selectedIndex: 0,
   filteredCommands: [],
   events: new EventEmitter(),
+  
+  // REPL mode properties
+  isReplMode: false,
+  replHistory: [],
+  replHistoryIndex: 0,
+  replInputHistory: [],
+  replInputHistoryIndex: 0,
 
   /**
    * Initialize the command palette
@@ -64,6 +72,7 @@ var commandPalette = {
 
     commandPalette.selectedIndex = 0
     commandPalette.input.value = ''
+    commandPalette.isReplMode = false
     
     try {
       commandPalette.showTabs()
@@ -96,12 +105,39 @@ var commandPalette = {
     commandPalette.selectedIndex = 0
     commandPalette.input.value = prefix
     
-    commandPalette.handleInput()
+    // Check if entering REPL mode
+    if (prefix === '>>>') {
+      commandPalette.enterReplMode()
+    } else {
+      commandPalette.handleInput()
+    }
     
     setTimeout(() => {
       commandPalette.input.focus()
       commandPalette.input.setSelectionRange(prefix.length, prefix.length)
     }, 100)
+  },
+
+  /**
+   * Enter REPL mode
+   */
+  enterReplMode: function () {
+    commandPalette.isReplMode = true
+    commandPalette.input.value = '>>> '
+    commandPalette.input.placeholder = 'Enter JavaScript code...'
+    commandPalette.input.classList.add('repl-mode')
+    commandPalette.renderReplHistory()
+    commandPalette.input.setSelectionRange(4, 4) // Position cursor after >>>
+  },
+
+  /**
+   * Exit REPL mode
+   */
+  exitReplMode: function () {
+    commandPalette.isReplMode = false
+    commandPalette.input.placeholder = 'Search tabs or type >w, >r...'
+    commandPalette.input.classList.remove('repl-mode')
+    commandPalette.showTabs()
   },
 
   /**
@@ -114,6 +150,8 @@ var commandPalette = {
     commandPalette.el.hidden = true
     document.body.classList.remove('is-command-palette-mode')
     commandPalette.input.blur()
+    commandPalette.isReplMode = false
+    commandPalette.input.classList.remove('repl-mode')
     
     var webviews = require('webviews.js')
     webviews.hidePlaceholder('commandPalette')
@@ -125,6 +163,18 @@ var commandPalette = {
    */
   handleInput: function () {
     const query = commandPalette.input.value.trim()
+    
+    // Check for REPL mode entry
+    if (query === '>>>') {
+      commandPalette.enterReplMode()
+      return
+    }
+    
+    // Handle REPL mode input
+    if (commandPalette.isReplMode) {
+      commandPalette.handleReplInput()
+      return
+    }
     
     if (query === '') {
       commandPalette.showTabs()
@@ -138,39 +188,78 @@ var commandPalette = {
   },
 
   /**
-   * Handle vim-like commands starting with '>'
-   * @param {string} query - The full query string
+   * Handle REPL mode input
    */
-  handleVimCommand: function (query) {
-    const vimCommand = query.substring(1).trim()
-    const parts = vimCommand.split(' ')
-    const commandName = parts[0].toLowerCase()
-    const commandArgs = parts.slice(1).join(' ')
-    
-    if (commandName === 'o') {
-      if (commandArgs) {
-        commandPalette.showOpenCandidates(commandArgs)
-      } else {
-        commandPalette.showOpenCandidates()
+  handleReplInput: function () {
+    const input = commandPalette.input.value
+    if (input.startsWith('>>> ')) {
+      const code = input.substring(4).trim()
+      // Don't execute empty code, just update the display
+      if (code) {
+        // Code will be executed on Enter key press
+        // This function is just for display updates
       }
-    } else if (commandName === 'goo') {
-      // Show the command as a suggestion for Google search
-      commandPalette.filteredCommands = availableCommands.filter(cmd => 
-        cmd.id === 'goo'
-      )
-      commandPalette.renderSuggestions()
-    } else if (commandName === 'r') {
-      if (commandArgs) {
-        commandPalette.showReloadCandidates(commandArgs)
-      } else {
-        commandPalette.showReloadCandidates()
-      }
-    } else {
-      commandPalette.filteredCommands = availableCommands.filter(cmd => 
-        cmd.id.toLowerCase() === commandName
-      )
-      commandPalette.renderSuggestions()
     }
+  },
+
+  /**
+   * Execute JavaScript code in the current tab context
+   * @param {string} code - JavaScript code to execute
+   */
+  executeReplCode: function (code) {
+    var webviews = require('webviews.js')
+    
+    // Validate input
+    if (!code || !code.trim()) {
+      return
+    }
+    
+    // Check if there's a current tab
+    const currentTab = tabs.getSelected()
+    if (!currentTab) {
+      const historyEntry = {
+        id: commandPalette.replHistory.length + 1,
+        input: code,
+        output: 'Error: No active tab available',
+        isError: true,
+        timestamp: new Date()
+      }
+      commandPalette.replHistory.push(historyEntry)
+      commandPalette.renderReplHistory()
+      commandPalette.input.value = '>>> '
+      commandPalette.input.setSelectionRange(4, 4)
+      return
+    }
+    
+    // Add to input history
+    commandPalette.replInputHistory.push(code)
+    commandPalette.replInputHistoryIndex = commandPalette.replInputHistory.length
+    
+    // Execute code in the current tab
+    webviews.callAsync(currentTab, 'executeJavaScript', code, function (err, result) {
+      const historyEntry = {
+        id: commandPalette.replHistory.length + 1,
+        input: code,
+        timestamp: new Date()
+      }
+      
+      if (err) {
+        // Handle errors
+        historyEntry.output = `Error: ${err.message || err}`
+        historyEntry.isError = true
+      } else {
+        // Add to history
+        historyEntry.output = result
+        historyEntry.isError = false
+      }
+      
+      commandPalette.replHistory.push(historyEntry)
+      commandPalette.renderReplHistory()
+      
+      // Clear input and prepare for next command
+      commandPalette.input.value = '>>> '
+      commandPalette.input.setSelectionRange(4, 4)
+    })
   },
 
   /**
@@ -435,10 +524,131 @@ var commandPalette = {
   },
 
   /**
+   * Handle vim-like commands starting with '>'
+   * @param {string} query - The full query string
+   */
+  handleVimCommand: function (query) {
+    const vimCommand = query.substring(1).trim()
+    const parts = vimCommand.split(' ')
+    const commandName = parts[0].toLowerCase()
+    const commandArgs = parts.slice(1).join(' ')
+    
+    if (commandName === 'o') {
+      if (commandArgs) {
+        commandPalette.showOpenCandidates(commandArgs)
+      } else {
+        commandPalette.showOpenCandidates()
+      }
+    } else if (commandName === 'goo') {
+      // Show the command as a suggestion for Google search
+      commandPalette.filteredCommands = availableCommands.filter(cmd => 
+        cmd.id === 'goo'
+      )
+      commandPalette.renderSuggestions()
+    } else if (commandName === 'r') {
+      if (commandArgs) {
+        commandPalette.showReloadCandidates(commandArgs)
+      } else {
+        commandPalette.showReloadCandidates()
+      }
+    } else {
+      commandPalette.filteredCommands = availableCommands.filter(cmd => 
+        cmd.id.toLowerCase() === commandName
+      )
+      commandPalette.renderSuggestions()
+    }
+  },
+
+  /**
+   * Render REPL history in Jupyter-like format
+   */
+  renderReplHistory: function () {
+    commandPalette.suggestions.innerHTML = ''
+    
+    if (commandPalette.replHistory.length === 0) {
+      const emptyEl = document.createElement('div')
+      emptyEl.className = 'repl-empty'
+      emptyEl.textContent = 'No commands executed yet. Type JavaScript code and press Enter.'
+      commandPalette.suggestions.appendChild(emptyEl)
+      return
+    }
+    
+    // Display history in reverse order (newest first)
+    const reversedHistory = [...commandPalette.replHistory].reverse()
+    
+    reversedHistory.forEach((entry) => {
+      const historyEl = commandPalette.createReplHistoryElement(entry)
+      commandPalette.suggestions.appendChild(historyEl)
+    })
+    
+    // Scroll to bottom to show latest entries
+    commandPalette.suggestions.scrollTop = commandPalette.suggestions.scrollHeight
+  },
+
+  /**
+   * Create a REPL history element
+   * @param {Object} entry - History entry object
+   * @returns {HTMLElement} History element
+   */
+  createReplHistoryElement: function (entry) {
+    const historyEl = document.createElement('div')
+    historyEl.className = 'repl-history-entry'
+    
+    const isError = entry.isError || false
+    const outputClass = isError ? 'repl-output-error' : 'repl-output'
+    
+    // Format output for better display
+    let outputText = String(entry.output)
+    if (entry.output === null) {
+      outputText = 'null'
+    } else if (entry.output === undefined) {
+      outputText = 'undefined'
+    } else if (typeof entry.output === 'object') {
+      try {
+        outputText = JSON.stringify(entry.output, null, 2)
+      } catch (e) {
+        outputText = entry.output.toString()
+      }
+    }
+    
+    historyEl.innerHTML = `
+      <div class="repl-input-line">
+        <span class="repl-prompt-label">In</span>
+        <span class="repl-prompt-number">[${entry.id}]:</span>
+        <span class="repl-input-code">${this.escapeHtml(entry.input)}</span>
+      </div>
+      <div class="repl-output-line">
+        <span class="repl-prompt-label">Out</span>
+        <span class="repl-prompt-number">[${entry.id}]:</span>
+        <span class="${outputClass}">${this.escapeHtml(outputText)}</span>
+      </div>
+    `
+    
+    return historyEl
+  },
+
+  /**
+   * Escape HTML to prevent XSS
+   * @param {string} text - Text to escape
+   * @returns {string} Escaped text
+   */
+  escapeHtml: function (text) {
+    const div = document.createElement('div')
+    div.textContent = text
+    return div.innerHTML
+  },
+
+  /**
    * Handle keyboard events in the command palette
    * @param {KeyboardEvent} e - Keyboard event
    */
   handleKeydown: function (e) {
+    // Handle REPL mode keyboard shortcuts
+    if (commandPalette.isReplMode) {
+      commandPalette.handleReplKeydown(e)
+      return
+    }
+
     // Handle Ctrl+0 to Ctrl+9 for quick candidate selection (0-9)
     if (e.ctrlKey && e.key >= '0' && e.key <= '9') {
       e.preventDefault()
@@ -497,6 +707,71 @@ var commandPalette = {
       case 'Escape':
         e.preventDefault()
         commandPalette.hide()
+        break
+    }
+  },
+
+  /**
+   * Handle keyboard events in REPL mode
+   * @param {KeyboardEvent} e - Keyboard event
+   */
+  handleReplKeydown: function (e) {
+    switch (e.key) {
+      case 'Enter':
+        e.preventDefault()
+        const input = commandPalette.input.value
+        if (input.startsWith('>>> ')) {
+          const code = input.substring(4).trim()
+          if (code) {
+            commandPalette.executeReplCode(code)
+          }
+        }
+        break
+
+      case 'Escape':
+        e.preventDefault()
+        commandPalette.exitReplMode()
+        break
+
+      case 'ArrowUp':
+        e.preventDefault()
+        // Navigate through input history
+        if (commandPalette.replInputHistory.length > 0) {
+          if (commandPalette.replInputHistoryIndex > 0) {
+            commandPalette.replInputHistoryIndex--
+            const historyCode = commandPalette.replInputHistory[commandPalette.replInputHistoryIndex]
+            commandPalette.input.value = `>>> ${historyCode}`
+            commandPalette.input.setSelectionRange(4 + historyCode.length, 4 + historyCode.length)
+          }
+        }
+        break
+
+      case 'ArrowDown':
+        e.preventDefault()
+        // Navigate through input history
+        if (commandPalette.replInputHistory.length > 0) {
+          if (commandPalette.replInputHistoryIndex < commandPalette.replInputHistory.length - 1) {
+            commandPalette.replInputHistoryIndex++
+            const historyCode = commandPalette.replInputHistory[commandPalette.replInputHistoryIndex]
+            commandPalette.input.value = `>>> ${historyCode}`
+            commandPalette.input.setSelectionRange(4 + historyCode.length, 4 + historyCode.length)
+          } else if (commandPalette.replInputHistoryIndex === commandPalette.replInputHistory.length - 1) {
+            commandPalette.replInputHistoryIndex++
+            commandPalette.input.value = '>>> '
+            commandPalette.input.setSelectionRange(4, 4)
+          }
+        }
+        break
+
+      case 'Tab':
+        e.preventDefault()
+        // Insert tab character for code indentation
+        const start = commandPalette.input.selectionStart
+        const end = commandPalette.input.selectionEnd
+        const value = commandPalette.input.value
+        
+        commandPalette.input.value = value.substring(0, start) + '  ' + value.substring(end)
+        commandPalette.input.setSelectionRange(start + 2, start + 2)
         break
     }
   },
