@@ -4,28 +4,66 @@ var modalMode = require('modalMode.js')
 var availableCommands = require('commandPaletteCommands.js')
 
 /**
+ * Command palette states and state machine
+ * 
+ * State Transitions:
+ * EMPTY ("") ←→ TAB_SEARCH ("text")
+ * EMPTY ←→ VIM_COMMAND (">")
+ * VIM_COMMAND ←→ VIM_COMMAND_ARGS (">w", ">o url", etc.)
+ * EMPTY ←→ REPL (">>>")
+ * 
+ * Input Patterns:
+ * - ""          → EMPTY (show all tabs)
+ * - "text"      → TAB_SEARCH (search tabs by text)
+ * - ">"         → VIM_COMMAND (show available vim commands)
+ * - ">w"        → VIM_COMMAND_ARGS (close tab command)
+ * - ">o url"    → VIM_COMMAND_ARGS (open URL command with candidates)
+ * - ">r url"    → VIM_COMMAND_ARGS (reload/load URL command with candidates)
+ * - ">goo q"    → VIM_COMMAND_ARGS (Google search command)
+ * - ">>>"       → REPL (JavaScript REPL mode)
+ * 
+ * @typedef {Object} StateData
+ * @property {string} [query] - Search query for TAB_SEARCH state
+ * @property {string} [command] - Command name for VIM_COMMAND_ARGS state
+ * @property {string} [args] - Command arguments for VIM_COMMAND_ARGS state
+ */
+const STATES = {
+  EMPTY: 'EMPTY',                    // "" - Show all tabs
+  TAB_SEARCH: 'TAB_SEARCH',         // "text" - Search tabs by text
+  VIM_COMMAND: 'VIM_COMMAND',       // ">" - Show vim commands
+  VIM_COMMAND_ARGS: 'VIM_COMMAND_ARGS', // ">w", ">o url", ">r url" - Vim command with args
+  REPL: 'REPL'                      // ">>>" - JavaScript REPL mode
+}
+
+/**
  * Command palette module for vim-like command interface
  * Provides quick access to browser functions via keyboard shortcuts
  * 
  * Features:
+ * - State-based architecture for clear input handling
  * - Vim-like command syntax (>w, >r, >o url, etc.)
  * - Tab switching and searching
  * - URL opening with history/bookmark candidates
  * - Keyboard shortcuts (Ctrl+0-9) for quick selection
- * - Intuitive shortcuts (Ctrl+T, Ctrl+., Ctrl+O)
  * - REPL mode (>>>) for JavaScript execution in current tab
  */
 var commandPalette = {
+  // Core properties
   el: null,
   input: null,
   suggestions: null,
   isVisible: false,
-  selectedIndex: 0,
-  filteredCommands: [],
   events: new EventEmitter(),
   
+  // State management
+  currentState: STATES.EMPTY,
+  previousState: null,
+  
+  // UI state
+  selectedIndex: 0,
+  filteredCommands: [],
+  
   // REPL mode properties
-  isReplMode: false,
   replHistory: [],
   replHistoryIndex: 0,
   replInputHistory: [],
@@ -51,9 +89,150 @@ var commandPalette = {
       }
     })
 
-    // Initialize with empty list
-    commandPalette.filteredCommands = []
-    commandPalette.renderSuggestions()
+    // Initialize with empty state
+    commandPalette.setState(STATES.EMPTY)
+  },
+
+  /**
+   * Set the current state and update UI accordingly
+   * @param {string} newState - The new state to transition to
+   * @param {StateData} stateData - Optional data for the state
+   */
+  setState: function (newState, stateData = {}) {
+    // Validate state
+    if (!Object.values(STATES).includes(newState)) {
+      console.warn(`Invalid state: ${newState}`)
+      return
+    }
+    
+    const previousState = commandPalette.currentState
+    commandPalette.previousState = previousState
+    commandPalette.currentState = newState
+    commandPalette.selectedIndex = 0
+    
+    // Debug logging for development
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') {
+      console.log(`Command Palette: ${previousState} → ${newState}`, stateData)
+    }
+    
+    // Update UI based on state
+    commandPalette.updateUIForState(newState, stateData)
+    
+    // Emit state change event
+    commandPalette.events.emit('state-changed', {
+      previousState: previousState,
+      currentState: newState,
+      stateData: stateData
+    })
+  },
+
+  /**
+   * Get current state information
+   * @returns {Object} Current state information
+   */
+  getState: function () {
+    return {
+      current: commandPalette.currentState,
+      previous: commandPalette.previousState,
+      isVisible: commandPalette.isVisible
+    }
+  },
+
+  /**
+   * Check if command palette is in a specific state
+   * @param {string} state - State to check
+   * @returns {boolean} True if in the specified state
+   */
+  isInState: function (state) {
+    return commandPalette.currentState === state
+  },
+
+  /**
+   * Update UI elements based on current state
+   * @param {string} state - Current state
+   * @param {StateData} stateData - State-specific data
+   */
+  updateUIForState: function (state, stateData = {}) {
+    // Reset input styling
+    commandPalette.input.classList.remove('repl-mode')
+    
+    switch (state) {
+      case STATES.EMPTY:
+        commandPalette.input.placeholder = 'Search tabs or type >w, >r...'
+        commandPalette.showTabs()
+        break
+        
+      case STATES.TAB_SEARCH:
+        commandPalette.input.placeholder = 'Search tabs...'
+        commandPalette.searchTabs(stateData.query || '')
+        break
+        
+      case STATES.VIM_COMMAND:
+        commandPalette.input.placeholder = 'Enter vim command (w, r, o, goo)...'
+        commandPalette.showVimCommands()
+        break
+        
+      case STATES.VIM_COMMAND_ARGS:
+        const command = stateData.command || ''
+        commandPalette.input.placeholder = command ? `${command} command...` : 'Enter command...'
+        commandPalette.handleVimCommandWithArgs(command, stateData.args || '')
+        break
+        
+      case STATES.REPL:
+        commandPalette.input.placeholder = 'Enter JavaScript code...'
+        commandPalette.input.classList.add('repl-mode')
+        commandPalette.renderReplHistory()
+        if (!commandPalette.input.value.startsWith('>>> ')) {
+          commandPalette.input.value = '>>> '
+          commandPalette.input.setSelectionRange(4, 4)
+        }
+        break
+    }
+  },
+
+  /**
+   * Determine state based on input value
+   * @param {string} inputValue - Current input value
+   * @returns {{state: string, data?: StateData}} State information with state and data
+   */
+  determineStateFromInput: function (inputValue) {
+    const trimmed = inputValue.trim()
+    
+    // REPL mode
+    if (trimmed === '>>>' || inputValue.startsWith('>>> ')) {
+      return { state: STATES.REPL }
+    }
+    
+    // Empty state
+    if (trimmed === '') {
+      return { state: STATES.EMPTY }
+    }
+    
+    // Vim commands
+    if (trimmed.startsWith('>')) {
+      const vimCommand = trimmed.substring(1).trim()
+      
+      // Just ">" - show vim commands
+      if (vimCommand === '') {
+        return { state: STATES.VIM_COMMAND }
+      }
+      
+      // Parse vim command and arguments
+      const parts = vimCommand.split(' ')
+      const commandName = parts[0].toLowerCase()
+      const commandArgs = parts.slice(1).join(' ')
+      
+      return {
+        state: STATES.VIM_COMMAND_ARGS,
+        data: { command: commandName, args: commandArgs }
+      }
+    }
+    
+    // Tab search
+    return {
+      state: STATES.TAB_SEARCH,
+      data: { query: trimmed }
+    }
   },
 
   /**
@@ -70,17 +249,8 @@ var commandPalette = {
     var webviews = require('webviews.js')
     webviews.requestPlaceholder('commandPalette')
 
-    commandPalette.selectedIndex = 0
     commandPalette.input.value = ''
-    commandPalette.isReplMode = false
-    
-    try {
-      commandPalette.showTabs()
-    } catch (e) {
-      console.error('Error showing tabs on command palette open:', e)
-      commandPalette.filteredCommands = []
-      commandPalette.renderSuggestions()
-    }
+    commandPalette.setState(STATES.EMPTY)
 
     setTimeout(() => {
       commandPalette.input.focus()
@@ -102,42 +272,16 @@ var commandPalette = {
     var webviews = require('webviews.js')
     webviews.requestPlaceholder('commandPalette')
 
-    commandPalette.selectedIndex = 0
     commandPalette.input.value = prefix
     
-    // Check if entering REPL mode
-    if (prefix === '>>>') {
-      commandPalette.enterReplMode()
-    } else {
-      commandPalette.handleInput()
-    }
+    // Determine state from prefix
+    const stateInfo = commandPalette.determineStateFromInput(prefix)
+    commandPalette.setState(stateInfo.state, stateInfo.data)
     
     setTimeout(() => {
       commandPalette.input.focus()
       commandPalette.input.setSelectionRange(prefix.length, prefix.length)
     }, 100)
-  },
-
-  /**
-   * Enter REPL mode
-   */
-  enterReplMode: function () {
-    commandPalette.isReplMode = true
-    commandPalette.input.value = '>>> '
-    commandPalette.input.placeholder = 'Enter JavaScript code...'
-    commandPalette.input.classList.add('repl-mode')
-    commandPalette.renderReplHistory()
-    commandPalette.input.setSelectionRange(4, 4) // Position cursor after >>>
-  },
-
-  /**
-   * Exit REPL mode
-   */
-  exitReplMode: function () {
-    commandPalette.isReplMode = false
-    commandPalette.input.placeholder = 'Search tabs or type >w, >r...'
-    commandPalette.input.classList.remove('repl-mode')
-    commandPalette.showTabs()
   },
 
   /**
@@ -150,8 +294,10 @@ var commandPalette = {
     commandPalette.el.hidden = true
     document.body.classList.remove('is-command-palette-mode')
     commandPalette.input.blur()
-    commandPalette.isReplMode = false
     commandPalette.input.classList.remove('repl-mode')
+    
+    // Reset to empty state
+    commandPalette.setState(STATES.EMPTY)
     
     var webviews = require('webviews.js')
     webviews.hidePlaceholder('commandPalette')
@@ -159,47 +305,36 @@ var commandPalette = {
 
   /**
    * Handle input changes in the command palette
-   * Routes to appropriate handlers based on input content
+   * Uses state machine to determine appropriate response
    */
   handleInput: function () {
-    const query = commandPalette.input.value.trim()
+    const inputValue = commandPalette.input.value
+    const stateInfo = commandPalette.determineStateFromInput(inputValue)
     
-    // Check for REPL mode entry
-    if (query === '>>>') {
-      commandPalette.enterReplMode()
-      return
+    // Only transition state if it actually changed
+    if (stateInfo.state !== commandPalette.currentState) {
+      commandPalette.setState(stateInfo.state, stateInfo.data)
+    } else if (stateInfo.data) {
+      // Update UI with new data if state is the same but data changed
+      commandPalette.updateUIForState(stateInfo.state, stateInfo.data)
     }
-    
-    // Handle REPL mode input
-    if (commandPalette.isReplMode) {
-      commandPalette.handleReplInput()
-      return
-    }
-    
-    if (query === '') {
-      commandPalette.showTabs()
-    } else if (query.startsWith('>')) {
-      commandPalette.handleVimCommand(query)
-    } else {
-      commandPalette.searchTabs(query)
-    }
-
-    commandPalette.selectedIndex = 0
   },
 
   /**
-   * Handle REPL mode input
+   * Show available vim commands
+   */
+  showVimCommands: function () {
+    commandPalette.filteredCommands = availableCommands.slice(0, 10) // Limit for shortcuts
+    commandPalette.renderSuggestions()
+  },
+
+  /**
+   * Handle REPL mode input updates
+   * Called when in REPL state to update display
    */
   handleReplInput: function () {
-    const input = commandPalette.input.value
-    if (input.startsWith('>>> ')) {
-      const code = input.substring(4).trim()
-      // Don't execute empty code, just update the display
-      if (code) {
-        // Code will be executed on Enter key press
-        // This function is just for display updates
-      }
-    }
+    // REPL input handling is now managed by the state system
+    // Additional REPL-specific logic can be added here if needed
   },
 
   /**
@@ -523,39 +658,46 @@ var commandPalette = {
     }
   },
 
+
+
   /**
-   * Handle vim-like commands starting with '>'
-   * @param {string} query - The full query string
+   * Handle vim-like commands with arguments starting with '>'
+   * @param {string} command - The command name (e.g., 'w', 'o', 'r')
+   * @param {string} args - The arguments for the command
    */
-  handleVimCommand: function (query) {
-    const vimCommand = query.substring(1).trim()
-    const parts = vimCommand.split(' ')
-    const commandName = parts[0].toLowerCase()
-    const commandArgs = parts.slice(1).join(' ')
-    
-    if (commandName === 'o') {
-      if (commandArgs) {
-        commandPalette.showOpenCandidates(commandArgs)
-      } else {
-        commandPalette.showOpenCandidates()
-      }
-    } else if (commandName === 'goo') {
-      // Show the command as a suggestion for Google search
-      commandPalette.filteredCommands = availableCommands.filter(cmd => 
-        cmd.id === 'goo'
-      )
-      commandPalette.renderSuggestions()
-    } else if (commandName === 'r') {
-      if (commandArgs) {
-        commandPalette.showReloadCandidates(commandArgs)
-      } else {
-        commandPalette.showReloadCandidates()
-      }
-    } else {
-      commandPalette.filteredCommands = availableCommands.filter(cmd => 
-        cmd.id.toLowerCase() === commandName
-      )
-      commandPalette.renderSuggestions()
+  handleVimCommandWithArgs: function (command, args) {
+    switch (command) {
+      case 'o':
+        if (args) {
+          commandPalette.showOpenCandidates(args)
+        } else {
+          commandPalette.showOpenCandidates()
+        }
+        break
+        
+      case 'r':
+        if (args) {
+          commandPalette.showReloadCandidates(args)
+        } else {
+          commandPalette.showReloadCandidates()
+        }
+        break
+        
+      case 'goo':
+        // Show the command as a suggestion for Google search
+        commandPalette.filteredCommands = availableCommands.filter(cmd => 
+          cmd.id === 'goo'
+        )
+        commandPalette.renderSuggestions()
+        break
+        
+      default:
+        // For other commands, show matching available commands
+        commandPalette.filteredCommands = availableCommands.filter(cmd => 
+          cmd.id.toLowerCase() === command
+        )
+        commandPalette.renderSuggestions()
+        break
     }
   },
 
@@ -639,13 +781,35 @@ var commandPalette = {
   },
 
   /**
+   * Handle state-specific keyboard events
+   * @param {KeyboardEvent} e - Keyboard event
+   * @returns {boolean} True if event was handled, false otherwise
+   */
+  handleStateSpecificKeydown: function (e) {
+    switch (commandPalette.currentState) {
+      case STATES.REPL:
+        commandPalette.handleReplKeydown(e)
+        return true
+        
+      case STATES.EMPTY:
+      case STATES.TAB_SEARCH:
+      case STATES.VIM_COMMAND:
+      case STATES.VIM_COMMAND_ARGS:
+        // These states use common keyboard handling
+        return false
+        
+      default:
+        return false
+    }
+  },
+
+  /**
    * Handle keyboard events in the command palette
    * @param {KeyboardEvent} e - Keyboard event
    */
   handleKeydown: function (e) {
-    // Handle REPL mode keyboard shortcuts
-    if (commandPalette.isReplMode) {
-      commandPalette.handleReplKeydown(e)
+    // Handle state-specific keyboard shortcuts
+    if (commandPalette.handleStateSpecificKeydown(e)) {
       return
     }
 
@@ -730,7 +894,7 @@ var commandPalette = {
 
       case 'Escape':
         e.preventDefault()
-        commandPalette.exitReplMode()
+        commandPalette.setState(STATES.EMPTY)
         break
 
       case 'ArrowUp':
@@ -877,5 +1041,8 @@ var commandPalette = {
 keybindings.defineShortcut('showCommandPalette', function () {
   commandPalette.showWithPrefix('>')
 })
+
+// Export states for external use
+commandPalette.STATES = STATES
 
 module.exports = commandPalette 
