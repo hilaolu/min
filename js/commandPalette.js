@@ -7,13 +7,15 @@ const StrategyManager = require('./commandPalette/StrategyManager.js')
 const EmptyStrategy = require('./commandPalette/strategies/EmptyStrategy.js')
 const TabSearchStrategy = require('./commandPalette/strategies/TabSearchStrategy.js')
 const VimCommandStrategy = require('./commandPalette/strategies/VimCommandStrategy.js')
-const OpenUrlStrategy = require('./commandPalette/strategies/OpenUrlStrategy.js')
-const ReloadUrlStrategy = require('./commandPalette/strategies/ReloadUrlStrategy.js')
+const VimCommandWithArgsStrategy = require('./commandPalette/strategies/VimCommandWithArgsStrategy.js')
 const ReplStrategy = require('./commandPalette/strategies/ReplStrategy.js')
-const VimCommandArgsStrategy = require('./commandPalette/strategies/VimCommandArgsStrategy.js')
 
 /**
  * Modern Command Palette with Strategy Pattern Architecture
+ * 
+ * This implementation uses the Strategy pattern to decouple command handling logic.
+ * Each command type (empty, tab search, vim commands, REPL) is implemented as a
+ * separate strategy with its own input matching, UI rendering, and action execution.
  * 
  * Features:
  * - Strategy-based state management for better maintainability
@@ -21,6 +23,11 @@ const VimCommandArgsStrategy = require('./commandPalette/strategies/VimCommandAr
  * - Automatic input pattern matching with priority resolution
  * - Extensible architecture for adding new command types
  * - Consistent keyboard navigation and shortcuts
+ * - Lazy loading and module caching for performance
+ * - Comprehensive error handling with fallback mechanisms
+ * 
+ * @author Command Palette Strategy System
+ * @version 2.0.0
  */
 var commandPalette = {
   // Core DOM elements
@@ -74,10 +81,8 @@ var commandPalette = {
       new EmptyStrategy(),
       new TabSearchStrategy(),
       new VimCommandStrategy(),
-      new OpenUrlStrategy(),
-      new ReloadUrlStrategy(),
-      new ReplStrategy(),
-      new VimCommandArgsStrategy()
+      new VimCommandWithArgsStrategy(),
+      new ReplStrategy()
     ]
 
     strategies.forEach(strategy => {
@@ -127,6 +132,10 @@ var commandPalette = {
       }
     } catch (error) {
       console.error('Error processing input:', error)
+      // Fallback to empty state on error
+      if (commandPalette.strategyManager) {
+        commandPalette.strategyManager.resetToFallback(context)
+      }
     }
   },
 
