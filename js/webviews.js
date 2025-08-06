@@ -43,8 +43,7 @@ var previewImageManager = {
     if (tabId === webviews.selectedId) {
       ipc.send('getCapture', {
         id: tabId,
-        width: Math.round(window.innerWidth / 10),
-        height: Math.round(window.innerHeight / 10)
+        scaleFactor: 0.1  // Capture at 1/10th scale regardless of DPI
       })
     }
   },

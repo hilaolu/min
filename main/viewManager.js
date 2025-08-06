@@ -444,12 +444,13 @@ ipc.on('getCapture', function (e, data) {
     return
   }
 
-  view.webContents.capturePage().then(function (img) {
+  // Use scaleFactor for consistent HiDPI handling
+  view.webContents.capturePage({ scaleFactor: data.scaleFactor }).then(function (img) {
     var size = img.getSize()
     if (size.width === 0 && size.height === 0) {
       return
     }
-    img = img.resize({ width: data.width, height: data.height })
+    
     e.sender.send('captureData', { id: data.id, url: img.toDataURL() })
   })
 })
