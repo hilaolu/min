@@ -9,6 +9,77 @@ var hasSeparateTitlebar = settings.get('useSeparateTitlebar')
 var windowIsMaximized = false // affects navbar height on Windows
 var windowIsFullscreen = false
 
+// Simple lazy capture system for webview placeholders
+var previewImageManager = {
+  // Track screenshot status per tab: { timestamp, valid }
+  status: {},
+  
+  // Maximum age for a screenshot to be considered valid (30 seconds)
+  maxAge: 30000,
+  
+  // Get preview image, return null if not available (truly lazy)
+  get: function (tabId) {
+    var tab = tabs.get(tabId)
+    if (!tab || tab.private) {
+      return null
+    }
+    
+    var status = this.status[tabId]
+    if (!status || !status.valid || !tab.previewImage) {
+      return null
+    }
+    
+    // Check if screenshot is still fresh
+    if ((Date.now() - status.timestamp) < this.maxAge) {
+      return tab.previewImage
+    }
+    
+    // Screenshot is too old
+    return null
+  },
+  
+  // Capture screenshot for tab (asynchronous)
+  capture: function (tabId) {
+    if (tabId === webviews.selectedId) {
+      ipc.send('getCapture', {
+        id: tabId,
+        width: Math.round(window.innerWidth / 10),
+        height: Math.round(window.innerHeight / 10)
+      })
+    }
+  },
+  
+  // Mark screenshot as captured (called when captureData arrives)
+  markCaptured: function (tabId) {
+    this.status[tabId] = {
+      timestamp: Date.now(),
+      valid: true
+    }
+  },
+  
+  // Invalidate screenshot (clear both status and image data)
+  invalidate: function (tabId) {
+    if (this.status[tabId]) {
+      this.status[tabId].valid = false
+    }
+    // Also clear the actual image data to prevent stale content
+    var tab = tabs.get(tabId)
+    if (tab) {
+      tabs.update(tabId, { previewImage: null })
+    }
+  },
+  
+  // Clear status for tab (used when tab is destroyed)
+  clear: function (tabId) {
+    delete this.status[tabId]
+    // Also clear the actual image data
+    var tab = tabs.get(tabId)
+    if (tab) {
+      tabs.update(tabId, { previewImage: null })
+    }
+  }
+}
+
 function captureCurrentTab (options) {
   if (tabs.get(tabs.getSelected()).private) {
     // don't capture placeholders for private tabs
@@ -20,12 +91,10 @@ function captureCurrentTab (options) {
     return
   }
 
-  ipc.send('getCapture', {
-    id: webviews.selectedId,
-    width: Math.round(window.innerWidth / 10),
-    height: Math.round(window.innerHeight / 10)
-  })
+  previewImageManager.capture(webviews.selectedId)
 }
+
+
 
 // called whenever a new page starts loading, or an in-page navigation occurs
 function onPageURLChange (tab, url) {
@@ -53,12 +122,15 @@ function onNavigate (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRo
 
 // called whenever the page finishes loading
 function onPageLoad (tabId) {
-  // capture a preview image if a new page has been loaded
-  if (tabId === tabs.getSelected()) {
-    setTimeout(function () {
-      // sometimes the page isn't visible until a short time after the did-finish-load event occurs
-      captureCurrentTab()
-    }, 250)
+  // Invalidate screenshot when page loads (don't capture automatically)
+  previewImageManager.invalidate(tabId)
+}
+
+// called when navigation starts (including reloads)
+function onNavigationStart (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
+  if (isMainFrame) {
+    // Invalidate screenshot when navigation starts
+    previewImageManager.invalidate(tabId)
   }
 }
 
@@ -267,12 +339,14 @@ const webviews = {
       // create a new placeholder
 
       var associatedTab = tasks.getTaskContainingTab(webviews.selectedId).tabs.get(webviews.selectedId)
-      var img = associatedTab.previewImage
+      var img = previewImageManager.get(webviews.selectedId)
       if (img) {
         placeholderImg.src = img
         placeholderImg.hidden = false
       } else if (associatedTab && associatedTab.url) {
-        captureCurrentTab({ forceCapture: true })
+        // No valid screenshot available, initiate capture
+        previewImageManager.capture(webviews.selectedId)
+        placeholderImg.hidden = true // Hide until capture completes
       } else {
         placeholderImg.hidden = true
       }
@@ -366,12 +440,19 @@ const webviews = {
   }
 }
 
+
+
 window.addEventListener('resize', throttle(function () {
   if (webviews.placeholderRequests.length > 0) {
     // can't set view bounds if the view is hidden
     return
   }
   webviews.resize()
+  
+  // Invalidate screenshot on resize since dimensions changed
+  if (webviews.selectedId) {
+    previewImageManager.invalidate(webviews.selectedId)
+  }
 }, 75))
 
 // leave HTML fullscreen when leaving window fullscreen
@@ -414,13 +495,32 @@ ipc.on('leave-full-screen', function () {
   webviews.resize()
 })
 
-webviews.bindEvent('did-start-navigation', onNavigate)
+webviews.bindEvent('did-start-navigation', onNavigationStart)
 webviews.bindEvent('will-redirect', onNavigate)
 webviews.bindEvent('did-navigate', function (tabId, url, httpResponseCode, httpStatusText) {
   onPageURLChange(tabId, url)
 })
 
 webviews.bindEvent('did-finish-load', onPageLoad)
+
+// Additional events to handle reloads and navigation more robustly
+webviews.bindEvent('did-start-loading', function (tabId) {
+  // Invalidate screenshot when page starts loading
+  previewImageManager.invalidate(tabId)
+})
+
+webviews.bindEvent('did-stop-loading', function (tabId) {
+  // Invalidate screenshot when loading stops (don't capture automatically)
+  previewImageManager.invalidate(tabId)
+})
+
+// Handle zoom level changes which affect the effective content size
+webviews.bindEvent('zoom-changed', function (tabId, zoomDirection) {
+  if (tabId === webviews.selectedId) {
+    // Invalidate screenshot after zoom change
+    previewImageManager.invalidate(tabId)
+  }
+})
 
 webviews.bindEvent('page-title-updated', function (tabId, title, explicitSet) {
   tabs.update(tabId, {
@@ -441,11 +541,14 @@ webviews.bindEvent('crashed', function (tabId, isKilled) {
     url: webviews.internalPages.error + '?ec=crash&url=' + encodeURIComponent(url)
   })
 
+  // Clear screenshot data for crashed tab
+  previewImageManager.clear(tabId)
+
   // the existing process has crashed, so we can't reuse it
   webviews.destroy(tabId)
   webviews.add(tabId)
 
-  if (tabId === tabs.getSelected()) {
+  if (tabId === webviews.selectedId) {
     webviews.setSelected(tabId)
   }
 })
@@ -510,12 +613,11 @@ ipc.on('view-ipc', function (e, args) {
   })
 })
 
-setInterval(function () {
-  captureCurrentTab()
-}, 15000)
+
 
 ipc.on('captureData', function (e, data) {
   tabs.update(data.id, { previewImage: data.url })
+  previewImageManager.markCaptured(data.id)
   if (data.id === webviews.selectedId && webviews.placeholderRequests.length > 0) {
     placeholderImg.src = data.url
     placeholderImg.hidden = false
