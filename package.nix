@@ -23,14 +23,14 @@
   nix-update-script,
 }:
 
-stdenv.mkDerivation (finalAttrs: {
+stdenv.mkDerivation (finalAttrs: rec {
   pname = "min";
-  version = "1.35.2";
+  version = "1.35.3";
 
   src = fetchurl {
-    url = "https://github.com/hilaolu/min/releases/download/v1.35.2/min-1.35.2-amd64.deb";
+    url = "https://github.com/hilaolu/min/releases/download/v${version}/min-${version}-amd64.deb";
 
-    hash = "sha256-v0Rv+5ztKNWNKJAGBMqvXRF25Jg4x+/iSnkb6anfjxc=";
+    hash = "sha256-2NwN8stB9HBdGS0ZZr63yezwV0i4L0Du4wbAr6zTLV8=";
   };
 
   nativeBuildInputs = [
