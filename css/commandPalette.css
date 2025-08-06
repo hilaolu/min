@@ -62,10 +62,47 @@
 
 .command-palette-suggestions {
   background: #fff;
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .dark-mode .command-palette-suggestions {
   background: rgb(33, 37, 43);
+}
+
+/* Command palette scrollbar styling */
+.command-palette-suggestions::-webkit-scrollbar {
+  width: 0.25em;
+}
+
+.command-palette-suggestions::-webkit-scrollbar-track {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.command-palette-suggestions::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.175);
+  border-radius: 0.25em;
+}
+
+.dark-mode .command-palette-suggestions::-webkit-scrollbar-track {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .command-palette-suggestions::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Responsive height adjustments */
+@media (max-height: 600px) {
+  .command-palette-suggestions {
+    max-height: 40vh;
+  }
+}
+
+@media (max-height: 400px) {
+  .command-palette-suggestions {
+    max-height: 30vh;
+  }
 }
 
 .command-suggestion {
