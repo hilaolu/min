@@ -80,6 +80,21 @@ class ReplStrategy extends CommandStateStrategy {
   }
 
   /**
+   * @param {Object} context - Command palette context
+   */
+  onExit(context) {
+    // Reset REPL history when exiting
+    this.replHistory = []
+    this.replInputHistory = []
+    this.replInputHistoryIndex = 0
+    
+    // Clear the suggestions area
+    if (context.suggestions) {
+      context.suggestions.innerHTML = ''
+    }
+  }
+
+  /**
    * Handle REPL-specific keyboard events
    * @param {KeyboardEvent} event - Keyboard event
    * @param {Object} context - Command palette context
