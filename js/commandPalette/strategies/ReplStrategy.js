@@ -223,6 +223,9 @@ class ReplStrategy extends CommandStateStrategy {
       this.replHistory.push(historyEntry)
       this.renderReplHistory(context)
       
+      // Scroll to show the newest result
+      context.suggestions.scrollTop = context.suggestions.scrollHeight
+      
       // Clear input and prepare for next command
       context.input.value = '>>> '
       context.input.setSelectionRange(4, 4)
@@ -244,16 +247,11 @@ class ReplStrategy extends CommandStateStrategy {
       return
     }
     
-    // Display history in reverse order (newest first)
-    const reversedHistory = [...this.replHistory].reverse()
-    
-    reversedHistory.forEach((entry) => {
+    // Display history in chronological order (oldest first)
+    this.replHistory.forEach((entry) => {
       const historyEl = this.createReplHistoryElement(entry)
       context.suggestions.appendChild(historyEl)
     })
-    
-    // Scroll to bottom to show latest entries
-    context.suggestions.scrollTop = context.suggestions.scrollHeight
   }
 
   /**
