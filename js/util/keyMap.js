@@ -38,7 +38,8 @@ var defaultKeyMap = {
   showCommandPaletteBlank: 'mod+t',
   showCommandPaletteWithBang: 'ctrl+period',
   showCommandPaletteWithOpen: 'mod+o',
-  showCommandPaletteRepl: 'ctrl+shift+period'
+  showCommandPaletteRepl: 'ctrl+shift+period',
+  toggleOverlay: 'ctrl+y'
 }
 /* Utility function to override default mapping with user settings */
 function userKeyMap (settings) {

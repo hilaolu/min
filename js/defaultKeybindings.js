@@ -290,6 +290,10 @@ const defaultKeybindings = {
       var commandPalette = require('commandPalette.js')
       commandPalette.showWithPrefix('>>>')
     })
+
+    keybindings.defineShortcut('toggleOverlay', function () {
+      ipc.send('toggleOverlay')
+    })
   }
 }
 

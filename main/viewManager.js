@@ -6,6 +6,9 @@ var temporaryPopupViews = {} // id: view
 // rate limit on "open in app" requests
 var globalLaunchRequests = 0
 
+// Import overlay manager (uses global overlayManager from concatenated build)
+var overlayManager = global.overlayManager || null
+
 function getDefaultViewWebPreferences () {
   return (
     {
@@ -262,6 +265,10 @@ function destroyAllViews () {
   for (const id in viewMap) {
     destroyView(id)
   }
+  // Also destroy the overlay view
+  if (overlayManager) {
+    overlayManager.destroy()
+  }
 }
 
 function setView (id, senderContents) {
@@ -467,3 +474,4 @@ ipc.on('saveViewCapture', function (e, data) {
 })
 
 global.getView = getView
+global.overlayManager = overlayManager

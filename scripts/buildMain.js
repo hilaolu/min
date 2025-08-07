@@ -11,6 +11,8 @@ const modules = [
   'main/touchbar.js',
   'main/registryConfig.js',
   'js/util/settings/settingsMain.js',
+  'main/overlayManager.js',
+  'main/overlayCounterExample.js',
   'main/main.js',
   'main/minInternalProtocol.js',
   'main/filtering.js',
