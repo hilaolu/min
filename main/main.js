@@ -534,33 +534,6 @@ app.on('ready', function() {
   })
 })
 
-/* overlay counter example */
-
-// Use the global functions from overlayCounterExample.js (available in concatenated build)
-ipc.on('toggleOverlay', function (e) {
-  if (typeof toggleCounterOverlay === 'function') {
-    toggleCounterOverlay()
-  }
-})
-
-ipc.on('showOverlay', function (e) {
-  if (typeof showCounterOverlay === 'function') {
-    showCounterOverlay()
-  }
-})
-
-ipc.on('hideOverlay', function (e) {
-  if (typeof hideCounterOverlay === 'function') {
-    hideCounterOverlay()
-  }
-})
-
-ipc.on('destroyOverlay', function (e) {
-  if (typeof destroyCounterOverlay === 'function') {
-    destroyCounterOverlay()
-  }
-})
-
 /* command palette overlay */
 
 // Use the global functions from commandPaletteOverlay.js (available in concatenated build)
