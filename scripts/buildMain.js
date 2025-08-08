@@ -13,6 +13,8 @@ const modules = [
   'js/util/settings/settingsMain.js',
   'main/overlayManager.js',
   'main/overlayCounterExample.js',
+  'main/commandPaletteOverlayTemplate.js',
+  'main/commandPaletteOverlay.js',
   'main/main.js',
   'main/minInternalProtocol.js',
   'main/filtering.js',
@@ -34,6 +36,22 @@ function buildMain () {
 
   /* concatenate modules */
   let output = ''
+  
+  // Load command palette overlay HTML template
+  const overlayHtmlPath = path.resolve(__dirname, '../pages/commandPalette/overlay.html')
+  let overlayHtml = ''
+  
+  try {
+    overlayHtml = fs.readFileSync(overlayHtmlPath, 'utf-8')
+    console.log('Successfully loaded command palette overlay HTML')
+  } catch (error) {
+    console.warn('Failed to load command palette overlay HTML:', error.message)
+    overlayHtml = '<div>Command Palette Overlay</div>'
+  }
+  
+  // Add the overlay HTML as a global variable
+  output += 'global.commandPaletteOverlayHTML = ' + JSON.stringify(overlayHtml) + ';\n'
+  
   modules.forEach(function (script) {
     output += fs.readFileSync(path.resolve(__dirname, '../', script)) + ';\n'
   })

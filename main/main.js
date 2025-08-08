@@ -96,7 +96,6 @@ var saveWindowBounds = function () {
 
 function sendIPCToWindow (window, action, data) {
   if (window && window.isDestroyed()) {
-    console.warn('ignoring message ' + action + ' sent to destroyed window')
     return
   }
 
@@ -561,3 +560,68 @@ ipc.on('destroyOverlay', function (e) {
     destroyCounterOverlay()
   }
 })
+
+/* command palette overlay */
+
+// Use the global functions from commandPaletteOverlay.js (available in concatenated build)
+ipc.on('initCommandPaletteOverlay', function (e) {
+  if (typeof initCommandPaletteOverlay === 'function') {
+    initCommandPaletteOverlay()
+  }
+})
+
+ipc.on('showCommandPaletteOverlay', function (e) {
+  if (typeof showCommandPaletteOverlay === 'function') {
+    showCommandPaletteOverlay()
+  }
+})
+
+ipc.on('hideCommandPaletteOverlay', function (e) {
+  if (typeof hideCommandPaletteOverlay === 'function') {
+    hideCommandPaletteOverlay()
+  }
+})
+
+// Unified command palette overlay UI update handler
+ipc.on('updateCommandPaletteOverlayUI', function (e, overlayState) {
+  if (typeof updateOverlayUI === 'function') {
+    try {
+      updateOverlayUI(overlayState)
+    } catch (error) {
+      // Silent fail for production - overlay will continue to work
+    }
+  }
+})
+
+// Keep essential handlers for overlay lifecycle management
+ipc.on('initCommandPaletteOverlay', function (e) {
+  if (typeof initCommandPaletteOverlay === 'function') {
+    initCommandPaletteOverlay()
+  }
+})
+
+ipc.on('showCommandPaletteOverlay', function (e) {
+  if (typeof showCommandPaletteOverlay === 'function') {
+    showCommandPaletteOverlay()
+  }
+})
+
+ipc.on('hideCommandPaletteOverlay', function (e) {
+  if (typeof hideCommandPaletteOverlay === 'function') {
+    hideCommandPaletteOverlay()
+  }
+})
+
+ipc.on('destroyCommandPaletteOverlay', function (e) {
+  if (typeof destroyCommandPaletteOverlay === 'function') {
+    destroyCommandPaletteOverlay()
+  }
+})
+
+// Remove old individual UI update handlers - replaced by unified updateOverlayUI
+// ipc.on('updateCommandPaletteOverlayInput', ...)
+// ipc.on('clearCommandPaletteOverlayInput', ...)
+// ipc.on('focusCommandPaletteOverlayInput', ...)
+// ipc.on('updateCommandPaletteOverlaySuggestions', ...)
+// ipc.on('updateCommandPaletteOverlaySelection', ...)
+// ipc.on('clearCommandPaletteOverlaySuggestions', ...)

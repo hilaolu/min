@@ -10,26 +10,20 @@ const VimCommandStrategy = require('./commandPalette/strategies/VimCommandStrate
 const VimCommandWithArgsStrategy = require('./commandPalette/strategies/VimCommandWithArgsStrategy.js')
 const ReplStrategy = require('./commandPalette/strategies/ReplStrategy.js')
 
-/**
- * Modern Command Palette with Strategy Pattern Architecture
- * 
- * This implementation uses the Strategy pattern to decouple command handling logic.
- * Each command type (empty, tab search, vim commands, REPL) is implemented as a
- * separate strategy with its own input matching, UI rendering, and action execution.
- * 
- * Features:
- * - Strategy-based state management for better maintainability
- * - Decoupled command logic (UI, regex, actions) in separate files
- * - Automatic input pattern matching with priority resolution
- * - Extensible architecture for adding new command types
- * - Consistent keyboard navigation and shortcuts
- * - Lazy loading and module caching for performance
- * - Comprehensive error handling with fallback mechanisms
- * 
- * @author Command Palette Strategy System
- * @version 2.0.0
- */
-var commandPalette = {
+// Constants for overlay communication
+const OVERLAY_CONSTANTS = {
+  DEFAULT_ICON: 'carbon:search',
+  MAX_DESCRIPTION_LENGTH: 60,
+  UPDATE_DEBOUNCE_MS: 50, // Debounce rapid updates
+  IPC_CHANNELS: {
+    SHOW: 'showCommandPaletteOverlay',
+    HIDE: 'hideCommandPaletteOverlay',
+    UPDATE_UI: 'updateCommandPaletteOverlayUI'
+  }
+}
+
+// Command palette object
+const commandPalette = {
   // Core DOM elements
   el: null,
   input: null,
@@ -40,11 +34,14 @@ var commandPalette = {
   selectedIndex: 0,
   currentCandidates: [],
   
-  // Strategy manager
+  // Strategy management
   strategyManager: null,
   
   // Event system
-  events: new EventEmitter(),
+  events: null,
+  
+  // Overlay update debouncing
+  overlayUpdateTimeout: null,
 
   /**
    * Initialize the command palette
@@ -70,7 +67,20 @@ var commandPalette = {
     // Set up event listeners
     commandPalette.setupEventListeners()
     
-    console.log('Command palette initialized with strategy pattern')
+    // Initialize overlay for command palette
+    commandPalette.initializeOverlay()
+    
+    console.log('Command palette initialized with strategy pattern and overlay integration')
+  },
+
+  /**
+   * Initialize the command palette overlay
+   */
+  initializeOverlay: function () {
+    // Send IPC message to initialize the command palette overlay
+    if (typeof window.ipc !== 'undefined') {
+      window.ipc.send('initCommandPaletteOverlay')
+    }
   },
 
   /**
@@ -122,6 +132,9 @@ var commandPalette = {
   handleInput: async function () {
     const inputValue = commandPalette.input.value
     const context = commandPalette.getContext()
+    
+    // Update the overlay input content with debouncing for better performance
+    commandPalette.updateOverlayUIDebounced({ input: inputValue })
     
     try {
       const stateChanged = await commandPalette.strategyManager.processInput(inputValue, context)
@@ -248,6 +261,11 @@ var commandPalette = {
     const context = commandPalette.getContext()
     commandPalette.strategyManager.resetToFallback(context)
 
+    // Show the overlay and clear its input and suggestions
+    commandPalette.showOverlay()
+    commandPalette.updateOverlayInput('')
+    commandPalette.clearOverlaySuggestions()
+
     setTimeout(() => {
       commandPalette.input.focus()
     }, 100)
@@ -275,6 +293,10 @@ var commandPalette = {
     // Process the input to determine initial state
     commandPalette.handleInput()
     
+    // Show the overlay and update its input with the prefix
+    commandPalette.showOverlay()
+    commandPalette.updateOverlayInput(prefix)
+    
     setTimeout(() => {
       commandPalette.input.focus()
       commandPalette.input.setSelectionRange(prefix.length, prefix.length)
@@ -298,6 +320,125 @@ var commandPalette = {
     
     var webviews = require('webviews.js')
     webviews.hidePlaceholder('commandPalette')
+    
+    // Hide the overlay and clear its input and suggestions
+    commandPalette.hideOverlay()
+    commandPalette.updateOverlayInput('')
+    commandPalette.clearOverlaySuggestions()
+  },
+
+  /**
+   * Update the overlay input content
+   * @param {string} inputValue - The new input value
+   */
+  updateOverlayInput: function (inputValue) {
+    commandPalette.updateOverlayUI({ input: inputValue })
+  },
+
+  /**
+   * Update suggestions in the overlay
+   * @param {Array} candidates - Array of candidate objects
+   */
+  updateOverlaySuggestions: function (candidates) {
+    commandPalette.updateOverlayUI({ candidates: candidates })
+  },
+
+  /**
+   * Update selection in the overlay
+   * @param {number} index - Index of the selected item
+   */
+  updateOverlaySelection: function (index) {
+    commandPalette.updateOverlayUI({ selectedIndex: index })
+  },
+
+  /**
+   * Clear suggestions in the overlay
+   */
+  clearOverlaySuggestions: function () {
+    commandPalette.updateOverlayUI({ candidates: [] })
+  },
+
+  /**
+   * Update the overlay UI with all current state
+   * @param {Object} state - Complete state object to sync
+   */
+  updateOverlayUI: function (state = {}) {
+    if (typeof window.ipc !== 'undefined') {
+      try {
+        // Build complete state object with fallbacks to current values
+        const overlayState = {
+          input: state.input ?? commandPalette.input.value ?? '',
+          candidates: state.candidates ?? commandPalette.currentCandidates ?? [],
+          selectedIndex: state.selectedIndex ?? commandPalette.selectedIndex ?? 0,
+          isVisible: state.isVisible ?? commandPalette.isVisible ?? false
+        }
+        
+        // Serialize candidates to only include display data for security
+        if (overlayState.candidates.length > 0) {
+          overlayState.candidates = overlayState.candidates.map(candidate => ({
+            title: candidate.title ?? '',
+            description: candidate.description ?? '',
+            icon: candidate.icon ?? OVERLAY_CONSTANTS.DEFAULT_ICON,
+            shortcut: candidate.shortcut ?? '',
+            displayData: candidate.displayData ?? {}
+          }))
+        }
+        
+        window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.UPDATE_UI, overlayState)
+      } catch (error) {
+        // Silent fail for production - overlay will continue to work
+      }
+    }
+  },
+
+  /**
+   * Debounced overlay UI update to prevent excessive updates
+   * @param {Object} state - Complete state object to sync
+   */
+  updateOverlayUIDebounced: function (state = {}) {
+    // Clear existing timeout
+    if (commandPalette.overlayUpdateTimeout) {
+      clearTimeout(commandPalette.overlayUpdateTimeout)
+    }
+    
+    // Set new timeout for debounced update
+    commandPalette.overlayUpdateTimeout = setTimeout(() => {
+      commandPalette.updateOverlayUI(state)
+    }, OVERLAY_CONSTANTS.UPDATE_DEBOUNCE_MS)
+  },
+
+  /**
+   * Show the overlay when command palette becomes visible
+   */
+  showOverlay: function () {
+    if (typeof window.ipc !== 'undefined') {
+      try {
+        window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.SHOW)
+        // Update overlay UI with current state after showing
+        commandPalette.updateOverlayUI({ isVisible: true })
+      } catch (error) {
+        // Silent fail for production - overlay will continue to work
+      }
+    }
+  },
+
+  /**
+   * Hide the overlay when command palette becomes hidden
+   */
+  hideOverlay: function () {
+    if (typeof window.ipc !== 'undefined') {
+      try {
+        // Clear any pending overlay updates
+        if (commandPalette.overlayUpdateTimeout) {
+          clearTimeout(commandPalette.overlayUpdateTimeout)
+          commandPalette.overlayUpdateTimeout = null
+        }
+        
+        window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.HIDE)
+      } catch (error) {
+        // Silent fail for production - overlay will continue to work
+      }
+    }
   },
 
   /**
@@ -323,6 +464,12 @@ var commandPalette = {
     commandPalette.currentCandidates = event.candidates || []
     commandPalette.updateSelection()
     
+    // Update overlay UI with new state
+    commandPalette.updateOverlayUI({
+      candidates: commandPalette.currentCandidates,
+      selectedIndex: commandPalette.selectedIndex
+    })
+    
     // Emit event for external listeners
     commandPalette.events.emit('state-changed', {
       previousStrategy: event.previousStrategy,
@@ -338,6 +485,12 @@ var commandPalette = {
   handleCandidatesUpdate: function (event) {
     commandPalette.currentCandidates = event.candidates || []
     commandPalette.updateSelection()
+    
+    // Update overlay UI with new candidates
+    commandPalette.updateOverlayUI({
+      candidates: commandPalette.currentCandidates,
+      selectedIndex: commandPalette.selectedIndex
+    })
   },
 
   /**
@@ -368,6 +521,11 @@ var commandPalette = {
       } else {
         suggestion.classList.remove('selected')
       }
+    })
+    
+    // Update overlay selection via unified interface
+    commandPalette.updateOverlayUI({
+      selectedIndex: commandPalette.selectedIndex
     })
   },
 

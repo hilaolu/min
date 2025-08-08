@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Command Palette Overlay</title>
+  <style>
+    /* Reset and base styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: transparent;
+      color: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Command Palette Container - matching the original design */
+    #command-palette-overlay {
+      width: 600px;
+      max-width: 90vw;
+      height: 450px;
+      padding: 0;
+      margin: 0;
+      overflow: hidden;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      box-sizing: border-box;
+    }
+
+    /* Dark mode support */
+    .dark-mode #command-palette-overlay {
+      background: rgb(33, 37, 43);
+      border-color: rgba(255, 255, 255, 0.1);
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+      color: #fff;
+    }
+
+    .command-palette-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .command-palette-input-container {
+      display: flex;
+      align-items: center;
+      padding: 1em 1.25em;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      background: #fff;
+    }
+
+    .dark-mode .command-palette-input-container {
+      border-bottom-color: rgba(255, 255, 255, 0.15);
+      background: rgb(33, 37, 43);
+    }
+
+    #command-palette-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-size: 1.1em;
+      background: transparent;
+      color: inherit;
+      font-family: inherit;
+    }
+
+    #command-palette-input::placeholder {
+      color: #999;
+      opacity: 0.7;
+    }
+
+    .dark-mode #command-palette-input::placeholder {
+      color: #666;
+    }
+
+    .command-palette-suggestions {
+      background: #fff;
+      flex: 1;
+      height: calc(450px - 4.5em);
+      overflow-y: auto;
+    }
+
+    .dark-mode .command-palette-suggestions {
+      background: rgb(33, 37, 43);
+    }
+
+    /* Command palette scrollbar styling */
+    .command-palette-suggestions::-webkit-scrollbar {
+      width: 0.25em;
+    }
+
+    .command-palette-suggestions::-webkit-scrollbar-track {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .command-palette-suggestions::-webkit-scrollbar-thumb {
+      background-color: rgba(0, 0, 0, 0.175);
+      border-radius: 0.25em;
+    }
+
+    .dark-mode .command-palette-suggestions::-webkit-scrollbar-track {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .dark-mode .command-palette-suggestions::-webkit-scrollbar-thumb {
+      background-color: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Responsive height adjustments - removed for fixed height */
+    /* The overlay now uses a fixed height of 450px to match the command palette */
+
+    .command-suggestion {
+      display: flex;
+      align-items: center;
+      padding: 0.4em 1.25em;
+      cursor: default;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      font-size: 0.95em;
+      color: inherit;
+      transition: background-color 0.15s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
+
+    .command-suggestion.selected {
+      background: rgba(0, 123, 255, 0.1);
+    }
+
+    .dark-mode .command-suggestion.selected {
+      background: rgba(0, 123, 255, 0.2);
+    }
+
+    .command-suggestion-icon {
+      width: 1.2em;
+      height: 1.2em;
+      margin-right: 0.75em;
+      opacity: 0.7;
+    }
+
+    .command-suggestion-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .command-suggestion-title {
+      font-weight: 500;
+      margin-bottom: 0.2em;
+    }
+
+    .command-suggestion-description {
+      font-size: 0.8em;
+      opacity: 0.7;
+      color: #666;
+    }
+
+    .dark-mode .command-suggestion-description {
+      color: #aaa;
+    }
+
+    .command-suggestion-shortcut {
+      font-size: 0.8em;
+      opacity: 0.6;
+      color: #999;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    }
+
+    .dark-mode .command-suggestion-shortcut {
+      color: #666;
+    }
+
+    .command-suggestion-number {
+      font-size: 0.75em;
+      opacity: 0.8;
+      color: #666;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+      font-weight: bold;
+      margin-right: 0.5em;
+      min-width: 1.2em;
+      text-align: center;
+    }
+
+    .dark-mode .command-suggestion-number {
+      color: #aaa;
+    }
+
+    /* Disable text selection and mouse interactions on command palette */
+    #command-palette-overlay,
+    .command-palette-suggestions {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+
+    .command-palette-empty {
+      padding: 2em 1.25em;
+      text-align: center;
+      opacity: 0.6;
+      color: #666;
+    }
+
+    .dark-mode .command-palette-empty {
+      color: #aaa;
+    }
+
+    /* Icon font support */
+    .i {
+      font-family: 'Carbon';
+      font-style: normal;
+      font-weight: normal;
+      font-variant: normal;
+      text-transform: none;
+      line-height: 1;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Placeholder for icon font - will be loaded by main process */
+    .i.carbon\:search::before { content: "🔍"; }
+    .i.carbon\:close::before { content: "✕"; }
+    .i.carbon\:new-tab::before { content: "➕"; }
+    .i.carbon\:bookmark::before { content: "🔖"; }
+    .i.carbon\:time::before { content: "⏰"; }
+    .i.carbon\:renew::before { content: "🔄"; }
+    .i.carbon\:new-window::before { content: "🪟"; }
+  </style>
+</head>
+<body>
+  <div id="command-palette-overlay">
+    <div class="command-palette-container">
+      <div class="command-palette-input-container">
+        <input type="text" id="command-palette-input" placeholder="Search tabs or type >w, >r..." readonly />
+      </div>
+      <div id="command-palette-suggestions" class="command-palette-suggestions has-thin-scrollbar">
+        <!-- Command suggestions will be populated here -->
+        <div class="command-palette-empty">
+          Type to search or use commands
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Command palette overlay state
+    let isVisible = false;
+    let selectedIndex = 0;
+    let currentCandidates = [];
+
+    // Get DOM elements
+    const input = document.getElementById('command-palette-input');
+    const suggestions = document.getElementById('command-palette-suggestions');
+
+    // Utility functions
+    /**
+     * Safely update DOM element content
+     * @param {HTMLElement} element - Element to update
+     * @param {string} content - Content to set
+     */
+    function safeUpdateElement(element, content) {
+      if (element && typeof content === 'string') {
+        element.innerHTML = content;
+      }
+    }
+
+    /**
+     * Validate candidate object structure
+     * @param {Object} candidate - Candidate object to validate
+     * @returns {boolean} True if valid
+     */
+    function isValidCandidate(candidate) {
+      return candidate && typeof candidate === 'object' && candidate.title;
+    }
+
+    /**
+     * Update the overlay input content (called via RPC)
+     * @param {string} content - The content to set in the overlay input
+     */
+    function updateOverlayInput(content) {
+      if (input) {
+        input.value = content ?? '';
+      }
+    }
+
+    /**
+     * Clear the overlay input content
+     */
+    function clearOverlayInput() {
+      updateOverlayInput('');
+    }
+
+    /**
+     * Focus the overlay input (for visual feedback)
+     */
+    function focusOverlayInput() {
+      if (input) {
+        input.focus();
+      }
+    }
+
+    /**
+     * Update suggestions in the overlay (called via RPC)
+     * @param {Array} candidates - Array of serialized candidate objects
+     */
+    function updateSuggestions(candidates) {
+      currentCandidates = candidates ?? [];
+      
+      // Use DocumentFragment for better performance
+      const fragment = document.createDocumentFragment();
+      
+      if (currentCandidates.length === 0) {
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'command-palette-empty';
+        emptyEl.textContent = 'No results found';
+        fragment.appendChild(emptyEl);
+      } else {
+        // Add new suggestions
+        currentCandidates.forEach((candidate, index) => {
+          // Skip invalid candidates
+          if (!isValidCandidate(candidate)) {
+            return;
+          }
+
+          const suggestionEl = document.createElement('button');
+          suggestionEl.className = 'command-suggestion';
+          
+          let description = candidate.description ?? '';
+          if (description && description.length > 60) {
+            description = description.substring(0, 60) + '...';
+          }
+
+          // Show keyboard shortcut number for candidates (0-9)
+          const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : '';
+
+          suggestionEl.innerHTML = `
+            ${shortcutNumber}
+            <i class="i ${candidate.icon ?? 'carbon:search'} command-suggestion-icon"></i>
+            <div class="command-suggestion-content">
+              <div class="command-suggestion-title">${candidate.title ?? 'Untitled'}</div>
+              ${description ? `<div class="command-suggestion-description">${description}</div>` : ''}
+            </div>
+            ${candidate.shortcut ? `<div class="command-suggestion-shortcut">${candidate.shortcut}</div>` : ''}
+          `;
+
+          // Disable mouse interactions since all interaction is handled by the command palette
+          const preventMouseInteraction = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          };
+          
+          suggestionEl.addEventListener('click', preventMouseInteraction);
+          suggestionEl.addEventListener('mousedown', preventMouseInteraction);
+          suggestionEl.addEventListener('mouseenter', preventMouseInteraction);
+
+          fragment.appendChild(suggestionEl);
+        });
+      }
+      
+      // Clear and update in one operation
+      suggestions.innerHTML = '';
+      suggestions.appendChild(fragment);
+    }
+
+    /**
+     * Update selection highlighting (called via RPC)
+     * @param {Object} selectionData - Selection data including index and candidate info
+     */
+    function updateSelection(selectionData) {
+      if (!selectionData) return;
+
+      selectedIndex = selectionData.index ?? 0;
+      const suggestionElements = suggestions.querySelectorAll('.command-suggestion');
+      
+      suggestionElements.forEach((suggestion, i) => {
+        if (i === selectedIndex) {
+          suggestion.classList.add('selected');
+          // Ensure the selected item is visible
+          suggestion.scrollIntoView({ block: 'nearest' });
+        } else {
+          suggestion.classList.remove('selected');
+        }
+      });
+    }
+
+    /**
+     * Clear all suggestions
+     */
+    function clearSuggestions() {
+      currentCandidates = [];
+      selectedIndex = 0;
+      suggestions.innerHTML = '<div class="command-palette-empty">Type to search or use commands</div>';
+    }
+
+    /**
+     * Show the overlay
+     */
+    function showOverlay() {
+      if (isVisible) return;
+      isVisible = true;
+      document.body.style.display = 'flex';
+      selectedIndex = 0;
+      input.value = '';
+    }
+
+    /**
+     * Hide the overlay
+     */
+    function hideOverlay() {
+      if (!isVisible) return;
+      isVisible = false;
+      document.body.style.display = 'none';
+      input.blur();
+      selectedIndex = 0;
+      currentCandidates = [];
+      clearSuggestions();
+    }
+
+    // Make functions available globally for RPC calls
+    window.updateOverlayInput = updateOverlayInput;
+    window.clearOverlayInput = clearOverlayInput;
+    window.focusOverlayInput = focusOverlayInput;
+    window.updateSuggestions = updateSuggestions;
+    window.updateSelection = updateSelection;
+    window.clearSuggestions = clearSuggestions;
+    window.showOverlay = showOverlay;
+    window.hideOverlay = hideOverlay;
+
+    // Check for dark mode
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.body.classList.add('dark-mode');
+    }
+  </script>
+</body>
+</html> 

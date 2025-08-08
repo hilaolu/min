@@ -40,7 +40,7 @@ var overlayManager = {
    * @param {Object} options - Overlay configuration options
    * @param {Object} options.size - Size of the overlay {width: number, height: number}
    * @param {Object|string} options.position - Position of the overlay {x: number, y: number} or 'center'
-   * @param {string} options.html - HTML content for the overlay (user provided)
+   * @param {string} options.html - HTML content for the overlay (user provided) or file path
    * @param {Object} options.webPreferences - Custom web preferences (optional)
    */
   init: function(options) {
@@ -85,14 +85,18 @@ var overlayManager = {
       window: null
     }
 
-    // Create the HTML content with user-provided HTML
-    const htmlContent = this.createHTMLContent(overlay)
-    
     // Create the WebContentsView
     overlay.view = new WebContentsView({ webPreferences: webPreferences })
     
-    // Load the HTML content
-    overlay.view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent))
+    // Load the HTML content - check if it's a file path or inline HTML
+    if (overlay.html.startsWith('file://') || overlay.html.startsWith('http')) {
+      // Load from file path or URL
+      overlay.view.webContents.loadURL(overlay.html)
+    } else {
+      // Load inline HTML content
+      const htmlContent = this.createHTMLContent(overlay)
+      overlay.view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent))
+    }
     
     // Ensure the overlay doesn't interfere with keyboard events
     overlay.view.webContents.setIgnoreMenuShortcuts(true)
