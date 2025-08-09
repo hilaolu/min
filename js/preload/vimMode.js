@@ -59,6 +59,9 @@ let lastSearchIndex = -1
 let lastMatchesForQuery = ''
 let computeMatchesTimeout = null
 
+// Visual mode state
+let isVisualMode = false
+
 // Reusable HUD indicator utility
 const HUD = (function () {
   let hudEl = null
@@ -129,10 +132,44 @@ function setupEventListeners() {
 
   // Keydown handler (capture phase so we can suppress site handlers)
   document.addEventListener('keydown', function (e) {
+    // Global emergency exit to NORMAL mode
+    if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isSearchMode) exitSearchMode(true)
+      if (isVisualMode) exitVisualMode()
+      if (isLinkKeyMode) { hideLinkKeys(); blockKeybindings.blur() }
+      exitToNormalMode()
+      updateSearchIndicator()
+      return
+    }
+    // Visual mode handling
+    if (isVisualMode) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') { exitVisualMode(); return }
+      if (e.key === 'y' && !e.ctrlKey && !e.metaKey && !e.altKey) { copyCurrentSelection(); return }
+      if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(true); return }
+      if (e.key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(false); return }
+      return
+    }
+
     // Search mode has priority
     if (isSearchMode) {
       e.preventDefault();
       e.stopPropagation();
+      if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Enter visual mode from search mode
+        lastSearchQuery = searchBuffer
+        ensureMatchesForQuery(lastSearchQuery)
+        if (lastSearchMatches.length > 0) {
+          if (lastSearchIndex < 0) lastSearchIndex = 0
+          selectMatchAt(lastSearchIndex)
+        }
+        exitSearchMode()
+        enterVisualMode()
+        return
+      }
       if (e.key === 'Escape') {
         exitSearchMode(true)
         return
@@ -205,6 +242,20 @@ function setupEventListeners() {
 
   // Keyup handler for commands (capture phase as well)
   document.addEventListener('keyup', function (e) {
+    // Also allow entering visual mode on keyup while in search mode
+    if (isSearchMode && e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      lastSearchQuery = searchBuffer
+      ensureMatchesForQuery(lastSearchQuery)
+      if (lastSearchMatches.length > 0) {
+        if (lastSearchIndex < 0) lastSearchIndex = 0
+        selectMatchAt(lastSearchIndex)
+      }
+      exitSearchMode()
+      enterVisualMode()
+      return
+    }
     // Enter search mode on '/'
     if (!isSearchMode && !isLinkKeyMode && !isCurrentlyInInput() && e.key === '/') {
       e.preventDefault();
@@ -236,6 +287,13 @@ function setupEventListeners() {
     if (e.ctrlKey && e.key === 'c') {
       e.preventDefault();
       e.stopPropagation();
+      // Always leave visual/search modes
+      if (isSearchMode) {
+        exitSearchMode(true)
+      }
+      if (isVisualMode) {
+        exitVisualMode()
+      }
       if (isLinkKeyMode) {
         hideLinkKeys()
         blockKeybindings.blur()
@@ -243,6 +301,9 @@ function setupEventListeners() {
         // Exit to normal mode - blur any focused element
         exitToNormalMode()
       }
+      // Show last search info briefly in normal mode, if any
+      updateSearchIndicator()
+      
     } else if (!isCurrentlyInInput() && !isLinkKeyMode &&
                (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'F') &&
                !e.ctrlKey && !e.metaKey) {
@@ -298,6 +359,7 @@ function setupEventListeners() {
 function enterSearchMode() {
   isSearchMode = true
   searchBuffer = ''
+  try { document.body.focus() } catch (e) {}
   HUD.set(`/${searchBuffer}`)
   // Kick off initial match computation (will be 0/0)
   scheduleComputeMatches()
@@ -312,6 +374,8 @@ function exitSearchMode(cancelOnly = false) {
 }
 
 function updateSearchIndicator() {
+  // Don't override visual HUD while in visual mode
+  if (isVisualMode) return
   if (isSearchMode) {
     const total = (searchBuffer && lastMatchesForQuery === searchBuffer) ? lastSearchMatches.length : 0
     const current = (lastSearchQuery === searchBuffer && lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
@@ -415,6 +479,99 @@ function navigateMatch(backwards = false) {
     lastSearchIndex = (lastSearchIndex + (backwards ? -1 : 1) + total) % total
   }
   selectMatchAt(lastSearchIndex)
+}
+
+// Visual mode helpers
+function enterVisualMode() {
+  isVisualMode = true
+  try { document.body.focus() } catch (e) {}
+  // Ensure there is a selection; if none, try to select current match or start of body
+  const sel = window.getSelection()
+  if (!sel.rangeCount) {
+    if (lastSearchMatches.length > 0 && lastSearchIndex >= 0) {
+      selectMatchAt(lastSearchIndex)
+    } else {
+      const range = document.createRange()
+      const root = document.body.firstChild
+      if (root) {
+        try { range.setStart(root, 0); range.setEnd(root, 0); sel.removeAllRanges(); sel.addRange(range) } catch (e) {}
+      }
+    }
+  }
+  updateVisualIndicator()
+}
+
+function exitVisualMode() {
+  isVisualMode = false
+  // After leaving visual, show last search briefly if available
+  updateSearchIndicator()
+}
+
+function updateVisualIndicator() {
+  const sel = window.getSelection()
+  let len = 0
+  try { len = (sel && sel.toString()) ? sel.toString().length : 0 } catch (e) { len = 0 }
+  const total = (lastMatchesForQuery === lastSearchQuery) ? lastSearchMatches.length : (lastSearchQuery ? '?' : 0)
+  const current = (lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
+  HUD.set(`VISUAL ${current}/${total} (${len} chars)`) 
+}
+
+function extendSelectionByWord(forward = true) {
+  const sel = window.getSelection()
+  if (!sel) return
+  try {
+    // If collapsed, start extending from current caret
+    sel.modify('extend', forward ? 'forward' : 'backward', 'word')
+  } catch (e) {
+    // Fallback: move by character
+    try { sel.modify('extend', forward ? 'forward' : 'backward', 'character') } catch (e2) {}
+  }
+  // Manual word-boundary fallback if still collapsed
+  try {
+    if (sel.isCollapsed && sel.focusNode && typeof sel.focusOffset === 'number') {
+      const node = sel.focusNode
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.nodeValue || ''
+        let start = sel.anchorOffset
+        let end = sel.focusOffset
+        if (forward) {
+          // Move end to next word boundary
+          const rest = text.slice(end)
+          const m = rest.match(/\w+\b/)
+          if (m) end += m.index + m[0].length
+          else end = text.length
+        } else {
+          // Move start to previous word boundary
+          const left = text.slice(0, start)
+          const m = left.match(/\b\w+$/)
+          if (m) start = left.lastIndexOf(m[0])
+          else start = 0
+        }
+        const r = document.createRange()
+        r.setStart(node, Math.max(0, Math.min(start, text.length)))
+        r.setEnd(node, Math.max(0, Math.min(end, text.length)))
+        sel.removeAllRanges(); sel.addRange(r)
+      }
+    }
+  } catch (e) {}
+  updateVisualIndicator()
+}
+
+function copyCurrentSelection() {
+  const sel = window.getSelection()
+  const text = sel ? sel.toString() : ''
+  if (text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(() => copyToClipboard(text))
+      } else {
+        copyToClipboard(text)
+      }
+    } catch (e) { copyToClipboard(text) }
+    HUD.show('Copied selection')
+  } else {
+    HUD.show('Nothing selected', 800)
+  }
 }
 
 // Create link hint element
