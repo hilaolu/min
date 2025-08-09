@@ -25,9 +25,7 @@ const OVERLAY_CONSTANTS = {
 // Command palette object
 const commandPalette = {
   // Core DOM elements
-  el: null,
   input: null,
-  suggestions: null,
   
   // State management
   isVisible: false,
@@ -48,13 +46,11 @@ const commandPalette = {
    * Sets up DOM elements, strategies, and event listeners
    */
   initialize: function () {
-    // Get DOM elements
-    commandPalette.el = document.getElementById('command-palette')
+    // Get DOM elements - only input is required now, overlay handles the UI
     commandPalette.input = document.getElementById('command-palette-input')
-    commandPalette.suggestions = document.getElementById('command-palette-suggestions')
 
-    if (!commandPalette.el || !commandPalette.input || !commandPalette.suggestions) {
-      console.error('Command palette DOM elements not found')
+    if (!commandPalette.input) {
+      console.error('Command palette input element not found')
       return
     }
 
@@ -70,7 +66,7 @@ const commandPalette = {
     // Initialize overlay for command palette
     commandPalette.initializeOverlay()
     
-    console.log('Command palette initialized with strategy pattern and overlay integration')
+    console.log('Command palette initialized with overlay-only mode')
   },
 
   /**
@@ -111,13 +107,6 @@ const commandPalette = {
     // Input event listener
     commandPalette.input.addEventListener('input', commandPalette.handleInput)
     commandPalette.input.addEventListener('keydown', commandPalette.handleKeydown)
-
-    // Close when clicking outside
-    commandPalette.el.addEventListener('click', function (e) {
-      if (e.target === commandPalette.el) {
-        commandPalette.hide()
-      }
-    })
 
     // Strategy manager event listeners
     commandPalette.strategyManager.on('state-changed', commandPalette.handleStateChange)
@@ -246,9 +235,6 @@ const commandPalette = {
     if (commandPalette.isVisible) return
 
     commandPalette.isVisible = true
-    commandPalette.el.hidden = false
-    
-    document.body.classList.add('is-command-palette-mode')
 
     // Reset state
     commandPalette.selectedIndex = 0
@@ -276,9 +262,6 @@ const commandPalette = {
     if (commandPalette.isVisible) return
 
     commandPalette.isVisible = true
-    commandPalette.el.hidden = false
-    
-    document.body.classList.add('is-command-palette-mode')
 
     // Set input value and process it
     commandPalette.selectedIndex = 0
@@ -304,8 +287,6 @@ const commandPalette = {
     if (!commandPalette.isVisible) return
 
     commandPalette.isVisible = false
-    commandPalette.el.hidden = true
-    document.body.classList.remove('is-command-palette-mode')
     commandPalette.input.blur()
     
     // Reset state
@@ -439,7 +420,6 @@ const commandPalette = {
   getContext: function () {
     return {
       input: commandPalette.input,
-      suggestions: commandPalette.suggestions,
       selectedIndex: commandPalette.selectedIndex,
       isVisible: commandPalette.isVisible,
       events: commandPalette.events
@@ -505,15 +485,6 @@ const commandPalette = {
    * Update selection highlighting in UI
    */
   updateSelection: function () {
-    const suggestions = commandPalette.suggestions.querySelectorAll('.command-suggestion')
-    suggestions.forEach((suggestion, index) => {
-      if (index === commandPalette.selectedIndex) {
-        suggestion.classList.add('selected')
-      } else {
-        suggestion.classList.remove('selected')
-      }
-    })
-    
     // Update overlay selection via unified interface
     commandPalette.updateOverlayUI({
       selectedIndex: commandPalette.selectedIndex

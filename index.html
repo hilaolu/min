@@ -248,16 +248,9 @@
       </button>
     </div>
 
-    <div id="command-palette" hidden>
-      <div class="command-palette-container">
-        <div class="command-palette-input-container">
-          <input type="text" id="command-palette-input" placeholder="Search tabs or type >w, >r..." />
-        </div>
-        <div id="command-palette-suggestions" class="command-palette-suggestions has-thin-scrollbar">
-          <!-- Command suggestions will be populated here -->
-        </div>
-      </div>
-    </div>
+    <!-- Command palette input (UI handled by overlay window) -->
+    <input type="text" id="command-palette-input" placeholder="Search tabs or type >w, >r..." 
+           style="position: absolute; top: -9999px; left: -9999px; opacity: 0; pointer-events: none;" />
 
     <div id="download-bar" hidden>
       <div id="download-container" role="list" class="has-thin-scrollbar"></div>
