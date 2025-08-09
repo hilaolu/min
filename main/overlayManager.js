@@ -330,6 +330,36 @@ var overlayManager = {
   isVisible: function() {
     const overlay = this.currentOverlay
     return overlay ? overlay.visible : false
+  },
+
+  /**
+   * Recenter overlay in the current window using current size
+   */
+  recenter: function(win) {
+    const overlay = this.currentOverlay
+    if (!overlay || !overlay.view) return
+    if (!win) {
+      win = typeof windows !== 'undefined' ? windows.getCurrent() : null
+    }
+    if (!win) return
+
+    const winBounds = win.getContentBounds()
+    let overlayX, overlayY
+    if (overlay.position === 'center') {
+      overlayX = Math.max(0, (winBounds.width - overlay.size.width) / 2)
+      overlayY = Math.max(0, (winBounds.height - overlay.size.height) / 2)
+    } else {
+      overlayX = overlay.position.x || 0
+      overlayY = overlay.position.y || 0
+    }
+    try {
+      overlay.view.setBounds({
+        x: overlayX,
+        y: overlayY,
+        width: overlay.size.width,
+        height: overlay.size.height
+      })
+    } catch (e) {}
   }
 }
 

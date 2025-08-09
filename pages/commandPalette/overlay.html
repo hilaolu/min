@@ -24,31 +24,29 @@
 
     /* Command Palette Container - matching the original design */
     #command-palette-overlay {
-      width: 600px;
-      max-width: 90vw;
-      height: 450px;
+      /* Fill the electron view exactly */
+      width: 100%;
+      height: 100%;
       padding: 0;
       margin: 0;
       overflow: hidden;
       background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
-      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 0; /* Rectangular corners to match view */
+      box-shadow: none; /* No outer shadow to avoid mismatch */
+      border: none; /* Let the view edge be the boundary */
       box-sizing: border-box;
     }
 
     /* Dark mode support */
     .dark-mode #command-palette-overlay {
       background: rgb(33, 37, 43);
-      border-color: rgba(255, 255, 255, 0.1);
-      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
       color: #fff;
     }
 
     .command-palette-container {
       display: flex;
       flex-direction: column;
-      height: 100%;
+      height: 100%; /* Fill overlay */
     }
 
     .command-palette-input-container {
@@ -56,12 +54,12 @@
       align-items: center;
       padding: 1em 1.25em;
       border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-      background: #fff;
+      background: transparent;
     }
 
     .dark-mode .command-palette-input-container {
       border-bottom-color: rgba(255, 255, 255, 0.15);
-      background: rgb(33, 37, 43);
+      background: transparent;
     }
 
     #command-palette-input {
@@ -84,14 +82,13 @@
     }
 
     .command-palette-suggestions {
-      background: #fff;
+      background: transparent;
       flex: 1;
-      height: calc(450px - 4.5em);
       overflow-y: auto;
     }
 
     .dark-mode .command-palette-suggestions {
-      background: rgb(33, 37, 43);
+      background: transparent;
     }
 
     /* Command palette scrollbar styling */

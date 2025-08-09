@@ -253,6 +253,11 @@ function createWindowWithBounds (bounds, customArgs) {
     setTimeout(function () {
       const winBounds = newWin.getContentBounds()
       mainView.setBounds({x: 0, y: 0, width: winBounds.width, height: winBounds.height})
+      try {
+        if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
+          global.overlayManager.recenter(newWin)
+        }
+      } catch (e) {}
     }, 0)
   })
 
@@ -278,10 +283,20 @@ function createWindowWithBounds (bounds, customArgs) {
 
   newWin.on('maximize', function () {
     sendIPCToWindow(newWin, 'maximize')
+    try {
+      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
+        global.overlayManager.recenter(newWin)
+      }
+    } catch (e) {}
   })
 
   newWin.on('unmaximize', function () {
     sendIPCToWindow(newWin, 'unmaximize')
+    try {
+      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
+        global.overlayManager.recenter(newWin)
+      }
+    } catch (e) {}
   })
   
   newWin.on('focus', function () {
@@ -297,12 +312,22 @@ function createWindowWithBounds (bounds, customArgs) {
 
   newWin.on('enter-full-screen', function () {
     sendIPCToWindow(newWin, 'enter-full-screen')
+    try {
+      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
+        global.overlayManager.recenter(newWin)
+      }
+    } catch (e) {}
   })
 
   newWin.on('leave-full-screen', function () {
     sendIPCToWindow(newWin, 'leave-full-screen')
     // https://github.com/minbrowser/min/issues/1093
     newWin.setMenuBarVisibility(false)
+    try {
+      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
+        global.overlayManager.recenter(newWin)
+      }
+    } catch (e) {}
   })
 
   newWin.on('enter-html-full-screen', function () {

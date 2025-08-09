@@ -86,6 +86,13 @@ function showCommandPaletteOverlay() {
   } catch (error) {
     // Silent fail for production - overlay will continue to work
   }
+
+  // After showing, ensure bounds are recalculated to center within current window size
+  try {
+    if (typeof commandPaletteOverlayManager.recenter === 'function') {
+      commandPaletteOverlayManager.recenter()
+    }
+  } catch (e) {}
 }
 
 /**
@@ -122,6 +129,13 @@ function updateOverlayUI(overlayState) {
   }
 
   try {
+    // Ensure overlay stays centered if window size changed recently
+    try {
+      if (typeof commandPaletteOverlayManager.recenter === 'function') {
+        commandPaletteOverlayManager.recenter()
+      }
+    } catch (e) {}
+
     // Update input content if provided
     if (overlayState.input !== undefined) {
       safeRpcEval(`
