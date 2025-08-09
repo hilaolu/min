@@ -327,6 +327,12 @@ const commandPalette = {
     commandPalette.hideOverlay()
     commandPalette.updateOverlayInput('')
     commandPalette.clearOverlaySuggestions()
+
+    // Ensure the active tab regains focus
+    try {
+      var webviews = require('webviews.js')
+      webviews.focus()
+    } catch (e) {}
   },
 
   /**
