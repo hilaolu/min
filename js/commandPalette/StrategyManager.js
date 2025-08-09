@@ -168,25 +168,8 @@ class StrategyManager {
       // Update UI
       const candidates = await newStrategy.updateUI(context.input.value, data, context)
       
-      // Update placeholder and input styling
-      context.input.placeholder = newStrategy.getPlaceholder(data)
-      
-      // Clean up CSS classes from previous strategy
-      // This ensures text color and styling resets properly (e.g., repl-mode blue text)
-      if (previousStrategy) {
-        const previousClasses = previousStrategy.getInputClasses()
-        previousClasses.forEach(cls => context.input.classList.remove(cls))
-      }
-      
-      // Remove any legacy strategy-* pattern classes for compatibility
-      context.input.className = context.input.className.replace(/strategy-\w+/g, '')
-      
-      // Apply CSS classes for new strategy
-      const inputClasses = newStrategy.getInputClasses()
-      if (inputClasses.length > 0) {
-        context.input.classList.add(...inputClasses)
-      }
-      
+      // No direct DOM styling; overlay handles all visuals
+       
       this.emit('state-changed', {
         previousStrategy: previousStrategy?.stateName || null,
         currentStrategy: newStrategy.stateName,

@@ -136,11 +136,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
       const { command, args } = data
       const candidates = await this.generateCandidates(command, args)
 
-      // Update UI
-      if (context.suggestions) {
-        this.renderCandidates(candidates, context, command, args)
-      }
-
+      // No direct DOM updates; overlay will render candidates
       return candidates
     } catch (error) {
       console.error(`Error updating UI for vim command '${data.command}':`, error)
@@ -497,126 +493,11 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
     return ['vim-command-with-args-mode']
   }
 
-  /**
-   * Render candidates in the UI
-   * @param {Array} candidates - Candidates to render
-   * @param {Object} context - Command palette context
-   * @param {string} command - Command name
-   * @param {string} args - Command arguments
-   */
-  renderCandidates(candidates, context, command, args) {
-    context.suggestions.innerHTML = ''
-
-    if (candidates.length === 0) {
-      const emptyEl = document.createElement('div')
-      emptyEl.className = 'command-palette-empty'
-      
-      const config = COMMAND_CONFIG[command]
-      const emptyText = config?.emptyMessage?.(args) || 'Command not found'
-      
-      emptyEl.textContent = emptyText
-      context.suggestions.appendChild(emptyEl)
-      return
-    }
-
-    candidates.forEach((candidate, index) => {
-      const suggestionEl = this.createSuggestionElement(candidate, index, context, args)
-      context.suggestions.appendChild(suggestionEl)
-    })
-  }
-
-  /**
-   * Create a suggestion element
-   * @param {Object} candidate - Candidate object
-   * @param {number} index - Index of the candidate
-   * @param {Object} context - Command palette context
-   * @param {string} searchQuery - Search query for highlighting
-   * @returns {HTMLElement} Suggestion element
-   */
-  createSuggestionElement(candidate, index, context, searchQuery = '') {
-    const suggestionEl = document.createElement('button')
-    suggestionEl.className = 'command-suggestion vim-command-with-args'
-    
-    // Highlight search terms in title and description
-    const highlightedTitle = this.highlightSearchTerm(candidate.title, searchQuery)
-    let highlightedDescription = this.highlightSearchTerm(candidate.description, searchQuery)
-    
-    // Truncate long descriptions
-    if (highlightedDescription.length > 80) {
-      highlightedDescription = highlightedDescription.substring(0, 80) + '...'
-    }
-
-    // Show keyboard shortcut number for candidates (0-9)
-    const shortcutNumber = index < 10 ? 
-      `<div class="command-suggestion-number">${index}</div>` : ''
-
-    suggestionEl.innerHTML = `
-      ${shortcutNumber}
-      <i class="i ${candidate.icon} command-suggestion-icon"></i>
-      <div class="command-suggestion-content">
-        <div class="command-suggestion-title">${highlightedTitle}</div>
-        <div class="command-suggestion-description">${highlightedDescription}</div>
-      </div>
-      ${candidate.shortcut ? `<div class="command-suggestion-shortcut">${candidate.shortcut}</div>` : ''}
-    `
-
-    // Add selected class if this is the currently selected item
-    if (index === (context.selectedIndex || 0)) {
-      suggestionEl.classList.add('selected')
-    }
-
-    // Disable mouse interactions to prevent interference with keyboard navigation
-    this.disableMouseInteractions(suggestionEl)
-
-    return suggestionEl
-  }
-
-  /**
-   * Disable mouse interactions on suggestion element
-   * @param {HTMLElement} element - Element to disable mouse interactions on
-   */
-  disableMouseInteractions(element) {
-    const preventMouseInteraction = (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    
-    element.addEventListener('click', preventMouseInteraction)
-    element.addEventListener('mousedown', preventMouseInteraction)
-    element.addEventListener('mouseenter', preventMouseInteraction)
-  }
-
-  /**
-   * Highlight search terms in text
-   * @param {string} text - Text to highlight
-   * @param {string} searchQuery - Search query
-   * @returns {string} Text with highlighted search terms
-   */
-  highlightSearchTerm(text, searchQuery) {
-    if (!text || !searchQuery) {
-      return text || ''
-    }
-
-    // Escape HTML to prevent XSS
-    const escapeHtml = (str) => {
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
-    }
-
-    const escapedText = escapeHtml(text)
-    const escapedQuery = escapeHtml(searchQuery)
-    
-    try {
-      // Case-insensitive highlighting
-      const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
-      return escapedText.replace(regex, '<mark>$1</mark>')
-    } catch (error) {
-      // If regex fails, return original text
-      console.warn('Error highlighting search term:', error)
-      return escapedText
-    }
-  }
+  // No-op DOM methods for overlay-only architecture
+  renderCandidates() { return }
+  createSuggestionElement() { return null }
+  disableMouseInteractions() { return }
+  highlightSearchTerm(text) { return text || '' }
 }
 
 module.exports = VimCommandWithArgsStrategy 

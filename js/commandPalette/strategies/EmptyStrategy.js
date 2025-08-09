@@ -61,11 +61,7 @@ class EmptyStrategy extends CommandStateStrategy {
         }
       }))
 
-      // Update UI
-      if (context.suggestions) {
-        this.renderCandidates(candidates, context)
-      }
-
+      // No direct DOM updates; overlay will render candidates
       return candidates
     } catch (e) {
       console.error('Error showing tabs:', e)
@@ -90,71 +86,18 @@ class EmptyStrategy extends CommandStateStrategy {
 
   /**
    * Render candidates in the UI
-   * @param {Array} candidates - Candidates to render
-   * @param {Object} context - Command palette context
+   * (overlay handles UI, so this is a no-op)
    */
   renderCandidates(candidates, context) {
-    context.suggestions.innerHTML = ''
-
-    if (candidates.length === 0) {
-      const emptyEl = document.createElement('div')
-      emptyEl.className = 'command-palette-empty'
-      emptyEl.textContent = 'No tabs available'
-      context.suggestions.appendChild(emptyEl)
-      return
-    }
-
-    candidates.forEach((candidate, index) => {
-      const suggestionEl = this.createSuggestionElement(candidate, index, context)
-      context.suggestions.appendChild(suggestionEl)
-    })
+    return
   }
 
   /**
    * Create a suggestion element for the UI
-   * @param {Object} candidate - Candidate object
-   * @param {number} index - Index of the candidate
-   * @param {Object} context - Command palette context
-   * @returns {HTMLElement} Suggestion element
+   * (overlay handles UI, so this returns null)
    */
   createSuggestionElement(candidate, index, context) {
-    const suggestionEl = document.createElement('button')
-    suggestionEl.className = 'command-suggestion'
-    
-    let description = candidate.description
-    if (description && description.length > 60) {
-      description = description.substring(0, 60) + '...'
-    }
-
-    // Show keyboard shortcut number for candidates (0-9)
-    const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : ''
-
-    suggestionEl.innerHTML = `
-      ${shortcutNumber}
-      <i class="i ${candidate.icon} command-suggestion-icon"></i>
-      <div class="command-suggestion-content">
-        <div class="command-suggestion-title">${candidate.title}</div>
-        <div class="command-suggestion-description">${description}</div>
-      </div>
-      ${candidate.shortcut ? `<div class="command-suggestion-shortcut">${candidate.shortcut}</div>` : ''}
-    `
-
-    // Add selected class if this is the currently selected item
-    if (index === (context.selectedIndex || 0)) {
-      suggestionEl.classList.add('selected')
-    }
-
-    // Disable mouse interactions to prevent interference with keyboard navigation
-    const preventMouseInteraction = (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    
-    suggestionEl.addEventListener('click', preventMouseInteraction)
-    suggestionEl.addEventListener('mousedown', preventMouseInteraction)
-    suggestionEl.addEventListener('mouseenter', preventMouseInteraction)
-
-    return suggestionEl
+    return null
   }
 }
 
