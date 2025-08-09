@@ -249,9 +249,6 @@ const commandPalette = {
     commandPalette.el.hidden = false
     
     document.body.classList.add('is-command-palette-mode')
-    
-    var webviews = require('webviews.js')
-    webviews.requestPlaceholder('commandPalette')
 
     // Reset state
     commandPalette.selectedIndex = 0
@@ -282,9 +279,6 @@ const commandPalette = {
     commandPalette.el.hidden = false
     
     document.body.classList.add('is-command-palette-mode')
-    
-    var webviews = require('webviews.js')
-    webviews.requestPlaceholder('commandPalette')
 
     // Set input value and process it
     commandPalette.selectedIndex = 0
@@ -317,9 +311,6 @@ const commandPalette = {
     // Reset state
     commandPalette.selectedIndex = 0
     commandPalette.currentCandidates = []
-    
-    var webviews = require('webviews.js')
-    webviews.hidePlaceholder('commandPalette')
     
     // Hide the overlay and clear its input and suggestions
     commandPalette.hideOverlay()
