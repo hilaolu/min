@@ -54,6 +54,9 @@ const commandPalette = {
       return
     }
 
+    // Initialize event emitter
+    commandPalette.events = new EventEmitter()
+
     // Initialize strategy manager
     commandPalette.strategyManager = new StrategyManager()
     
@@ -229,6 +232,20 @@ const commandPalette = {
   },
 
   /**
+   * Ensure the hidden input receives focus reliably
+   */
+  focusInputWithRetry: function () {
+    // Try immediately
+    try { commandPalette.input.focus() } catch (e) {}
+    // Retry after overlay manager refocuses the main window
+    setTimeout(() => {
+      if (document.activeElement !== commandPalette.input) {
+        try { commandPalette.input.focus() } catch (e) {}
+      }
+    }, 220)
+  },
+
+  /**
    * Show the command palette
    */
   show: function () {
@@ -249,9 +266,7 @@ const commandPalette = {
     commandPalette.updateOverlayInput('')
     commandPalette.clearOverlaySuggestions()
 
-    setTimeout(() => {
-      commandPalette.input.focus()
-    }, 100)
+    commandPalette.focusInputWithRetry()
   },
 
   /**
@@ -275,9 +290,18 @@ const commandPalette = {
     commandPalette.updateOverlayInput(prefix)
     
     setTimeout(() => {
-      commandPalette.input.focus()
-      commandPalette.input.setSelectionRange(prefix.length, prefix.length)
-    }, 100)
+      try {
+        commandPalette.input.focus()
+        commandPalette.input.setSelectionRange(prefix.length, prefix.length)
+      } catch (e) {}
+    }, 50)
+
+    setTimeout(() => {
+      try {
+        commandPalette.input.focus()
+        commandPalette.input.setSelectionRange(prefix.length, prefix.length)
+      } catch (e) {}
+    }, 220)
   },
 
   /**

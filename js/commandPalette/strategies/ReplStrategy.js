@@ -38,18 +38,39 @@ class ReplStrategy extends CommandStateStrategy {
   }
 
   /**
+   * Build a serialized history array for overlay rendering
+   */
+  getSerializedHistory() {
+    return this.replHistory.map(entry => ({
+      id: entry.id,
+      input: String(entry.input ?? ''),
+      output: entry.output,
+      isError: !!entry.isError,
+      timestamp: entry.timestamp?.toISOString?.() || null
+    }))
+  }
+
+  /**
    * @param {string} input - Current input value
    * @param {Object} data - Extracted data from input matching
    * @param {Object} context - Command palette context
-   * @returns {Promise<Array>} Array of candidates (empty for REPL)
+   * @returns {Promise<Array>} Array of candidates (special REPL payload)
    */
   async updateUI(input, data, context) {
-    // REPL mode doesn't show candidates, it shows history
-    if (context.suggestions) {
-      this.renderReplHistory(context)
-    }
-    
-    return [] // No candidates in REPL mode
+    // Provide a single sentinel candidate that carries REPL history for the overlay
+    const historyPayload = this.getSerializedHistory()
+
+    return [
+      {
+        title: 'JavaScript REPL',
+        description: historyPayload.length === 0 ? 'Type JavaScript after >>> and press Enter' : 'History',
+        icon: 'carbon:terminal',
+        displayData: {
+          mode: 'repl',
+          history: historyPayload
+        }
+      }
+    ]
   }
 
   /**
@@ -87,11 +108,7 @@ class ReplStrategy extends CommandStateStrategy {
     this.replHistory = []
     this.replInputHistory = []
     this.replInputHistoryIndex = 0
-    
-    // Clear the suggestions area
-    if (context.suggestions) {
-      context.suggestions.innerHTML = ''
-    }
+    // No direct DOM manipulation here; overlay will reset via next update
   }
 
   /**
@@ -109,6 +126,12 @@ class ReplStrategy extends CommandStateStrategy {
           const code = input.substring(4).trim()
           if (code) {
             this.executeReplCode(code, context)
+          } else {
+            // Even with empty code, keep caret after prompt
+            context.input.value = '>>> '
+            context.input.setSelectionRange(4, 4)
+            // Trigger UI refresh to keep overlay in sync
+            context.input.dispatchEvent(new Event('input', { bubbles: true }))
           }
         }
         return true
@@ -153,6 +176,8 @@ class ReplStrategy extends CommandStateStrategy {
         const historyCode = this.replInputHistory[this.replInputHistoryIndex]
         context.input.value = `>>> ${historyCode}`
         context.input.setSelectionRange(4 + historyCode.length, 4 + historyCode.length)
+        // Refresh overlay
+        context.input.dispatchEvent(new Event('input', { bubbles: true }))
       }
     } else if (direction === 'down') {
       if (this.replInputHistoryIndex < this.replInputHistory.length - 1) {
@@ -160,10 +185,14 @@ class ReplStrategy extends CommandStateStrategy {
         const historyCode = this.replInputHistory[this.replInputHistoryIndex]
         context.input.value = `>>> ${historyCode}`
         context.input.setSelectionRange(4 + historyCode.length, 4 + historyCode.length)
+        // Refresh overlay
+        context.input.dispatchEvent(new Event('input', { bubbles: true }))
       } else if (this.replInputHistoryIndex === this.replInputHistory.length - 1) {
         this.replInputHistoryIndex++
         context.input.value = '>>> '
         context.input.setSelectionRange(4, 4)
+        // Refresh overlay
+        context.input.dispatchEvent(new Event('input', { bubbles: true }))
       }
     }
   }
@@ -181,8 +210,16 @@ class ReplStrategy extends CommandStateStrategy {
       return
     }
     
-    // Check if there's a current tab
-    const currentTab = tabs.getSelected()
+    // Safely access current tab from global tabs if available
+    let currentTab = null
+    try {
+      if (typeof tabs !== 'undefined' && tabs && typeof tabs.getSelected === 'function') {
+        currentTab = tabs.getSelected()
+      }
+    } catch (e) {
+      // ignore
+    }
+    
     if (!currentTab) {
       const historyEntry = {
         id: this.replHistory.length + 1,
@@ -192,9 +229,10 @@ class ReplStrategy extends CommandStateStrategy {
         timestamp: new Date()
       }
       this.replHistory.push(historyEntry)
-      this.renderReplHistory(context)
+      // Reset prompt and refresh overlay
       context.input.value = '>>> '
       context.input.setSelectionRange(4, 4)
+      context.input.dispatchEvent(new Event('input', { bubbles: true }))
       return
     }
     
@@ -203,108 +241,42 @@ class ReplStrategy extends CommandStateStrategy {
     this.replInputHistoryIndex = this.replInputHistory.length
     
     // Execute code in the current tab
-    webviews.callAsync(currentTab, 'executeJavaScript', code, (err, result) => {
+    try {
+      webviews.callAsync(currentTab, 'executeJavaScript', code, (err, result) => {
+        const historyEntry = {
+          id: this.replHistory.length + 1,
+          input: code,
+          timestamp: new Date()
+        }
+        
+        if (err) {
+          historyEntry.output = `Error: ${err.message || err}`
+          historyEntry.isError = true
+        } else {
+          historyEntry.output = result
+          historyEntry.isError = false
+        }
+        
+        this.replHistory.push(historyEntry)
+        
+        // Reset prompt and refresh overlay
+        context.input.value = '>>> '
+        context.input.setSelectionRange(4, 4)
+        context.input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    } catch (e) {
       const historyEntry = {
         id: this.replHistory.length + 1,
         input: code,
+        output: `Error: ${e.message || e}`,
+        isError: true,
         timestamp: new Date()
       }
-      
-      if (err) {
-        // Handle errors
-        historyEntry.output = `Error: ${err.message || err}`
-        historyEntry.isError = true
-      } else {
-        // Add to history
-        historyEntry.output = result
-        historyEntry.isError = false
-      }
-      
       this.replHistory.push(historyEntry)
-      this.renderReplHistory(context)
-      
-      // Scroll to show the newest result
-      context.suggestions.scrollTop = context.suggestions.scrollHeight
-      
-      // Clear input and prepare for next command
       context.input.value = '>>> '
       context.input.setSelectionRange(4, 4)
-    })
-  }
-
-  /**
-   * Render REPL history in Jupyter-like format
-   * @param {Object} context - Command palette context
-   */
-  renderReplHistory(context) {
-    context.suggestions.innerHTML = ''
-    
-    if (this.replHistory.length === 0) {
-      const emptyEl = document.createElement('div')
-      emptyEl.className = 'repl-empty'
-      emptyEl.textContent = 'No commands executed yet. Type JavaScript code and press Enter.'
-      context.suggestions.appendChild(emptyEl)
-      return
+      context.input.dispatchEvent(new Event('input', { bubbles: true }))
     }
-    
-    // Display history in chronological order (oldest first)
-    this.replHistory.forEach((entry) => {
-      const historyEl = this.createReplHistoryElement(entry)
-      context.suggestions.appendChild(historyEl)
-    })
-  }
-
-  /**
-   * Create a REPL history element
-   * @param {Object} entry - History entry object
-   * @returns {HTMLElement} History element
-   */
-  createReplHistoryElement(entry) {
-    const historyEl = document.createElement('div')
-    historyEl.className = 'repl-history-entry'
-    
-    const isError = entry.isError || false
-    const outputClass = isError ? 'repl-output-error' : 'repl-output'
-    
-    // Format output for better display
-    let outputText = String(entry.output)
-    if (entry.output === null) {
-      outputText = 'null'
-    } else if (entry.output === undefined) {
-      outputText = 'undefined'
-    } else if (typeof entry.output === 'object') {
-      try {
-        outputText = JSON.stringify(entry.output, null, 2)
-      } catch (e) {
-        outputText = entry.output.toString()
-      }
-    }
-    
-    historyEl.innerHTML = `
-      <div class="repl-input-line">
-        <span class="repl-prompt-label">In</span>
-        <span class="repl-prompt-number">[${entry.id}]:</span>
-        <span class="repl-input-code">${this.escapeHtml(entry.input)}</span>
-      </div>
-      <div class="repl-output-line">
-        <span class="repl-prompt-label">Out</span>
-        <span class="repl-prompt-number">[${entry.id}]:</span>
-        <span class="${outputClass}">${this.escapeHtml(outputText)}</span>
-      </div>
-    `
-    
-    return historyEl
-  }
-
-  /**
-   * Escape HTML to prevent XSS
-   * @param {string} text - Text to escape
-   * @returns {string} Escaped text
-   */
-  escapeHtml(text) {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
   }
 }
 

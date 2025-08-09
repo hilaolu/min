@@ -240,6 +240,73 @@
     .i.carbon\:time::before { content: "⏰"; }
     .i.carbon\:renew::before { content: "🔄"; }
     .i.carbon\:new-window::before { content: "🪟"; }
+
+    /* REPL specific styles */
+    .repl-empty {
+      padding: 2em 1.25em;
+      text-align: center;
+      opacity: 0.6;
+      color: #666;
+    }
+
+    .dark-mode .repl-empty {
+      color: #aaa;
+    }
+
+    .repl-history-entry {
+      padding: 0.5em 1.25em;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      background: #f9f9f9;
+    }
+
+    .dark-mode .repl-history-entry {
+      background: rgb(33, 37, 43);
+      border-bottom-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .repl-input-line, .repl-output-line {
+      display: flex;
+      align-items: center;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+      font-size: 0.9em;
+      color: #333;
+    }
+
+    .dark-mode .repl-input-line, .dark-mode .repl-output-line {
+      color: #ccc;
+    }
+
+    .repl-prompt-label {
+      font-weight: bold;
+      margin-right: 0.5em;
+      opacity: 0.7;
+    }
+
+    .repl-prompt-number {
+      font-weight: bold;
+      margin-right: 0.5em;
+      opacity: 0.8;
+      color: #666;
+    }
+
+    .dark-mode .repl-prompt-number {
+      color: #aaa;
+    }
+
+    .repl-input-code {
+      flex: 1;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-weight: bold;
+    }
+
+    .repl-output-error {
+      color: #dc3545; /* Red for errors */
+    }
+
+    .repl-output {
+      color: #28a745; /* Green for output */
+    }
   </style>
 </head>
 <body>
@@ -320,6 +387,70 @@
      */
     function updateSuggestions(candidates) {
       currentCandidates = candidates ?? [];
+      
+      // REPL special rendering
+      const isReplPayload = currentCandidates.length === 1 && currentCandidates[0] && currentCandidates[0].displayData && currentCandidates[0].displayData.mode === 'repl';
+      if (isReplPayload) {
+        const history = currentCandidates[0].displayData.history || [];
+        const fragment = document.createDocumentFragment();
+
+        if (history.length === 0) {
+          const emptyEl = document.createElement('div');
+          emptyEl.className = 'repl-empty';
+          emptyEl.textContent = 'No commands executed yet. Type JavaScript code and press Enter.';
+          fragment.appendChild(emptyEl);
+        } else {
+          history.forEach((entry) => {
+            const historyEl = document.createElement('div');
+            historyEl.className = 'repl-history-entry';
+
+            // Format output
+            let outputText = String(entry.output);
+            if (entry.output === null) {
+              outputText = 'null';
+            } else if (entry.output === undefined) {
+              outputText = 'undefined';
+            } else if (typeof entry.output === 'object') {
+              try {
+                outputText = JSON.stringify(entry.output, null, 2);
+              } catch (e) {
+                outputText = String(entry.output);
+              }
+            }
+
+            const isError = !!entry.isError;
+            const outputClass = isError ? 'repl-output-error' : 'repl-output';
+
+            historyEl.innerHTML = `
+              <div class="repl-input-line">
+                <span class="repl-prompt-label">In</span>
+                <span class="repl-prompt-number">[${entry.id}]:</span>
+                <span class="repl-input-code"></span>
+              </div>
+              <div class="repl-output-line">
+                <span class="repl-prompt-label">Out</span>
+                <span class="repl-prompt-number">[${entry.id}]:</span>
+                <span class="${outputClass}"></span>
+              </div>
+            `;
+
+            // Escape and set text
+            const setText = (el, text) => {
+              const div = document.createElement('div');
+              div.textContent = text;
+              el.innerHTML = div.innerHTML;
+            };
+            setText(historyEl.querySelector('.repl-input-code'), String(entry.input ?? ''));
+            setText(historyEl.querySelector(`.${outputClass}`), outputText);
+
+            fragment.appendChild(historyEl);
+          });
+        }
+
+        suggestions.innerHTML = '';
+        suggestions.appendChild(fragment);
+        return;
+      }
       
       // Use DocumentFragment for better performance
       const fragment = document.createDocumentFragment();
