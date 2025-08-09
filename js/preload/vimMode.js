@@ -62,6 +62,23 @@ let computeMatchesTimeout = null
 // Visual mode state
 let isVisualMode = false
 
+// Generic command buffer (for multi-key commands & link hints)
+let cmdBuffer = ''
+let cmdBufferTimer = null
+function clearCmdBuffer() {
+  cmdBuffer = ''
+  if (cmdBufferTimer) { clearTimeout(cmdBufferTimer); cmdBufferTimer = null }
+}
+function bufferAppend(ch) {
+  cmdBuffer += ch
+  if (cmdBufferTimer) clearTimeout(cmdBufferTimer)
+  cmdBufferTimer = setTimeout(clearCmdBuffer, VIM_CONFIG.keyTimeout)
+}
+function bufferBackspace() {
+  cmdBuffer = cmdBuffer.slice(0, -1)
+  if (cmdBufferTimer) { clearTimeout(cmdBufferTimer); cmdBufferTimer = setTimeout(clearCmdBuffer, VIM_CONFIG.keyTimeout) }
+}
+
 // Reusable HUD indicator utility
 const HUD = (function () {
   let hudEl = null
@@ -101,12 +118,215 @@ const HUD = (function () {
 // Expose for reuse by other features running in the page context
 try { if (!window.__minHUD) window.__minHUD = HUD } catch (e) {}
 
+// ===============
+// Strategy Pattern
+// ===============
+class VimStateStrategy {
+  getName() { return 'BASE' }
+  onEnter(ctx) {}
+  onExit(ctx) {}
+  handleKeydown(e, ctx) { return false }
+  handleKeyup(e, ctx) { return false }
+}
+
+class NormalStrategy extends VimStateStrategy {
+  getName() { return 'NORMAL' }
+  handleKeydown(e, ctx) {
+    // Emergency exit handled globally by manager
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      ctx.transition('SEARCH')
+      return true
+    }
+    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey && ctx.lastSearchQuery) {
+      ctx.ensureMatchesForQuery(ctx.lastSearchQuery)
+      if (ctx.lastSearchMatches.length > 0) {
+        if (ctx.lastSearchIndex < 0) ctx.lastSearchIndex = 0
+        selectMatchAt(ctx.lastSearchIndex)
+      }
+      ctx.transition('VISUAL')
+      return true
+    }
+    if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey && ctx.lastSearchQuery) {
+      navigateMatch(e.key === 'N')
+      return true
+    }
+    // Link hints
+    if ((e.key === 'f' || e.key === 'F' || e.key === 'c') && !e.ctrlKey && !e.metaKey && !e.altKey && !isCurrentlyInInput()) {
+      // Set global action used by onTextTyped
+      linkAction = (e.key === 'F') ? 'openInNewTab' : (e.key === 'c' ? 'copyToClipboard' : 'open')
+      showLinkKeys()
+      try { blockKeybindings.select() } catch (e) {}
+      ctx.transition('LINK_HINT')
+      return true
+    }
+    // Scrolling and nav
+    if (!isCurrentlyInInput()) {
+      if (e.key === 'k' && !e.ctrlKey) { window.scrollBy(0, -VIM_CONFIG.scrollAmount); return true }
+      if (e.key === 'l' && !e.ctrlKey) { window.scrollBy(0, VIM_CONFIG.scrollAmount); return true }
+      if (e.ctrlKey && e.key === 'k') { window.scrollBy(0, -VIM_CONFIG.quickScrollAmount); return true }
+      if (e.ctrlKey && e.key === 'l') { window.scrollBy(0, VIM_CONFIG.quickScrollAmount); return true }
+      if (e.ctrlKey && e.key === 'j') { window.history.back(); return true }
+      if (e.ctrlKey && e.key === ';') { window.history.forward(); return true }
+      if (e.key === 'G' && !e.ctrlKey) { window.scrollTo(0, document.body.scrollHeight); return true }
+      // Buffered multi-key yy / gg handled in legacy handler below; keep fallback
+    }
+    return false
+  }
+}
+
+class SearchStrategy extends VimStateStrategy {
+  getName() { return 'SEARCH' }
+  onEnter(ctx) {
+    ctx.isSearchMode = true
+    ctx.searchBuffer = ''
+    try { document.body.focus() } catch (e) {}
+    HUD.set(`/${ctx.searchBuffer}`)
+    scheduleComputeMatches()
+  }
+  onExit(ctx) {
+    ctx.isSearchMode = false
+  }
+  handleKeydown(e, ctx) {
+    // Esc no longer exits; use Ctrl+C globally
+    if (e.key === 'Enter') {
+      ctx.lastSearchQuery = ctx.searchBuffer
+      ensureMatchesForQuery(ctx.lastSearchQuery)
+      if (ctx.lastSearchMatches.length > 0) { ctx.lastSearchIndex = 0; selectMatchAt(ctx.lastSearchIndex) }
+      ctx.transition('NORMAL')
+      return true
+    }
+    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      ctx.lastSearchQuery = ctx.searchBuffer
+      ensureMatchesForQuery(ctx.lastSearchQuery)
+      if (ctx.lastSearchMatches.length > 0) { if (ctx.lastSearchIndex < 0) ctx.lastSearchIndex = 0; selectMatchAt(ctx.lastSearchIndex) }
+      ctx.transition('VISUAL')
+      return true
+    }
+    if (e.key === 'Backspace') {
+      ctx.searchBuffer = ctx.searchBuffer.slice(0, -1)
+      updateSearchIndicator()
+      scheduleComputeMatches()
+      return true
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      ctx.searchBuffer += e.key
+      updateSearchIndicator()
+      scheduleComputeMatches()
+      return true
+    }
+    return false
+  }
+}
+
+class VisualStrategy extends VimStateStrategy {
+  getName() { return 'VISUAL' }
+  onEnter(ctx) { try { document.body.focus() } catch (e) {} updateVisualIndicator() }
+  handleKeydown(e, ctx) {
+    // Esc no longer exits; use Ctrl+C globally
+    if (e.key === 'y' && !e.ctrlKey && !e.metaKey && !e.altKey) { copyCurrentSelection(); return true }
+    if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(true); return true }
+    if (e.key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(false); return true }
+    if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey && ctx.lastSearchQuery) {
+      navigateMatch(e.key === 'N'); return true
+    }
+    return false
+  }
+}
+
+class LinkHintStrategy extends VimStateStrategy {
+  getName() { return 'LINK_HINT' }
+  onEnter(ctx) {
+    isLinkKeyMode = true
+    // Reset buffers for fresh hint session
+    typedText = ''
+    ctx.bufferClear()
+    try { blockKeybindings.select() } catch (e) {}
+    // Show initial count
+    try { HUD.show(`HINTS: ${currentLinkItems.length}`, 800) } catch (e) {}
+  }
+  onExit(ctx) {
+    isLinkKeyMode = false
+    hideLinkKeys()
+    ctx.bufferClear(); typedText = ''
+    try { blockKeybindings.blur() } catch (e) {}
+  }
+  handleKeydown(e, ctx) {
+    // Prevent page handlers and process immediately
+    // Esc no longer exits; use Ctrl+C globally
+    if (e.key === 'Backspace') { ctx.bufferBackspace(); typedText = ctx.buffer; processLinkHintBuffer(); return true }
+    const keyLower = e.key.toLowerCase()
+    if (VIM_CONFIG.alphabet.includes(keyLower)) { ctx.bufferAppend(keyLower); typedText = ctx.buffer; processLinkHintBuffer(); return true }
+    return false
+  }
+  handleKeyup(e, ctx) {
+    const keyLower = e.key.toLowerCase()
+    // Esc no longer exits; use Ctrl+C globally
+    if (VIM_CONFIG.alphabet.includes(keyLower)) { /* handled in keydown */ return true }
+    return false
+  }
+}
+
+class VimStateManager {
+  constructor() {
+    this.ctx = {
+      get isSearchMode() { return isSearchMode }, set isSearchMode(v) { isSearchMode = v },
+      get searchBuffer() { return searchBuffer }, set searchBuffer(v) { searchBuffer = v },
+      get lastSearchQuery() { return lastSearchQuery }, set lastSearchQuery(v) { lastSearchQuery = v },
+      get lastSearchMatches() { return lastSearchMatches }, set lastSearchMatches(v) { lastSearchMatches = v },
+      get lastSearchIndex() { return lastSearchIndex }, set lastSearchIndex(v) { lastSearchIndex = v },
+      get buffer() { return cmdBuffer },
+      set buffer(v) { cmdBuffer = v },
+      bufferAppend: (ch) => bufferAppend(ch),
+      bufferBackspace: () => bufferBackspace(),
+      bufferClear: () => clearCmdBuffer(),
+      linkAction: null,
+      transition: (name) => this.transition(name),
+      ensureMatchesForQuery: (q) => ensureMatchesForQuery(q)
+    }
+    this.strategies = {
+      NORMAL: new NormalStrategy(),
+      SEARCH: new SearchStrategy(),
+      VISUAL: new VisualStrategy(),
+      LINK_HINT: new LinkHintStrategy()
+    }
+    this.current = this.strategies.NORMAL
+  }
+  transition(name) {
+    if (this.current && this.current.onExit) this.current.onExit(this.ctx)
+    this.current = this.strategies[name] || this.strategies.NORMAL
+    // Clear command buffer on state change
+    clearCmdBuffer()
+    if (this.current && this.current.onEnter) this.current.onEnter(this.ctx)
+  }
+  processKeydown(e) {
+    // Global Ctrl+C
+    if (e.ctrlKey && e.key === 'c') {
+      e.preventDefault(); e.stopPropagation();
+      if (isSearchMode) this.transition('NORMAL')
+      if (this.current.getName() !== 'NORMAL') this.transition('NORMAL')
+      HUD.show('NORMAL', 1200)
+      return true
+    }
+    return this.current.handleKeydown(e, this.ctx) === true
+  }
+  processKeyup(e) {
+    // Allow LINK_HINT to consume keyup letters
+    if (this.current.handleKeyup) return this.current.handleKeyup(e, this.ctx) === true
+    return false
+  }
+}
+
+let vimManager = null
+
 // Initialize Vim mode
 function initVimMode() {
   // Create hidden input for blocking keybindings
   blockKeybindings = document.createElement('input')
   blockKeybindings.style = 'position: fixed; top: 0; left: -9999px;'
   document.body.appendChild(blockKeybindings)
+
+  // Create manager
+  vimManager = new VimStateManager()
 
   // Set up event listeners
   setupEventListeners()
@@ -130,167 +350,28 @@ function setupEventListeners() {
     }
   }, false)
 
-  // Keydown handler (capture phase so we can suppress site handlers)
+  // Keydown handler (capture phase)
   document.addEventListener('keydown', function (e) {
-    // Global emergency exit to NORMAL mode
-    if (e.ctrlKey && e.key === 'c') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (isSearchMode) exitSearchMode(true)
-      if (isVisualMode) exitVisualMode()
-      if (isLinkKeyMode) { hideLinkKeys(); blockKeybindings.blur() }
-      exitToNormalMode()
-      // Explicit NORMAL indicator on exit
-      HUD.show('NORMAL', 1200)
-      return
-    }
-    // Visual mode handling
-    if (isVisualMode) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.key === 'Escape') { exitVisualMode(); return }
-      if (e.key === 'y' && !e.ctrlKey && !e.metaKey && !e.altKey) { copyCurrentSelection(); return }
-      if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(true); return }
-      if (e.key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(false); return }
-      return
-    }
-
-    // Search mode has priority
-    if (isSearchMode) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // Enter visual mode from search mode
-        lastSearchQuery = searchBuffer
-        ensureMatchesForQuery(lastSearchQuery)
-        if (lastSearchMatches.length > 0) {
-          if (lastSearchIndex < 0) lastSearchIndex = 0
-          selectMatchAt(lastSearchIndex)
-        }
-        exitSearchMode()
-        enterVisualMode()
-        return
-      }
-      if (e.key === 'Escape') {
-        exitSearchMode(true)
-        return
-      }
-      if (e.key === 'Enter') {
-        lastSearchQuery = searchBuffer
-        ensureMatchesForQuery(lastSearchQuery)
-        if (lastSearchMatches.length > 0) {
-          lastSearchIndex = 0
-          selectMatchAt(lastSearchIndex)
-        } else {
-          lastSearchIndex = -1
-        }
-        exitSearchMode()
-        return
-      }
-      if (e.key === 'Backspace') {
-        searchBuffer = searchBuffer.slice(0, -1)
-        updateSearchIndicator()
-        scheduleComputeMatches()
-        return
-      }
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        searchBuffer += e.key
-        updateSearchIndicator()
-        scheduleComputeMatches()
-      }
-      return
-    }
-
-    // --- Scroll keys (k l) and navigation keys (Ctrl+j Ctrl+;) ---
-    if (!isLinkKeyMode && !isCurrentlyInInput()) {
-      // stop event so site scripts don't receive it
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Enter Visual mode from NORMAL if a search was committed
-      if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey && lastSearchQuery) {
-        ensureMatchesForQuery(lastSearchQuery)
-        if (lastSearchMatches.length > 0) {
-          if (lastSearchIndex < 0) lastSearchIndex = 0
-          selectMatchAt(lastSearchIndex)
-        }
-        enterVisualMode()
-        return
-      }
-
-      if (e.key === 'k' && !e.ctrlKey) {
-        // k for up
-        window.scrollBy(0, -VIM_CONFIG.scrollAmount)
-      } else if (e.key === 'l' && !e.ctrlKey) {
-        // l for down
-        window.scrollBy(0, VIM_CONFIG.scrollAmount)
-      } else if (e.ctrlKey && e.key === 'k') {
-        // Ctrl+k for up faster
-        window.scrollBy(0, -VIM_CONFIG.quickScrollAmount)
-      } else if (e.ctrlKey && e.key === 'l') {
-        // Ctrl+l for down faster
-        window.scrollBy(0, VIM_CONFIG.quickScrollAmount)
-      } else if (e.ctrlKey && e.key === 'j') {
-        // Ctrl+j for back
-        window.history.back()
-      } else if (e.ctrlKey && e.key === ';') {
-        // Ctrl+; for forward
-        window.history.forward()
-      } else {
-        // Don't prevent default for other keys
-        e.stopPropagation = function() {} // Restore original behavior
-        return
-      }
-    }
-    // Prevent site shortcuts for vim command letters and Ctrl+C
+    if (vimManager && vimManager.processKeydown(e)) return
+    // Legacy fallback (kept for non-critical behaviors); prevent site handlers for vim letters and Ctrl+C
     if (!isLinkKeyMode && !isCurrentlyInInput()) {
       const keyLower = e.key.toLowerCase()
       if (VIM_CONFIG.alphabet.includes(keyLower) || e.key === 'F' || (e.ctrlKey && e.key === 'c')) {
-        e.preventDefault()
-        e.stopImmediatePropagation()
+        e.preventDefault(); e.stopImmediatePropagation()
       }
     }
-  }, true) // capture phase
+  }, true)
 
-  // Keyup handler for commands (capture phase as well)
+  // Keyup handler (capture)
   document.addEventListener('keyup', function (e) {
-    // Also allow entering visual mode on keyup while in search mode
-    if (isSearchMode && e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      lastSearchQuery = searchBuffer
-      ensureMatchesForQuery(lastSearchQuery)
-      if (lastSearchMatches.length > 0) {
-        if (lastSearchIndex < 0) lastSearchIndex = 0
-        selectMatchAt(lastSearchIndex)
-      }
-      exitSearchMode()
-      enterVisualMode()
-      return
-    }
     // Enter search mode on '/'
     if (!isSearchMode && !isLinkKeyMode && !isCurrentlyInInput() && e.key === '/') {
-      e.preventDefault();
-      e.stopPropagation();
-      enterSearchMode()
+      e.preventDefault(); e.stopPropagation();
+      if (vimManager) vimManager.transition('SEARCH');
       return
     }
-    // Navigate search results with n / Shift+N
-    if (!isSearchMode && !isLinkKeyMode && !isCurrentlyInInput() && lastSearchQuery) {
-      if (e.key === 'n' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        navigateMatch(false)
-        return
-      }
-      if ((e.key === 'N' && e.shiftKey) || (e.key === 'n' && e.shiftKey)) {
-        e.preventDefault();
-        e.stopPropagation();
-        navigateMatch(true)
-        return
-      }
-    }
-    handleKeyup(e)
+    if (vimManager && vimManager.processKeyup(e)) return
+    handleKeyup(e) // legacy buffered commands (yy, gg)
   }, true)
 }
 
@@ -663,8 +744,14 @@ function hideLinkKeys() {
 // Handle typed text for link hints
 function onTextTyped(key) {
   typedText += key
+  processLinkHintBuffer()
+}
 
+// Apply current typedText (or buffer) to filter hints and act when matched
+function processLinkHintBuffer() {
+  
   var viableElementRemaining = false
+  let remaining = 0
   currentLinkItems.forEach(function (link) {
     if (link.key === typedText) {
       viableElementRemaining = true
@@ -688,24 +775,32 @@ function onTextTyped(key) {
         }
       }
       hideLinkKeys()
+      // End of session; clear buffers and show NORMAL
+      clearCmdBuffer(); typedText = ''
+      HUD.show('NORMAL', 1000)
     } else if (!link.key.startsWith(typedText)) {
       link.element.hidden = true
     } else {
       viableElementRemaining = true
+      remaining++
     }
   })
-
+ 
   if (!viableElementRemaining) {
     hideLinkKeys()
     blockKeybindings.blur()
+    clearCmdBuffer(); typedText = ''
+    HUD.show('NORMAL', 800)
+    return
   }
+  // Update HUD with buffer and remaining count
+  try { HUD.set(`HINT ${typedText.toUpperCase()} (${remaining})`) } catch (e) {}
 }
 
 // Utility functions
 function isCurrentlyInInput() {
-  return document.activeElement.tagName === 'INPUT' || 
-         document.activeElement.tagName === 'TEXTAREA' || 
-         document.activeElement.isContentEditable
+  const ae = document.activeElement || document.body
+  return (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
 }
 
 function isFocusable(element) {
