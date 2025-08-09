@@ -327,10 +327,205 @@
     let isVisible = false;
     let selectedIndex = 0;
     let currentCandidates = [];
+    let lastRenderedKeys = [];
+    let lastSelectionIndex = -1;
+    let renderScheduled = false;
+    let lastReplSignature = '';
 
     // Get DOM elements
     const input = document.getElementById('command-palette-input');
     const suggestions = document.getElementById('command-palette-suggestions');
+
+    // Schedule a batched render on next animation frame
+    function scheduleRender() {
+      if (renderScheduled) return;
+      renderScheduled = true;
+      requestAnimationFrame(() => {
+        renderScheduled = false;
+        applyRender();
+      });
+    }
+
+    // Create suggestion element (structure reused for diffs)
+    function createSuggestionElement(key) {
+      const el = document.createElement('button');
+      el.className = 'command-suggestion';
+      el.dataset.key = key;
+      // number
+      const num = document.createElement('div');
+      num.className = 'command-suggestion-number';
+      el.appendChild(num);
+      // icon
+      const icon = document.createElement('i');
+      icon.className = 'i command-suggestion-icon';
+      el.appendChild(icon);
+      // content
+      const content = document.createElement('div');
+      content.className = 'command-suggestion-content';
+      const title = document.createElement('div');
+      title.className = 'command-suggestion-title';
+      const desc = document.createElement('div');
+      desc.className = 'command-suggestion-description';
+      content.appendChild(title);
+      content.appendChild(desc);
+      el.appendChild(content);
+      // shortcut
+      const shortcut = document.createElement('div');
+      shortcut.className = 'command-suggestion-shortcut';
+      el.appendChild(shortcut);
+
+      // Disable mouse interactions
+      const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
+      el.addEventListener('click', prevent);
+      el.addEventListener('mousedown', prevent);
+      el.addEventListener('mouseenter', prevent);
+
+      return el;
+    }
+
+    // Update or set content on an existing suggestion element
+    function updateSuggestionElement(el, candidate, index) {
+      // number
+      const numEl = el.querySelector('.command-suggestion-number');
+      if (index < 10) {
+        if (numEl) numEl.textContent = String(index);
+      } else if (numEl) {
+        numEl.textContent = '';
+      }
+
+      // icon
+      const iconEl = el.querySelector('.command-suggestion-icon');
+      const desiredIconClass = `i ${candidate.icon ?? 'carbon:search'} command-suggestion-icon`;
+      if (iconEl && iconEl.className !== desiredIconClass) {
+        iconEl.className = desiredIconClass;
+      }
+
+      // text content
+      const titleEl = el.querySelector('.command-suggestion-title');
+      const descEl = el.querySelector('.command-suggestion-description');
+      const shortcutEl = el.querySelector('.command-suggestion-shortcut');
+
+      if (titleEl && titleEl.textContent !== (candidate.title ?? 'Untitled')) {
+        titleEl.textContent = candidate.title ?? 'Untitled';
+      }
+
+      let description = candidate.description ?? '';
+      if (description && description.length > 60) description = description.substring(0, 60) + '...';
+      if (descEl) {
+        if (description) {
+          descEl.style.display = '';
+          if (descEl.textContent !== description) descEl.textContent = description;
+        } else {
+          descEl.style.display = 'none';
+        }
+      }
+
+      if (shortcutEl) {
+        if (candidate.shortcut) {
+          shortcutEl.style.display = '';
+          if (shortcutEl.textContent !== candidate.shortcut) shortcutEl.textContent = candidate.shortcut;
+        } else {
+          shortcutEl.style.display = 'none';
+        }
+      }
+    }
+
+    // Apply currentCandidates and selectedIndex to DOM with minimal changes
+    function applyRender() {
+      // REPL special rendering (skip if unchanged)
+      const isRepl = currentCandidates.length === 1 && currentCandidates[0] && currentCandidates[0].displayData && currentCandidates[0].displayData.mode === 'repl';
+      if (isRepl) {
+        const history = currentCandidates[0].displayData.history || [];
+        const sig = JSON.stringify(history.map(h => [h.id, h.input, h.output, !!h.isError]));
+        if (sig !== lastReplSignature) {
+          // Rebuild REPL history only if changed
+          const fragment = document.createDocumentFragment();
+          if (history.length === 0) {
+            const emptyEl = document.createElement('div');
+            emptyEl.className = 'repl-empty';
+            emptyEl.textContent = 'No commands executed yet. Type JavaScript code and press Enter.';
+            fragment.appendChild(emptyEl);
+          } else {
+            history.forEach((entry) => {
+              const historyEl = document.createElement('div');
+              historyEl.className = 'repl-history-entry';
+
+              let outputText = String(entry.output);
+              if (entry.output === null) outputText = 'null';
+              else if (entry.output === undefined) outputText = 'undefined';
+              else if (typeof entry.output === 'object') {
+                try { outputText = JSON.stringify(entry.output, null, 2); } catch (e) { outputText = String(entry.output); }
+              }
+
+              const isError = !!entry.isError;
+              const outputClass = isError ? 'repl-output-error' : 'repl-output';
+              historyEl.innerHTML = `
+                <div class="repl-input-line">
+                  <span class="repl-prompt-label">In</span>
+                  <span class="repl-prompt-number">[${entry.id}]:</span>
+                  <span class="repl-input-code"></span>
+                </div>
+                <div class="repl-output-line">
+                  <span class="repl-prompt-label">Out</span>
+                  <span class="repl-prompt-number">[${entry.id}]:</span>
+                  <span class="${outputClass}"></span>
+                </div>
+              `;
+              const setText = (el, text) => { const div = document.createElement('div'); div.textContent = text; el.innerHTML = div.innerHTML; };
+              setText(historyEl.querySelector('.repl-input-code'), String(entry.input ?? ''));
+              setText(historyEl.querySelector(`.${outputClass}`), outputText);
+              fragment.appendChild(historyEl);
+            });
+          }
+          suggestions.innerHTML = '';
+          suggestions.appendChild(fragment);
+          lastReplSignature = sig;
+          lastRenderedKeys = []; // reset normal cache
+        }
+        // selection irrelevant in REPL view
+        lastSelectionIndex = selectedIndex;
+        return;
+      }
+
+      // Normal candidate list rendering with keyed diff
+      const keys = currentCandidates.map((c, i) => (c.id ? String(c.id) : `${i}|${c.title ?? ''}|${c.description ?? ''}`));
+
+      // If keys completely match, only update selection and changed content
+      const fullRebuild = lastRenderedKeys.length === 0 || lastRenderedKeys.length !== keys.length || lastRenderedKeys.some((k, i) => k !== keys[i]);
+
+      if (fullRebuild) {
+        const fragment = document.createDocumentFragment();
+        for (let i = 0; i < currentCandidates.length; i++) {
+          const candidate = currentCandidates[i];
+          const key = keys[i];
+          const el = createSuggestionElement(key);
+          updateSuggestionElement(el, candidate, i);
+          if (i === selectedIndex) el.classList.add('selected');
+          fragment.appendChild(el);
+        }
+        suggestions.innerHTML = '';
+        suggestions.appendChild(fragment);
+        lastRenderedKeys = keys;
+      } else {
+        // Update existing nodes in place
+        const children = suggestions.children;
+        for (let i = 0; i < currentCandidates.length; i++) {
+          const candidate = currentCandidates[i];
+          const el = children[i];
+          updateSuggestionElement(el, candidate, i);
+          if (i === selectedIndex) el.classList.add('selected'); else el.classList.remove('selected');
+        }
+      }
+
+      // Scroll selected into view only if it changed
+      if (selectedIndex !== lastSelectionIndex) {
+        const el = suggestions.children[selectedIndex];
+        if (el) el.scrollIntoView({ block: 'nearest' });
+        lastSelectionIndex = selectedIndex;
+      }
+      // Reset REPL cache
+      lastReplSignature = '';
+    }
 
     // Utility functions
     /**
@@ -384,126 +579,8 @@
      * @param {Array} candidates - Array of serialized candidate objects
      */
     function updateSuggestions(candidates) {
-      currentCandidates = candidates ?? [];
-      
-      // REPL special rendering
-      const isReplPayload = currentCandidates.length === 1 && currentCandidates[0] && currentCandidates[0].displayData && currentCandidates[0].displayData.mode === 'repl';
-      if (isReplPayload) {
-        const history = currentCandidates[0].displayData.history || [];
-        const fragment = document.createDocumentFragment();
-
-        if (history.length === 0) {
-          const emptyEl = document.createElement('div');
-          emptyEl.className = 'repl-empty';
-          emptyEl.textContent = 'No commands executed yet. Type JavaScript code and press Enter.';
-          fragment.appendChild(emptyEl);
-        } else {
-          history.forEach((entry) => {
-            const historyEl = document.createElement('div');
-            historyEl.className = 'repl-history-entry';
-
-            // Format output
-            let outputText = String(entry.output);
-            if (entry.output === null) {
-              outputText = 'null';
-            } else if (entry.output === undefined) {
-              outputText = 'undefined';
-            } else if (typeof entry.output === 'object') {
-              try {
-                outputText = JSON.stringify(entry.output, null, 2);
-              } catch (e) {
-                outputText = String(entry.output);
-              }
-            }
-
-            const isError = !!entry.isError;
-            const outputClass = isError ? 'repl-output-error' : 'repl-output';
-
-            historyEl.innerHTML = `
-              <div class="repl-input-line">
-                <span class="repl-prompt-label">In</span>
-                <span class="repl-prompt-number">[${entry.id}]:</span>
-                <span class="repl-input-code"></span>
-              </div>
-              <div class="repl-output-line">
-                <span class="repl-prompt-label">Out</span>
-                <span class="repl-prompt-number">[${entry.id}]:</span>
-                <span class="${outputClass}"></span>
-              </div>
-            `;
-
-            // Escape and set text
-            const setText = (el, text) => {
-              const div = document.createElement('div');
-              div.textContent = text;
-              el.innerHTML = div.innerHTML;
-            };
-            setText(historyEl.querySelector('.repl-input-code'), String(entry.input ?? ''));
-            setText(historyEl.querySelector(`.${outputClass}`), outputText);
-
-            fragment.appendChild(historyEl);
-          });
-        }
-
-        suggestions.innerHTML = '';
-        suggestions.appendChild(fragment);
-        return;
-      }
-      
-      // Use DocumentFragment for better performance
-      const fragment = document.createDocumentFragment();
-      
-      if (currentCandidates.length === 0) {
-        const emptyEl = document.createElement('div');
-        emptyEl.className = 'command-palette-empty';
-        emptyEl.textContent = 'No results found';
-        fragment.appendChild(emptyEl);
-      } else {
-        // Add new suggestions
-        currentCandidates.forEach((candidate, index) => {
-          // Skip invalid candidates
-          if (!isValidCandidate(candidate)) {
-            return;
-          }
-
-          const suggestionEl = document.createElement('button');
-          suggestionEl.className = 'command-suggestion';
-          
-          let description = candidate.description ?? '';
-          if (description && description.length > 60) {
-            description = description.substring(0, 60) + '...';
-          }
-
-          // Show keyboard shortcut number for candidates (0-9)
-          const shortcutNumber = index < 10 ? `<div class="command-suggestion-number">${index}</div>` : '';
-
-          suggestionEl.innerHTML = `
-            ${shortcutNumber}
-            <i class="i ${candidate.icon ?? 'carbon:search'} command-suggestion-icon"></i>
-            <div class="command-suggestion-content">
-              <div class="command-suggestion-title">${candidate.title ?? 'Untitled'}</div>
-              ${description ? `<div class="command-suggestion-description">${description}</div>` : ''}
-            </div>
-            ${candidate.shortcut ? `<div class="command-suggestion-shortcut">${candidate.shortcut}</div>` : ''}
-          `;
-
-          // Disable mouse interactions since all interaction is handled by the command palette
-          const preventMouseInteraction = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          };
-          
-          suggestionEl.addEventListener('click', preventMouseInteraction);
-          suggestionEl.addEventListener('mousedown', preventMouseInteraction);
-          suggestionEl.addEventListener('mouseenter', preventMouseInteraction);
-
-          fragment.appendChild(suggestionEl);
-        });
-      }
-      
-      // Clear and update in one operation
-      suggestions.innerHTML = '';
-      suggestions.appendChild(fragment);
+      currentCandidates = (candidates ?? []).filter(isValidCandidate);
+      scheduleRender();
     }
 
     /**
@@ -512,19 +589,8 @@
      */
     function updateSelection(selectionData) {
       if (!selectionData) return;
-
       selectedIndex = selectionData.index ?? 0;
-      const suggestionElements = suggestions.querySelectorAll('.command-suggestion');
-      
-      suggestionElements.forEach((suggestion, i) => {
-        if (i === selectedIndex) {
-          suggestion.classList.add('selected');
-          // Ensure the selected item is visible
-          suggestion.scrollIntoView({ block: 'nearest' });
-        } else {
-          suggestion.classList.remove('selected');
-        }
-      });
+      scheduleRender();
     }
 
     /**
@@ -533,6 +599,8 @@
     function clearSuggestions() {
       currentCandidates = [];
       selectedIndex = 0;
+      lastRenderedKeys = [];
+      lastReplSignature = '';
       suggestions.innerHTML = '<div class="command-palette-empty">Type to search or use commands</div>';
     }
 
