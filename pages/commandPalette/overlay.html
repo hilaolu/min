@@ -33,7 +33,7 @@
       background: #fff;
       border-radius: 0; /* Rectangular corners to match view */
       box-shadow: none; /* No outer shadow to avoid mismatch */
-      border: none; /* Let the view edge be the boundary */
+      border: 1px solid rgba(0, 0, 0, 0.18); /* Subtle border for visual separation */
       box-sizing: border-box;
     }
 
@@ -41,6 +41,7 @@
     .dark-mode #command-palette-overlay {
       background: rgb(33, 37, 43);
       color: #fff;
+      border-color: rgba(255, 255, 255, 0.22);
     }
 
     .command-palette-container {
