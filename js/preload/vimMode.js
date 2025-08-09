@@ -140,7 +140,8 @@ function setupEventListeners() {
       if (isVisualMode) exitVisualMode()
       if (isLinkKeyMode) { hideLinkKeys(); blockKeybindings.blur() }
       exitToNormalMode()
-      updateSearchIndicator()
+      // Explicit NORMAL indicator on exit
+      HUD.show('NORMAL', 1200)
       return
     }
     // Visual mode handling
@@ -205,6 +206,17 @@ function setupEventListeners() {
       // stop event so site scripts don't receive it
       e.preventDefault();
       e.stopPropagation();
+
+      // Enter Visual mode from NORMAL if a search was committed
+      if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey && lastSearchQuery) {
+        ensureMatchesForQuery(lastSearchQuery)
+        if (lastSearchMatches.length > 0) {
+          if (lastSearchIndex < 0) lastSearchIndex = 0
+          selectMatchAt(lastSearchIndex)
+        }
+        enterVisualMode()
+        return
+      }
 
       if (e.key === 'k' && !e.ctrlKey) {
         // k for up
@@ -301,8 +313,8 @@ function setupEventListeners() {
         // Exit to normal mode - blur any focused element
         exitToNormalMode()
       }
-      // Show last search info briefly in normal mode, if any
-      updateSearchIndicator()
+      // Show NORMAL briefly when returning to normal
+      HUD.show('NORMAL', 1200)
       
     } else if (!isCurrentlyInInput() && !isLinkKeyMode &&
                (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'F') &&
@@ -511,9 +523,8 @@ function updateVisualIndicator() {
   const sel = window.getSelection()
   let len = 0
   try { len = (sel && sel.toString()) ? sel.toString().length : 0 } catch (e) { len = 0 }
-  const total = (lastMatchesForQuery === lastSearchQuery) ? lastSearchMatches.length : (lastSearchQuery ? '?' : 0)
-  const current = (lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
-  HUD.set(`VISUAL ${current}/${total} (${len} chars)`) 
+  // Visual mode HUD without current/total (optional char count)
+  HUD.set(len > 0 ? `VISUAL (${len} chars)` : 'VISUAL') 
 }
 
 function extendSelectionByWord(forward = true) {
