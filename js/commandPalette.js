@@ -110,6 +110,12 @@ const commandPalette = {
     // Input event listener
     commandPalette.input.addEventListener('input', commandPalette.handleInput)
     commandPalette.input.addEventListener('keydown', commandPalette.handleKeydown)
+    commandPalette.input.addEventListener('blur', function () {
+      // Couple overlay visibility with input focus
+      if (commandPalette.isVisible) {
+        commandPalette.hide()
+      }
+    })
 
     // Strategy manager event listeners
     commandPalette.strategyManager.on('state-changed', commandPalette.handleStateChange)
