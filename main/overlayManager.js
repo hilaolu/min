@@ -344,10 +344,20 @@ var overlayManager = {
     if (!win) return
 
     const winBounds = win.getContentBounds()
+
+    // Dynamically increase overlay height when there is screen space
+    try {
+      const minHeight = Math.max(overlay.size.height || 450, 450)
+      const targetHeight = Math.floor(winBounds.height * 0.8) // up to 80% of window height
+      const maxAllowed = Math.max(0, winBounds.height - 40)    // keep 20px margin top/bottom
+      const newHeight = Math.min(Math.max(minHeight, targetHeight), maxAllowed)
+      overlay.size.height = newHeight
+    } catch (e) {}
+
     let overlayX, overlayY
     if (overlay.position === 'center') {
-      overlayX = Math.max(0, (winBounds.width - overlay.size.width) / 2)
-      overlayY = Math.max(0, (winBounds.height - overlay.size.height) / 2)
+      overlayX = Math.max(0, Math.floor((winBounds.width - overlay.size.width) / 2))
+      overlayY = Math.max(0, Math.floor((winBounds.height - overlay.size.height) / 2))
     } else {
       overlayX = overlay.position.x || 0
       overlayY = overlay.position.y || 0
