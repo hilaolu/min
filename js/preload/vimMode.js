@@ -19,6 +19,25 @@ const VIM_CONFIG = {
     border-radius: 3px;
     box-shadow: 0px 3px 7px 0px rgba(0, 0, 0, 0.3);
     pointer-events: none;
+  `,
+  hudStyle: `
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 20, 0.95);
+    color: #fff;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.7;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.35);
+    z-index: 9999;
+    pointer-events: none;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
   `
 }
 
@@ -29,6 +48,55 @@ let linkAction = null
 let typedText = ''
 let currentLinkItems = []
 let blockKeybindings = null
+
+// Search state
+let isSearchMode = false
+let searchBuffer = ''
+let lastSearchQuery = ''
+let searchIndicator = null
+let lastSearchMatches = []
+let lastSearchIndex = -1
+let lastMatchesForQuery = ''
+let computeMatchesTimeout = null
+
+// Reusable HUD indicator utility
+const HUD = (function () {
+  let hudEl = null
+  let hideTimeout = null
+  function ensure() {
+    if (!hudEl) {
+      hudEl = document.createElement('div')
+      hudEl.setAttribute('style', VIM_CONFIG.hudStyle)
+      hudEl.style.display = 'none'
+      document.body.appendChild(hudEl)
+    }
+    return hudEl
+  }
+  function show(text, persistMs = 1200) {
+    const el = ensure()
+    el.textContent = text
+    el.style.display = 'block'
+    if (hideTimeout) clearTimeout(hideTimeout)
+    if (persistMs > 0) {
+      hideTimeout = setTimeout(() => { el.style.display = 'none' }, persistMs)
+    }
+  }
+  function hide() {
+    if (!hudEl) return
+    hudEl.style.display = 'none'
+    if (hideTimeout) clearTimeout(hideTimeout)
+  }
+  function set(text) {
+    const el = ensure()
+    el.textContent = text
+    el.style.display = 'block'
+    if (hideTimeout) clearTimeout(hideTimeout)
+  }
+  return { show, hide, set }
+})()
+
+// Expose for reuse by other features running in the page context
+try { if (!window.__minHUD) window.__minHUD = HUD } catch (e) {}
 
 // Initialize Vim mode
 function initVimMode() {
@@ -61,6 +129,40 @@ function setupEventListeners() {
 
   // Keydown handler (capture phase so we can suppress site handlers)
   document.addEventListener('keydown', function (e) {
+    // Search mode has priority
+    if (isSearchMode) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        exitSearchMode(true)
+        return
+      }
+      if (e.key === 'Enter') {
+        lastSearchQuery = searchBuffer
+        ensureMatchesForQuery(lastSearchQuery)
+        if (lastSearchMatches.length > 0) {
+          lastSearchIndex = 0
+          selectMatchAt(lastSearchIndex)
+        } else {
+          lastSearchIndex = -1
+        }
+        exitSearchMode()
+        return
+      }
+      if (e.key === 'Backspace') {
+        searchBuffer = searchBuffer.slice(0, -1)
+        updateSearchIndicator()
+        scheduleComputeMatches()
+        return
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        searchBuffer += e.key
+        updateSearchIndicator()
+        scheduleComputeMatches()
+      }
+      return
+    }
+
     // --- Scroll keys (k l) and navigation keys (Ctrl+j Ctrl+;) ---
     if (!isLinkKeyMode && !isCurrentlyInInput()) {
       // stop event so site scripts don't receive it
@@ -103,6 +205,28 @@ function setupEventListeners() {
 
   // Keyup handler for commands (capture phase as well)
   document.addEventListener('keyup', function (e) {
+    // Enter search mode on '/'
+    if (!isSearchMode && !isLinkKeyMode && !isCurrentlyInInput() && e.key === '/') {
+      e.preventDefault();
+      e.stopPropagation();
+      enterSearchMode()
+      return
+    }
+    // Navigate search results with n / Shift+N
+    if (!isSearchMode && !isLinkKeyMode && !isCurrentlyInInput() && lastSearchQuery) {
+      if (e.key === 'n' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateMatch(false)
+        return
+      }
+      if ((e.key === 'N' && e.shiftKey) || (e.key === 'n' && e.shiftKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateMatch(true)
+        return
+      }
+    }
     handleKeyup(e)
   }, true)
 }
@@ -168,6 +292,129 @@ function setupEventListeners() {
   } else if (isLinkKeyMode && VIM_CONFIG.alphabet.includes(e.key)) {
     onTextTyped(e.key)
   }
+}
+
+// Search helpers
+function enterSearchMode() {
+  isSearchMode = true
+  searchBuffer = ''
+  HUD.set(`/${searchBuffer}`)
+  // Kick off initial match computation (will be 0/0)
+  scheduleComputeMatches()
+}
+
+function exitSearchMode(cancelOnly = false) {
+  isSearchMode = false
+  if (cancelOnly) {
+    searchBuffer = ''
+  }
+  updateSearchIndicator()
+}
+
+function updateSearchIndicator() {
+  if (isSearchMode) {
+    const total = (searchBuffer && lastMatchesForQuery === searchBuffer) ? lastSearchMatches.length : 0
+    const current = (lastSearchQuery === searchBuffer && lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
+    HUD.set(`/${searchBuffer} ${current}/${total}`)
+  } else if (lastSearchQuery) {
+    const total = (lastMatchesForQuery === lastSearchQuery) ? lastSearchMatches.length : 0
+    const current = (lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
+    HUD.show(`/${lastSearchQuery} ${current}/${total}`)
+  } else {
+    HUD.hide()
+  }
+}
+
+// Collect matches for a query (debounced when typing)
+function scheduleComputeMatches() {
+  if (computeMatchesTimeout) clearTimeout(computeMatchesTimeout)
+  computeMatchesTimeout = setTimeout(() => {
+    const q = searchBuffer.trim()
+    if (!q) {
+      lastMatchesForQuery = ''
+      lastSearchMatches = []
+      lastSearchIndex = -1
+      updateSearchIndicator()
+      return
+    }
+    ensureMatchesForQuery(q)
+    // While typing, show counts as 0/total
+    updateSearchIndicator()
+  }, 120)
+}
+
+function ensureMatchesForQuery(q) {
+  if (lastMatchesForQuery === q) return
+  lastMatchesForQuery = q
+  lastSearchMatches = collectMatches(q)
+  lastSearchIndex = -1
+}
+
+function collectMatches(q) {
+  const matches = []
+  const MAX_MATCHES = 1000
+  const query = q.toLowerCase()
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode: function (node) {
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT
+      const parent = node.parentElement
+      if (!parent) return NodeFilter.FILTER_REJECT
+      const tag = parent.tagName
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT
+      if (getComputedStyle(parent).visibility === 'hidden' || getComputedStyle(parent).display === 'none') return NodeFilter.FILTER_REJECT
+      return NodeFilter.FILTER_ACCEPT
+    }
+  })
+  let node
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue
+    const lower = text.toLowerCase()
+    let start = 0
+    while (true) {
+      const idx = lower.indexOf(query, start)
+      if (idx === -1) break
+      const range = document.createRange()
+      try {
+        range.setStart(node, idx)
+        range.setEnd(node, idx + query.length)
+        const rects = range.getClientRects()
+        if (rects && rects.length > 0) {
+          matches.push(range)
+        }
+      } catch (e) {}
+      if (matches.length >= MAX_MATCHES) return matches
+      start = idx + query.length
+    }
+  }
+  return matches
+}
+
+function selectMatchAt(index) {
+  if (index < 0 || index >= lastSearchMatches.length) return
+  const range = lastSearchMatches[index]
+  const sel = window.getSelection()
+  try {
+    sel.removeAllRanges()
+    sel.addRange(range.cloneRange())
+  } catch (e) {}
+  const el = range.startContainer.parentElement || document.body
+  if (el && el.scrollIntoView) {
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (e) { el.scrollIntoView() }
+  }
+  HUD.show(`/${lastSearchQuery} ${index + 1}/${lastSearchMatches.length}`)
+}
+
+function navigateMatch(backwards = false) {
+  if (!lastSearchQuery) return
+  ensureMatchesForQuery(lastSearchQuery)
+  const total = lastSearchMatches.length
+  if (total === 0) { HUD.show(`/${lastSearchQuery} 0/0`); return }
+  if (lastSearchIndex === -1) {
+    lastSearchIndex = backwards ? total - 1 : 0
+  } else {
+    lastSearchIndex = (lastSearchIndex + (backwards ? -1 : 1) + total) % total
+  }
+  selectMatchAt(lastSearchIndex)
 }
 
 // Create link hint element
