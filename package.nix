@@ -25,12 +25,12 @@
 
 stdenv.mkDerivation (finalAttrs: rec {
   pname = "min";
-  version = "1.35.3";
+  version = "1.35.4";
 
   src = fetchurl {
     url = "https://github.com/hilaolu/min/releases/download/v${version}/min-${version}-amd64.deb";
 
-    hash = "sha256-2NwN8stB9HBdGS0ZZr63yezwV0i4L0Du4wbAr6zTLV8=";
+    hash = "sha256-kZFGcKdT6pl/DO+GNkEWp/GC7R/YhURJPsQjHbOMUkI=";
   };
 
   nativeBuildInputs = [
