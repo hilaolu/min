@@ -399,6 +399,84 @@ usageStatisticsCheckbox.addEventListener('change', function (e) {
   settings.set('collectUsageStats', this.checked)
 })
 
+/* annotation settings */
+
+var annotationEnabledCheckbox = document.getElementById('checkbox-annotation-enabled')
+var annotationServerUrlInput = document.getElementById('annotation-server-url')
+var annotationUsernameInput = document.getElementById('annotation-username')
+var annotationPasswordInput = document.getElementById('annotation-password')
+var annotationServerSection = document.getElementById('annotation-server-section')
+var testAnnotationConnectionButton = document.getElementById('test-annotation-connection')
+
+// Load annotation settings
+settings.get('annotationEnabled', function (value) {
+  if (value === true) {
+    annotationEnabledCheckbox.checked = true
+    annotationServerSection.style.display = 'block'
+  } else {
+    annotationEnabledCheckbox.checked = false
+    annotationServerSection.style.display = 'none'
+  }
+})
+
+settings.get('annotationServerUrl', function (value) {
+  if (value) {
+    annotationServerUrlInput.value = value
+  }
+})
+
+settings.get('annotationUsername', function (value) {
+  if (value) {
+    annotationUsernameInput.value = value
+  }
+})
+
+settings.get('annotationPassword', function (value) {
+  if (value) {
+    annotationPasswordInput.value = value
+  }
+})
+
+// Handle annotation enabled checkbox
+annotationEnabledCheckbox.addEventListener('change', function (e) {
+  settings.set('annotationEnabled', this.checked)
+  if (this.checked) {
+    annotationServerSection.style.display = 'block'
+  } else {
+    annotationServerSection.style.display = 'none'
+  }
+})
+
+// Handle annotation server URL input
+annotationServerUrlInput.addEventListener('input', function (e) {
+  settings.set('annotationServerUrl', this.value)
+})
+
+// Handle annotation username input
+annotationUsernameInput.addEventListener('input', function (e) {
+  settings.set('annotationUsername', this.value)
+})
+
+// Handle annotation password input
+annotationPasswordInput.addEventListener('input', function (e) {
+  settings.set('annotationPassword', this.value)
+})
+
+// Handle test connection button (simplified for now)
+testAnnotationConnectionButton.addEventListener('click', function (e) {
+  var serverUrl = annotationServerUrlInput.value
+  var username = annotationUsernameInput.value
+  var password = annotationPasswordInput.value
+  
+  if (!serverUrl || !username || !password) {
+    alert('Please fill in all fields before testing the connection.')
+    return
+  }
+  
+  // For now, just show a simple message
+  alert('Test connection functionality will be implemented later.\n\nCurrent settings:\nServer: ' + serverUrl + '\nUsername: ' + username)
+})
+
 /* default search engine setting */
 
 var searchEngineDropdown = document.getElementById('default-search-engine')

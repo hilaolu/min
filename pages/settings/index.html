@@ -347,6 +347,71 @@
         ></button>
       </div>
     </div>
+
+    <div class="settings-container" id="annotation-settings-container">
+      <h3 data-string="settingsAnnotationHeading"></h3>
+      
+      <div class="setting-section">
+        <input type="checkbox" id="checkbox-annotation-enabled" />
+        <label
+          for="checkbox-annotation-enabled"
+          data-string="settingsAnnotationEnabled"
+        ></label>
+        <div
+          class="settings-info-subheading setting-secondary-label"
+          data-string="settingsAnnotationExplanation"
+          data-allowHTML
+        ></div>
+      </div>
+
+      <div class="setting-section" id="annotation-server-section">
+        <div class="setting-option">
+          <label
+            for="annotation-server-url"
+            data-string="settingsAnnotationServerUrl"
+          ></label>
+          <input
+            id="annotation-server-url"
+            type="text"
+            name="annotationServerUrl"
+            placeholder="http://localhost:3000"
+          />
+        </div>
+
+        <div class="setting-option">
+          <label
+            for="annotation-username"
+            data-string="settingsAnnotationUsername"
+          ></label>
+          <input
+            id="annotation-username"
+            type="text"
+            name="annotationUsername"
+            placeholder="your_username"
+          />
+        </div>
+
+        <div class="setting-option">
+          <label
+            for="annotation-password"
+            data-string="settingsAnnotationPassword"
+          ></label>
+          <input
+            id="annotation-password"
+            type="password"
+            name="annotationPassword"
+            placeholder="your_password"
+          />
+        </div>
+
+        <div class="setting-option">
+          <button
+            data-string="settingsAnnotationTestConnection"
+            id="test-annotation-connection"
+          ></button>
+        </div>
+      </div>
+    </div>
     <!-- this needs to be placed at the bottom so that sticky positioning works correctly -->
     <div
       class="banner yellow-background"

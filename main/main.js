@@ -623,3 +623,16 @@ ipc.on('destroyCommandPaletteOverlay', function (e) {
 // ipc.on('updateCommandPaletteOverlaySuggestions', ...)
 // ipc.on('updateCommandPaletteOverlaySelection', ...)
 // ipc.on('clearCommandPaletteOverlaySuggestions', ...)
+
+/* annotation service */
+
+// Handle getting annotation settings
+ipc.on('getAnnotationSettings', function (e) {
+  var annotationSettings = {
+    enabled: settings.get('annotationEnabled') || false,
+    serverUrl: settings.get('annotationServerUrl') || '',
+    username: settings.get('annotationUsername') || '',
+    password: settings.get('annotationPassword') || ''
+  }
+  e.sender.send('annotationSettingsReceived', annotationSettings)
+})
