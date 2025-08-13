@@ -41,16 +41,14 @@ const VIM_CONFIG = {
   `
 }
 
-// State variables
+// State variables (managed by VimStateManager)
 let command = ''
-let isLinkKeyMode = false
 let linkAction = null
 let typedText = ''
 let currentLinkItems = []
 let blockKeybindings = null
 
 // Search state
-let isSearchMode = false
 let searchBuffer = ''
 let lastSearchQuery = ''
 let searchIndicator = null
@@ -58,9 +56,6 @@ let lastSearchMatches = []
 let lastSearchIndex = -1
 let lastMatchesForQuery = ''
 let computeMatchesTimeout = null
-
-// Visual mode state
-let isVisualMode = false
 
 // Generic command buffer (for multi-key commands & link hints)
 let cmdBuffer = ''
@@ -177,14 +172,13 @@ class NormalStrategy extends VimStateStrategy {
 class SearchStrategy extends VimStateStrategy {
   getName() { return 'SEARCH' }
   onEnter(ctx) {
-    ctx.isSearchMode = true
     ctx.searchBuffer = ''
     try { document.body.focus() } catch (e) {}
     HUD.set(`/${ctx.searchBuffer}`)
     scheduleComputeMatches()
   }
   onExit(ctx) {
-    ctx.isSearchMode = false
+    // Clean exit from search mode
   }
   handleKeydown(e, ctx) {
     // Esc no longer exits; use Ctrl+C globally
@@ -236,7 +230,6 @@ class VisualStrategy extends VimStateStrategy {
 class LinkHintStrategy extends VimStateStrategy {
   getName() { return 'LINK_HINT' }
   onEnter(ctx) {
-    isLinkKeyMode = true
     // Reset buffers for fresh hint session
     typedText = ''
     ctx.bufferClear()
@@ -245,7 +238,6 @@ class LinkHintStrategy extends VimStateStrategy {
     try { HUD.show(`HINTS: ${currentLinkItems.length}`, 800) } catch (e) {}
   }
   onExit(ctx) {
-    isLinkKeyMode = false
     hideLinkKeys()
     ctx.bufferClear(); typedText = ''
     try { blockKeybindings.blur() } catch (e) {}
@@ -300,7 +292,6 @@ class InputFocusStrategy extends VimStateStrategy {
 class VimStateManager {
   constructor() {
     this.ctx = {
-      get isSearchMode() { return isSearchMode }, set isSearchMode(v) { isSearchMode = v },
       get searchBuffer() { return searchBuffer }, set searchBuffer(v) { searchBuffer = v },
       get lastSearchQuery() { return lastSearchQuery }, set lastSearchQuery(v) { lastSearchQuery = v },
       get lastSearchMatches() { return lastSearchMatches }, set lastSearchMatches(v) { lastSearchMatches = v },
@@ -334,8 +325,7 @@ class VimStateManager {
     // Global Ctrl+C
     if (e.ctrlKey && e.key === 'c') {
       e.preventDefault(); e.stopPropagation();
-      if (isSearchMode) this.transition('NORMAL')
-      if (this.current.getName() !== 'NORMAL') this.transition('NORMAL')
+      this.transition('NORMAL')
       HUD.show('NORMAL', 1200)
       return true
     }
@@ -368,7 +358,7 @@ function initVimMode() {
 function setupEventListeners() {
   // Click handler to keep focus on blockKeybindings
   document.body.addEventListener('click', function () {
-    if (isLinkKeyMode) {
+    if (vimManager && vimManager.current.getName() === 'LINK_HINT') {
       blockKeybindings.select()
     }
   })
@@ -394,9 +384,9 @@ function setupEventListeners() {
 
   // Visibility change handler
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState !== 'hidden' && isLinkKeyMode) {
+    if (vimManager && document.visibilityState !== 'hidden' && vimManager.current.getName() === 'LINK_HINT') {
       blockKeybindings.select()
-    } else if (document.visibilityState !== 'hidden' && !isLinkKeyMode) {
+    } else if (vimManager && document.visibilityState !== 'hidden' && vimManager.current.getName() !== 'LINK_HINT') {
       blockKeybindings.blur()
     }
   }, false)
@@ -405,7 +395,7 @@ function setupEventListeners() {
   document.addEventListener('keydown', function (e) {
     if (vimManager && vimManager.processKeydown(e)) return
     // Legacy fallback (kept for non-critical behaviors); prevent site handlers for vim letters and Ctrl+C
-    if (!isLinkKeyMode && !isCurrentlyInInput()) {
+    if (vimManager && vimManager.current.getName() !== 'LINK_HINT' && !isCurrentlyInInput()) {
       const keyLower = e.key.toLowerCase()
       if (VIM_CONFIG.alphabet.includes(keyLower) || e.key === 'F' || (e.ctrlKey && e.key === 'c')) {
         e.preventDefault(); e.stopImmediatePropagation()
@@ -415,112 +405,50 @@ function setupEventListeners() {
 
   // Keyup handler (capture)
   document.addEventListener('keyup', function (e) {
-    // Enter search mode on '/'
-    if (!isSearchMode && !isLinkKeyMode && !isCurrentlyInInput() && e.key === '/') {
-      e.preventDefault(); e.stopPropagation();
-      if (vimManager) vimManager.transition('SEARCH');
-      return
-    }
     if (vimManager && vimManager.processKeyup(e)) return
     handleKeyup(e) // legacy buffered commands (yy, gg)
   }, true)
 }
 
-  // Handle keyup events for Vim commands
+  // Handle keyup events for legacy buffered commands only
   function handleKeyup(e) {
-    if (e.ctrlKey && e.key === 'c') {
+    // Only handle legacy buffered commands (yy, gg) - no state transitions
+    if (!isCurrentlyInInput() && vimManager && vimManager.current.getName() === 'NORMAL' &&
+        (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'G') &&
+        !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
-      // Always leave visual/search modes
-      if (isSearchMode) {
-        exitSearchMode(true)
-      }
-      if (isVisualMode) {
-        exitVisualMode()
-      }
-      if (isLinkKeyMode) {
-        hideLinkKeys()
-        blockKeybindings.blur()
-      } else {
-        // Exit to normal mode - blur any focused element
-        exitToNormalMode()
-      }
-      // Show NORMAL briefly when returning to normal
-      HUD.show('NORMAL', 1200)
       
-    } else if (!isCurrentlyInInput() && !isLinkKeyMode &&
-               (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'F') &&
-               !e.ctrlKey && !e.metaKey) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    command += e.key
-    var match = true
-    
-    switch (command) {
-      case 'f':
-        showLinkKeys()
-        blockKeybindings.select()
-        linkAction = 'open'
-        break
-      case 'F':
-        showLinkKeys()
-        blockKeybindings.select()
-        linkAction = 'openInNewTab'
-        break
-      case 'c':
-        showLinkKeys()
-        blockKeybindings.select()
-        linkAction = 'copyToClipboard'
-        break
-      case 'yy':
-        copyUrlToClipboard()
-        break
-      case 'gg':
-        window.scrollTo(0, 0)
-        break
-      case 'G':
-        window.scrollTo(0, document.body.scrollHeight)
-        break
-      default:
-        match = false
-        break
-    }
-    
-    if (!match && command.length === 1) {
-      setTimeout(function () {
+      command += e.key
+      var match = true
+      
+      switch (command) {
+        case 'yy':
+          copyUrlToClipboard()
+          HUD.show('Copied URL', 800)
+          break
+        case 'gg':
+          window.scrollTo(0, 0)
+          break
+        default:
+          match = false
+          break
+      }
+      
+      if (!match && command.length === 1) {
+        setTimeout(function () {
+          command = ''
+        }, VIM_CONFIG.keyTimeout)
+      } else if (match) {
         command = ''
-      }, VIM_CONFIG.keyTimeout)
-    } else if (match) {
-      command = ''
+      }
     }
-  } else if (isLinkKeyMode && VIM_CONFIG.alphabet.includes(e.key)) {
-    onTextTyped(e.key)
   }
-}
-
-// Search helpers
-function enterSearchMode() {
-  isSearchMode = true
-  searchBuffer = ''
-  try { document.body.focus() } catch (e) {}
-  HUD.set(`/${searchBuffer}`)
-  // Kick off initial match computation (will be 0/0)
-  scheduleComputeMatches()
-}
-
-function exitSearchMode(cancelOnly = false) {
-  isSearchMode = false
-  if (cancelOnly) {
-    searchBuffer = ''
-  }
-  updateSearchIndicator()
-}
 
 function updateSearchIndicator() {
   // Don't override visual HUD while in visual mode
-  if (isVisualMode) return
-  if (isSearchMode) {
+  if (vimManager && vimManager.current.getName() === 'VISUAL') return
+  if (vimManager && vimManager.current.getName() === 'SEARCH') {
     const total = (searchBuffer && lastMatchesForQuery === searchBuffer) ? lastSearchMatches.length : 0
     const current = (lastSearchQuery === searchBuffer && lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
     HUD.set(`/${searchBuffer} ${current}/${total}`)
@@ -627,7 +555,6 @@ function navigateMatch(backwards = false) {
 
 // Visual mode helpers
 function enterVisualMode() {
-  isVisualMode = true
   try { document.body.focus() } catch (e) {}
   // Ensure there is a selection; if none, try to select current match or start of body
   const sel = window.getSelection()
@@ -646,7 +573,6 @@ function enterVisualMode() {
 }
 
 function exitVisualMode() {
-  isVisualMode = false
   // After leaving visual, show last search briefly if available
   updateSearchIndicator()
 }
@@ -752,7 +678,6 @@ function getNextKeyCombination(index) {
 
 // Show link hints
 function showLinkKeys() {
-  isLinkKeyMode = true
   typedText = ''
 
   var links = []
@@ -783,7 +708,6 @@ function showLinkKeys() {
 
 // Hide link hints
 function hideLinkKeys() {
-  isLinkKeyMode = false
   for (var i = 0; i < currentLinkItems.length; i++) {
     if (currentLinkItems[i].element.parentNode) {
       currentLinkItems[i].element.parentNode.removeChild(currentLinkItems[i].element)
@@ -825,10 +749,8 @@ function processLinkHintBuffer() {
           link.link.click()
         }
       }
-      hideLinkKeys()
-      // End of session; clear buffers and show NORMAL
-      clearCmdBuffer(); typedText = ''
-      HUD.show('NORMAL', 1000)
+      // Use proper state transition instead of direct HUD call
+      if (vimManager) vimManager.transition('NORMAL')
     } else if (!link.key.startsWith(typedText)) {
       link.element.hidden = true
     } else {
@@ -838,10 +760,8 @@ function processLinkHintBuffer() {
   })
  
   if (!viableElementRemaining) {
-    hideLinkKeys()
-    blockKeybindings.blur()
-    clearCmdBuffer(); typedText = ''
-    HUD.show('NORMAL', 800)
+    // Use proper state transition instead of direct HUD call
+    if (vimManager) vimManager.transition('NORMAL')
     return
   }
   // Update HUD with buffer and remaining count
@@ -885,11 +805,6 @@ function exitToNormalMode() {
   // Clear any ongoing commands
   command = ''
   typedText = ''
-  
-  // Ensure link key mode is off
-  if (isLinkKeyMode) {
-    hideLinkKeys()
-  }
 }
 
 // Initialize Vim mode when DOM is ready
