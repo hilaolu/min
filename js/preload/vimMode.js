@@ -82,6 +82,7 @@ const HUD = (function () {
     if (!hudEl) {
       hudEl = document.createElement('div')
       hudEl.setAttribute('style', VIM_CONFIG.hudStyle)
+      hudEl.setAttribute('data-min-vim-hud', 'true')
       hudEl.style.display = 'none'
       document.body.appendChild(hudEl)
     }
@@ -471,6 +472,12 @@ function scheduleComputeMatches() {
 
 function ensureMatchesForQuery(q) {
   if (lastMatchesForQuery === q) return
+  if (!q) {
+    lastMatchesForQuery = ''
+    lastSearchMatches = []
+    lastSearchIndex = -1
+    return
+  }
   lastMatchesForQuery = q
   lastSearchMatches = collectMatches(q)
   lastSearchIndex = -1
@@ -485,6 +492,7 @@ function collectMatches(q) {
       if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT
       const parent = node.parentElement
       if (!parent) return NodeFilter.FILTER_REJECT
+      if (parent.closest('[data-min-vim-hud]')) return NodeFilter.FILTER_REJECT
       const tag = parent.tagName
       if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT
       if (getComputedStyle(parent).visibility === 'hidden' || getComputedStyle(parent).display === 'none') return NodeFilter.FILTER_REJECT
