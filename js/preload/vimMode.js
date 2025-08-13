@@ -132,14 +132,13 @@ class NormalStrategy extends VimStateStrategy {
       ctx.transition('SEARCH')
       return true
     }
-    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey && ctx.lastSearchQuery) {
-      ctx.ensureMatchesForQuery(ctx.lastSearchQuery)
-      if (ctx.lastSearchMatches.length > 0) {
-        if (ctx.lastSearchIndex < 0) ctx.lastSearchIndex = 0
-        selectMatchAt(ctx.lastSearchIndex)
+    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const sel = window.getSelection()
+      if (sel && !sel.isCollapsed) {
+        // Existing selection, enter visual mode
+        ctx.transition('VISUAL')
+        return true
       }
-      ctx.transition('VISUAL')
-      return true
     }
     if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey && ctx.lastSearchQuery) {
       navigateMatch(e.key === 'N')
@@ -190,11 +189,8 @@ class SearchStrategy extends VimStateStrategy {
       return true
     }
     if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      ctx.lastSearchQuery = ctx.searchBuffer
-      ensureMatchesForQuery(ctx.lastSearchQuery)
-      if (ctx.lastSearchMatches.length > 0) { if (ctx.lastSearchIndex < 0) ctx.lastSearchIndex = 0; selectMatchAt(ctx.lastSearchIndex) }
-      ctx.transition('VISUAL')
-      return true
+      // Visual mode only accessible from NORMAL with existing selection
+      return false
     }
     if (e.key === 'Backspace') {
       ctx.searchBuffer = ctx.searchBuffer.slice(0, -1)
@@ -220,9 +216,6 @@ class VisualStrategy extends VimStateStrategy {
     if (e.key === 'y' && !e.ctrlKey && !e.metaKey && !e.altKey) { copyCurrentSelection(); return true }
     if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(true); return true }
     if (e.key === 'b' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(false); return true }
-    if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey && ctx.lastSearchQuery) {
-      navigateMatch(e.key === 'N'); return true
-    }
     return false
   }
 }
