@@ -12,6 +12,7 @@ const modules = [
   'js/preload/passwordFill.js',
   'js/preload/translate.js',
   'js/preload/vimMode.js',
+  'js/preload/annotationMarker.js',
   'js/preload/annotation.js',
 ]
 

@@ -632,7 +632,8 @@ ipc.on('getAnnotationSettings', function (e) {
     enabled: settings.get('annotationEnabled') || false,
     serverUrl: settings.get('annotationServerUrl') || '',
     username: settings.get('annotationUsername') || '',
-    password: settings.get('annotationPassword') || ''
+    password: settings.get('annotationPassword') || '',
+    jwt: settings.get('annotationJwt') || null
   }
   e.sender.send('annotationSettingsReceived', annotationSettings)
 })
