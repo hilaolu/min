@@ -308,8 +308,9 @@ class VimStateManager {
   processKeydown(e) {
     // Global Ctrl+C
     if (e.ctrlKey && e.key === 'c') {
-      e.preventDefault(); e.stopPropagation();
+      e.preventDefault(); e.stopPropagation()
       this.transition('NORMAL')
+      exitToNormalMode()
       HUD.show('NORMAL', 1200)
       return true
     }
