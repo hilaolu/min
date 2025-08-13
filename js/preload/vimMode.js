@@ -106,6 +106,7 @@ const HUD = (function () {
     el.textContent = text
     el.style.display = 'block'
     if (hideTimeout) clearTimeout(hideTimeout)
+    hideTimeout = setTimeout(() => { el.style.display = 'none' }, 3000)
   }
   return { show, hide, set }
 })()
