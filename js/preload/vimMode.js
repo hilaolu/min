@@ -176,7 +176,6 @@ class SearchStrategy extends VimStateStrategy {
     ctx.searchBuffer = ''
     try { document.body.focus() } catch (e) {}
     HUD.set(`/${ctx.searchBuffer}`)
-    scheduleComputeMatches()
   }
   onExit(ctx) {
     // Clean exit from search mode
@@ -193,13 +192,11 @@ class SearchStrategy extends VimStateStrategy {
     if (e.key === 'Backspace') {
       ctx.searchBuffer = ctx.searchBuffer.slice(0, -1)
       updateSearchIndicator()
-      scheduleComputeMatches()
       return true
     }
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       ctx.searchBuffer += e.key
       updateSearchIndicator()
-      scheduleComputeMatches()
       return true
     }
     return false
@@ -440,9 +437,8 @@ function updateSearchIndicator() {
   // Don't override visual HUD while in visual mode
   if (vimManager && vimManager.current.getName() === 'VISUAL') return
   if (vimManager && vimManager.current.getName() === 'SEARCH') {
-    const total = (searchBuffer && lastMatchesForQuery === searchBuffer) ? lastSearchMatches.length : 0
-    const current = (lastSearchQuery === searchBuffer && lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
-    HUD.set(`/${searchBuffer} ${current}/${total}`)
+    // While typing, do not compute or display candidate counts
+    HUD.set(`/${searchBuffer}`)
   } else if (lastSearchQuery) {
     const total = (lastMatchesForQuery === lastSearchQuery) ? lastSearchMatches.length : 0
     const current = (lastSearchIndex >= 0) ? (lastSearchIndex + 1) : 0
