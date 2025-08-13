@@ -266,6 +266,37 @@ class LinkHintStrategy extends VimStateStrategy {
   }
 }
 
+class InputFocusStrategy extends VimStateStrategy {
+  getName() { return 'INPUT_FOCUS' }
+  onEnter(ctx) {
+    // Focus on the input element if available, otherwise body
+    try { 
+      if (document.activeElement && isCurrentlyInInput()) {
+        // Already in an input, keep focus
+      } else {
+        document.body.focus() 
+      }
+    } catch (e) {}
+    HUD.set('INPUT FOCUS - Press Ctrl+C to exit')
+  }
+  onExit(ctx) {
+    // Clear any input buffer state if needed
+    ctx.bufferClear()
+  }
+  handleKeydown(e, ctx) {
+    // Capture ALL input and prevent any state transitions
+    // Only Ctrl+C (handled globally by VimStateManager) can exit this mode
+    
+    // Consume all keys to prevent normal page behavior
+    // No state transitions allowed in this mode
+    return true
+  }
+  handleKeyup(e, ctx) {
+    // Consume all keyup events as well
+    return true
+  }
+}
+
 class VimStateManager {
   constructor() {
     this.ctx = {
@@ -287,7 +318,8 @@ class VimStateManager {
       NORMAL: new NormalStrategy(),
       SEARCH: new SearchStrategy(),
       VISUAL: new VisualStrategy(),
-      LINK_HINT: new LinkHintStrategy()
+      LINK_HINT: new LinkHintStrategy(),
+      INPUT_FOCUS: new InputFocusStrategy()
     }
     this.current = this.strategies.NORMAL
   }
@@ -340,6 +372,25 @@ function setupEventListeners() {
       blockKeybindings.select()
     }
   })
+
+  // Focus event handler - automatically switch to INPUT_FOCUS mode when input is focused
+  document.addEventListener('focusin', function (e) {
+    if (vimManager && isCurrentlyInInput() && vimManager.current.getName() !== 'INPUT_FOCUS') {
+      vimManager.transition('INPUT_FOCUS')
+    }
+  }, true)
+
+  // Blur event handler - check if we should stay in INPUT_FOCUS or return to NORMAL
+  document.addEventListener('focusout', function (e) {
+    if (vimManager && vimManager.current.getName() === 'INPUT_FOCUS') {
+      // Small delay to check if focus moved to another input
+      setTimeout(() => {
+        if (!isCurrentlyInInput()) {
+          vimManager.transition('NORMAL')
+        }
+      }, 0)
+    }
+  }, true)
 
   // Visibility change handler
   document.addEventListener('visibilitychange', function () {
