@@ -44,18 +44,15 @@ const VIM_CONFIG = {
 // State variables (managed by VimStateManager)
 let command = ''
 let linkAction = null
-let typedText = ''
 let currentLinkItems = []
 let blockKeybindings = null
 
 // Search state
 let searchBuffer = ''
 let lastSearchQuery = ''
-let searchIndicator = null
 let lastSearchMatches = []
 let lastSearchIndex = -1
 let lastMatchesForQuery = ''
-let computeMatchesTimeout = null
 
 // Generic command buffer (for multi-key commands & link hints)
 let cmdBuffer = ''
@@ -219,7 +216,6 @@ class LinkHintStrategy extends VimStateStrategy {
   getName() { return 'LINK_HINT' }
   onEnter(ctx) {
     // Reset buffers for fresh hint session
-    typedText = ''
     ctx.bufferClear()
     try { blockKeybindings.select() } catch (e) {}
     // Show initial count
@@ -227,15 +223,15 @@ class LinkHintStrategy extends VimStateStrategy {
   }
   onExit(ctx) {
     hideLinkKeys()
-    ctx.bufferClear(); typedText = ''
+    ctx.bufferClear()
     try { blockKeybindings.blur() } catch (e) {}
   }
   handleKeydown(e, ctx) {
     // Prevent page handlers and process immediately
     // Esc no longer exits; use Ctrl+C globally
-    if (e.key === 'Backspace') { ctx.bufferBackspace(); typedText = ctx.buffer; processLinkHintBuffer(); return true }
+    if (e.key === 'Backspace') { ctx.bufferBackspace(); processLinkHintBuffer(); return true }
     const keyLower = e.key.toLowerCase()
-    if (VIM_CONFIG.alphabet.includes(keyLower)) { ctx.bufferAppend(keyLower); typedText = ctx.buffer; processLinkHintBuffer(); return true }
+    if (VIM_CONFIG.alphabet.includes(keyLower)) { ctx.bufferAppend(keyLower); processLinkHintBuffer(); return true }
     return false
   }
   handleKeyup(e, ctx) {
@@ -448,24 +444,6 @@ function updateSearchIndicator() {
   }
 }
 
-// Collect matches for a query (debounced when typing)
-function scheduleComputeMatches() {
-  if (computeMatchesTimeout) clearTimeout(computeMatchesTimeout)
-  computeMatchesTimeout = setTimeout(() => {
-    const q = searchBuffer.trim()
-    if (!q) {
-      lastMatchesForQuery = ''
-      lastSearchMatches = []
-      lastSearchIndex = -1
-      updateSearchIndicator()
-      return
-    }
-    ensureMatchesForQuery(q)
-    // While typing, show counts as 0/total
-    updateSearchIndicator()
-  }, 120)
-}
-
 function ensureMatchesForQuery(q) {
   if (lastMatchesForQuery === q) return
   if (!q) {
@@ -672,8 +650,6 @@ function getNextKeyCombination(index) {
 
 // Show link hints
 function showLinkKeys() {
-  typedText = ''
-
   var links = []
   var linkRects = []
 
@@ -712,17 +688,17 @@ function hideLinkKeys() {
 
 // Handle typed text for link hints
 function onTextTyped(key) {
-  typedText += key
+  bufferAppend(key)
   processLinkHintBuffer()
 }
 
-// Apply current typedText (or buffer) to filter hints and act when matched
+// Apply current buffer to filter hints and act when matched
 function processLinkHintBuffer() {
-  
   var viableElementRemaining = false
   let remaining = 0
+  const typed = cmdBuffer
   currentLinkItems.forEach(function (link) {
-    if (link.key === typedText) {
+    if (link.key === typed) {
       viableElementRemaining = true
       if (link.link.tagName === 'A') {
         if (linkAction === "copyToClipboard") {
@@ -745,7 +721,7 @@ function processLinkHintBuffer() {
       }
       // Use proper state transition instead of direct HUD call
       if (vimManager) vimManager.transition('NORMAL')
-    } else if (!link.key.startsWith(typedText)) {
+    } else if (!link.key.startsWith(typed)) {
       link.element.hidden = true
     } else {
       viableElementRemaining = true
@@ -759,7 +735,7 @@ function processLinkHintBuffer() {
     return
   }
   // Update HUD with buffer and remaining count
-  try { HUD.set(`HINT ${typedText.toUpperCase()} (${remaining})`) } catch (e) {}
+  try { HUD.set(`HINT ${typed.toUpperCase()} (${remaining})`) } catch (e) {}
 }
 
 // Utility functions
@@ -798,7 +774,6 @@ function exitToNormalMode() {
   
   // Clear any ongoing commands
   command = ''
-  typedText = ''
 }
 
 // Initialize Vim mode when DOM is ready
