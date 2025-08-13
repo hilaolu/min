@@ -189,10 +189,6 @@ class SearchStrategy extends VimStateStrategy {
       ctx.transition('NORMAL')
       return true
     }
-    if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // Visual mode only accessible from NORMAL with existing selection
-      return false
-    }
     if (e.key === 'Backspace') {
       ctx.searchBuffer = ctx.searchBuffer.slice(0, -1)
       updateSearchIndicator()
