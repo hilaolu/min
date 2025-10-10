@@ -71,6 +71,11 @@ if (settings.get('userSelectedLanguage')) {
   app.commandLine.appendSwitch('lang', settings.get('userSelectedLanguage'))
 }
 
+// Disable QUIC if setting is disabled
+if (settings.get('enableQUIC') === false) {
+  app.commandLine.appendSwitch('disable-quic')
+}
+
 const browserPage = 'min://app/index.html'
 
 var mainMenu = null

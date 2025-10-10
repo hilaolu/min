@@ -172,6 +172,8 @@
     "settingsUserscriptShowDirectory": "Show script directory",
     "settingsUserAgentToggle": "Use a custom user agent",
     "settingsUpdateNotificationsToggle": "Automatically check for updates",
+    "settingsEnableQUICToggle": "Enable QUIC protocol support",
+    "settingsEnableQUICExplanation": "QUIC is a new protocol that can improve performance, but may be blocked on some networks.",
     "settingsUsageStatisticsToggle": {
       "unsafeHTML": "Send usage statistics (<a href=\"https://github.com/minbrowser/min/blob/master/docs/statistics.md\">More info</a>)"
     },

@@ -399,6 +399,19 @@ usageStatisticsCheckbox.addEventListener('change', function (e) {
   settings.set('collectUsageStats', this.checked)
 })
 
+/* QUIC enable setting */
+
+var enableQUICCheckbox = document.getElementById('checkbox-enable-quic')
+
+settings.get('enableQUIC', function (value) {
+  enableQUICCheckbox.checked = value || false
+})
+
+enableQUICCheckbox.addEventListener('change', function (e) {
+  settings.set('enableQUIC', this.checked)
+  showRestartRequiredBanner()
+})
+
 /* annotation settings */
 
 var annotationEnabledCheckbox = document.getElementById('checkbox-annotation-enabled')
