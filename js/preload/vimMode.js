@@ -143,9 +143,9 @@ class NormalStrategy extends VimStateStrategy {
       return true
     }
     // Link hints
-    if ((e.key === 'f' || e.key === 'F' || e.key === 'c') && !e.ctrlKey && !e.metaKey && !e.altKey && !isCurrentlyInInput()) {
+    if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !isCurrentlyInInput()) {
       // Set global action used by onTextTyped
-      linkAction = (e.key === 'F') ? 'openInNewTab' : (e.key === 'c' ? 'copyToClipboard' : 'open')
+      linkAction = (e.key === 'F') ? 'openInNewTab' : 'open'
       showLinkKeys()
       try { blockKeybindings.select() } catch (e) {}
       ctx.transition('LINK_HINT')
