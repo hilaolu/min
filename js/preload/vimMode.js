@@ -42,7 +42,6 @@ const VIM_CONFIG = {
 }
 
 // State variables (managed by VimStateManager)
-let command = ''
 let linkAction = null
 let currentLinkItems = []
 let blockKeybindings = null
@@ -161,7 +160,6 @@ class NormalStrategy extends VimStateStrategy {
       if (e.ctrlKey && e.key === 'j') { window.history.back(); return true }
       if (e.ctrlKey && e.key === ';') { window.history.forward(); return true }
       if (e.key === 'G' && !e.ctrlKey) { window.scrollTo(0, document.body.scrollHeight); return true }
-      // Buffered multi-key yy / gg handled in legacy handler below; keep fallback
     }
     return false
   }
@@ -394,55 +392,12 @@ function setupEventListeners () {
   // Keydown handler (capture phase)
   document.addEventListener('keydown', function (e) {
     if (vimManager && vimManager.processKeydown(e)) return
-    // Legacy fallback (kept for non-critical behaviors); prevent site handlers for vim letters and Ctrl+C
-    if (vimManager && vimManager.current.getName() !== 'LINK_HINT' && !isCurrentlyInInput()) {
-      const keyLower = e.key.toLowerCase()
-      if (VIM_CONFIG.alphabet.includes(keyLower) || e.key === 'F' || (e.ctrlKey && e.key === 'c')) {
-        e.preventDefault(); e.stopImmediatePropagation()
-      }
-    }
   }, true)
 
   // Keyup handler (capture)
   document.addEventListener('keyup', function (e) {
     if (vimManager && vimManager.processKeyup(e)) return
-    handleKeyup(e) // legacy buffered commands (yy, gg)
   }, true)
-}
-
-// Handle keyup events for legacy buffered commands only
-function handleKeyup (e) {
-  // Only handle legacy buffered commands (yy, gg) - no state transitions
-  if (!isCurrentlyInInput() && vimManager && vimManager.current.getName() === 'NORMAL' &&
-        (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'G') &&
-        !e.ctrlKey && !e.metaKey) {
-    e.preventDefault()
-    e.stopPropagation()
-
-    command += e.key
-    var match = true
-
-    switch (command) {
-      case 'yy':
-        copyUrlToClipboard()
-        HUD.show('Copied URL', 800)
-        break
-      case 'gg':
-        window.scrollTo(0, 0)
-        break
-      default:
-        match = false
-        break
-    }
-
-    if (!match && command.length === 1) {
-      setTimeout(function () {
-        command = ''
-      }, VIM_CONFIG.keyTimeout)
-    } else if (match) {
-      command = ''
-    }
-  }
 }
 
 function updateSearchIndicator () {
@@ -778,10 +733,6 @@ function copyToClipboard (text) {
   document.body.removeChild(dummy)
 }
 
-function copyUrlToClipboard () {
-  copyToClipboard(window.location.href)
-}
-
 // Exit to normal mode - blur any focused element
 function exitToNormalMode () {
   // Blur any currently focused element
@@ -791,9 +742,6 @@ function exitToNormalMode () {
 
   // Focus the body to ensure we're in normal mode
   document.body.focus()
-
-  // Clear any ongoing commands
-  command = ''
 }
 
 // Initialize Vim mode when DOM is ready
