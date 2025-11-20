@@ -4,7 +4,7 @@
   "author": "PalmerAL",
   "version": "1.36.1",
   "description": "A fast, minimal browser that protects your privacy",
-  "electronVersion": "37.2.5",
+  "electronVersion": "38.7.1",
   "main": "main.build.js",
   "standard": {
     "globals": [
@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@browsermt/bergamot-translator": "^0.4.9",
-    "@electron/fuses": "^1.7.0",
+    "@electron/fuses": "^1.8.0",
     "chokidar": "^3.6.0",
     "dexie": "^3.0.3",
     "dragula": "github:minbrowser/dragula",
@@ -50,7 +50,7 @@
     "browserify": "^16.5.1",
     "concurrently": "^5.2.0",
     "decomment": "^0.9.0",
-    "electron": "37.2.5",
+    "electron": "38.7.1",
     "electron-builder": "^24.13.3",
     "electron-installer-windows": "^3.0.0",
     "electron-renderify": "0.0.2",
