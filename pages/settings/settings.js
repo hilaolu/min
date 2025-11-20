@@ -412,6 +412,22 @@ enableQUICCheckbox.addEventListener('change', function (e) {
   showRestartRequiredBanner()
 })
 
+/* smooth scrolling setting */
+
+var smoothScrollingCheckbox = document.getElementById('checkbox-smooth-scrolling')
+
+settings.get('smoothScrolling', function (value) {
+  if (value === false) {
+    smoothScrollingCheckbox.checked = false
+  } else {
+    smoothScrollingCheckbox.checked = true
+  }
+})
+
+smoothScrollingCheckbox.addEventListener('change', function (e) {
+  settings.set('smoothScrolling', this.checked)
+})
+
 /* annotation settings */
 
 var annotationEnabledCheckbox = document.getElementById('checkbox-annotation-enabled')

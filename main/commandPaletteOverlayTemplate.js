@@ -1,6 +1,6 @@
 /**
  * Command Palette Overlay Template
- * 
+ *
  * This module handles the loading and management of the command palette overlay HTML template.
  * The HTML is loaded during build time and made available as a global variable.
  */
@@ -12,7 +12,7 @@ var commandPaletteOverlayTemplate = global.commandPaletteOverlayHTML || '<div>Co
  * Get the command palette overlay HTML template
  * @returns {string} The HTML template for the command palette overlay
  */
-function getCommandPaletteOverlayTemplate() {
+function getCommandPaletteOverlayTemplate () {
   if (!isTemplateAvailable()) {
     console.warn('Command palette overlay template not available, using fallback')
   }
@@ -23,7 +23,7 @@ function getCommandPaletteOverlayTemplate() {
  * Check if the template is available
  * @returns {boolean} True if the template is available
  */
-function isTemplateAvailable() {
+function isTemplateAvailable () {
   return !!commandPaletteOverlayTemplate && commandPaletteOverlayTemplate !== '<div>Command Palette Overlay</div>'
 }
 
@@ -35,4 +35,4 @@ module.exports = {
 
 // Make functions available globally for other modules in the concatenated build
 global.getCommandPaletteOverlayTemplate = getCommandPaletteOverlayTemplate
-global.isTemplateAvailable = isTemplateAvailable 
+global.isTemplateAvailable = isTemplateAvailable

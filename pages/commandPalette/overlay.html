@@ -1,465 +1,519 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>Command Palette Overlay</title>
-  <style>
-    /* Reset and base styles */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+  <head>
+    <meta charset="utf-8" />
+    <title>Command Palette Overlay</title>
+    <style>
+      /* Reset and base styles */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: transparent;
-      color: inherit;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      overflow: hidden;
-    }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: transparent;
+        color: inherit;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        overflow: hidden;
+      }
 
-    /* Command Palette Container - matching the original design */
-    #command-palette-overlay {
-      /* Fill the electron view exactly */
-      width: 100%;
-      height: 100%;
-      padding: 0;
-      margin: 0;
-      overflow: hidden;
-      background: #fff;
-      border-radius: 0; /* Rectangular corners to match view */
-      box-shadow: none; /* No outer shadow to avoid mismatch */
-      border: 1px solid rgba(0, 0, 0, 0.18); /* Subtle border for visual separation */
-      box-sizing: border-box;
-    }
+      /* Command Palette Container - matching the original design */
+      #command-palette-overlay {
+        /* Fill the electron view exactly */
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        margin: 0;
+        overflow: hidden;
+        background: #fff;
+        border-radius: 0; /* Rectangular corners to match view */
+        box-shadow: none; /* No outer shadow to avoid mismatch */
+        border: 1px solid rgba(0, 0, 0, 0.18); /* Subtle border for visual separation */
+        box-sizing: border-box;
+      }
 
-    /* Dark mode support */
-    .dark-mode #command-palette-overlay {
-      background: rgb(33, 37, 43);
-      color: #fff;
-      border-color: rgba(255, 255, 255, 0.22);
-    }
+      /* Dark mode support */
+      .dark-mode #command-palette-overlay {
+        background: rgb(33, 37, 43);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.22);
+      }
 
-    .command-palette-container {
-      display: flex;
-      flex-direction: column;
-      height: 100%; /* Fill overlay */
-    }
+      .command-palette-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%; /* Fill overlay */
+      }
 
-    .command-palette-input-container {
-      display: flex;
-      align-items: center;
-      padding: 1em 1.25em;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-      background: transparent;
-    }
+      .command-palette-input-container {
+        display: flex;
+        align-items: center;
+        padding: 1em 1.25em;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        background: transparent;
+      }
 
-    .dark-mode .command-palette-input-container {
-      border-bottom-color: rgba(255, 255, 255, 0.15);
-      background: transparent;
-    }
+      .dark-mode .command-palette-input-container {
+        border-bottom-color: rgba(255, 255, 255, 0.15);
+        background: transparent;
+      }
 
-    #command-palette-input {
-      flex: 1;
-      border: none;
-      outline: none;
-      font-size: 1.1em;
-      background: transparent;
-      color: inherit;
-      font-family: inherit;
-    }
+      #command-palette-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        font-size: 1.1em;
+        background: transparent;
+        color: inherit;
+        font-family: inherit;
+      }
 
-    #command-palette-input::placeholder {
-      color: #999;
-      opacity: 0.7;
-    }
+      #command-palette-input::placeholder {
+        color: #999;
+        opacity: 0.7;
+      }
 
-    .dark-mode #command-palette-input::placeholder {
-      color: #666;
-    }
+      .dark-mode #command-palette-input::placeholder {
+        color: #666;
+      }
 
-    .command-palette-suggestions {
-      background: transparent;
-      flex: 1;
-      overflow-y: auto;
-    }
+      .command-palette-suggestions {
+        background: transparent;
+        flex: 1;
+        overflow-y: auto;
+      }
 
-    .dark-mode .command-palette-suggestions {
-      background: transparent;
-    }
+      .dark-mode .command-palette-suggestions {
+        background: transparent;
+      }
 
-    /* Command palette scrollbar styling */
-    .command-palette-suggestions::-webkit-scrollbar {
-      width: 0.25em;
-    }
+      /* Command palette scrollbar styling */
+      .command-palette-suggestions::-webkit-scrollbar {
+        width: 0.25em;
+      }
 
-    .command-palette-suggestions::-webkit-scrollbar-track {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
+      .command-palette-suggestions::-webkit-scrollbar-track {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
 
-    .command-palette-suggestions::-webkit-scrollbar-thumb {
-      background-color: rgba(0, 0, 0, 0.175);
-      border-radius: 0.25em;
-    }
+      .command-palette-suggestions::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0.175);
+        border-radius: 0.25em;
+      }
 
-    .dark-mode .command-palette-suggestions::-webkit-scrollbar-track {
-      background-color: rgba(255, 255, 255, 0.1);
-    }
+      .dark-mode .command-palette-suggestions::-webkit-scrollbar-track {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
 
-    .dark-mode .command-palette-suggestions::-webkit-scrollbar-thumb {
-      background-color: rgba(255, 255, 255, 0.3);
-    }
+      .dark-mode .command-palette-suggestions::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.3);
+      }
 
-    /* Responsive height adjustments - removed for fixed height */
-    /* The overlay now uses a fixed height of 450px to match the command palette */
+      /* Responsive height adjustments - removed for fixed height */
+      /* The overlay now uses a fixed height of 450px to match the command palette */
 
-    .command-suggestion {
-      display: flex;
-      align-items: center;
-      padding: 0.3em 1.1em;
-      cursor: default;
-      border: none;
-      background: transparent;
-      width: 100%;
-      text-align: left;
-      font-family: inherit;
-      font-size: 0.92em;
-      color: inherit;
-      transition: background-color 0.15s ease;
-      user-select: none;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-    }
+      .command-suggestion {
+        display: flex;
+        align-items: center;
+        padding: 0.3em 1.1em;
+        cursor: default;
+        border: none;
+        background: transparent;
+        width: 100%;
+        text-align: left;
+        font-family: inherit;
+        font-size: 0.92em;
+        color: inherit;
+        transition: background-color 0.15s ease;
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+      }
 
-    .command-suggestion.selected {
-      background: rgba(0, 123, 255, 0.1);
-    }
+      .command-suggestion.selected {
+        background: rgba(0, 123, 255, 0.1);
+      }
 
-    .dark-mode .command-suggestion.selected {
-      background: rgba(0, 123, 255, 0.2);
-    }
+      .dark-mode .command-suggestion.selected {
+        background: rgba(0, 123, 255, 0.2);
+      }
 
-    .command-suggestion-icon {
-      width: 1.05em;
-      height: 1.05em;
-      margin-right: 0.65em;
-      opacity: 0.7;
-    }
+      .command-suggestion-icon {
+        width: 1.05em;
+        height: 1.05em;
+        margin-right: 0.65em;
+        opacity: 0.7;
+      }
 
-    .command-suggestion-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
+      .command-suggestion-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
 
-    .command-suggestion-title {
-      font-weight: 500;
-      margin-bottom: 0.15em;
-    }
+      .command-suggestion-title {
+        font-weight: 500;
+        margin-bottom: 0.15em;
+      }
 
-    .command-suggestion-description {
-      font-size: 0.78em;
-      opacity: 0.7;
-      color: #666;
-    }
+      .command-suggestion-description {
+        font-size: 0.78em;
+        opacity: 0.7;
+        color: #666;
+      }
 
-    .dark-mode .command-suggestion-description {
-      color: #aaa;
-    }
+      .dark-mode .command-suggestion-description {
+        color: #aaa;
+      }
 
-    .command-suggestion-shortcut {
-      font-size: 0.8em;
-      opacity: 0.6;
-      color: #999;
-      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-    }
+      .command-suggestion-shortcut {
+        font-size: 0.8em;
+        opacity: 0.6;
+        color: #999;
+        font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono",
+          monospace;
+      }
 
-    .dark-mode .command-suggestion-shortcut {
-      color: #666;
-    }
+      .dark-mode .command-suggestion-shortcut {
+        color: #666;
+      }
 
-    .command-suggestion-number {
-      font-size: 0.7em;
-      opacity: 0.8;
-      color: #666;
-      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-      font-weight: bold;
-      margin-right: 0.45em;
-      min-width: 1em;
-      text-align: center;
-    }
+      .command-suggestion-number {
+        font-size: 0.7em;
+        opacity: 0.8;
+        color: #666;
+        font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono",
+          monospace;
+        font-weight: bold;
+        margin-right: 0.45em;
+        min-width: 1em;
+        text-align: center;
+      }
 
-    .dark-mode .command-suggestion-number {
-      color: #aaa;
-    }
+      .dark-mode .command-suggestion-number {
+        color: #aaa;
+      }
 
-    /* Disable text selection and mouse interactions on command palette */
-    #command-palette-overlay,
-    .command-palette-suggestions {
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-    }
+      /* Disable text selection and mouse interactions on command palette */
+      #command-palette-overlay,
+      .command-palette-suggestions {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
 
-    .command-palette-empty {
-      padding: 2em 1.25em;
-      text-align: center;
-      opacity: 0.6;
-      color: #666;
-    }
+      .command-palette-empty {
+        padding: 2em 1.25em;
+        text-align: center;
+        opacity: 0.6;
+        color: #666;
+      }
 
-    .dark-mode .command-palette-empty {
-      color: #aaa;
-    }
+      .dark-mode .command-palette-empty {
+        color: #aaa;
+      }
 
-    /* Icon font support */
-    .i {
-      font-family: 'Carbon';
-      font-style: normal;
-      font-weight: normal;
-      font-variant: normal;
-      text-transform: none;
-      line-height: 1;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
+      /* Icon font support */
+      .i {
+        font-family: "Carbon";
+        font-style: normal;
+        font-weight: normal;
+        font-variant: normal;
+        text-transform: none;
+        line-height: 1;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
 
-    /* Placeholder for icon font - will be loaded by main process */
-    .i.carbon\:search::before { content: "🔍"; }
-    .i.carbon\:close::before { content: "✕"; }
-    .i.carbon\:new-tab::before { content: "➕"; }
-    .i.carbon\:bookmark::before { content: "🔖"; }
-    .i.carbon\:time::before { content: "⏰"; }
-    .i.carbon\:renew::before { content: "🔄"; }
-    .i.carbon\:new-window::before { content: "🪟"; }
+      /* Placeholder for icon font - will be loaded by main process */
+      .i.carbon\:search::before {
+        content: "🔍";
+      }
+      .i.carbon\:close::before {
+        content: "✕";
+      }
+      .i.carbon\:new-tab::before {
+        content: "➕";
+      }
+      .i.carbon\:bookmark::before {
+        content: "🔖";
+      }
+      .i.carbon\:time::before {
+        content: "⏰";
+      }
+      .i.carbon\:renew::before {
+        content: "🔄";
+      }
+      .i.carbon\:new-window::before {
+        content: "🪟";
+      }
 
-    /* REPL specific styles */
-    .repl-empty {
-      padding: 2em 1.25em;
-      text-align: center;
-      opacity: 0.6;
-      color: #666;
-    }
+      /* REPL specific styles */
+      .repl-empty {
+        padding: 2em 1.25em;
+        text-align: center;
+        opacity: 0.6;
+        color: #666;
+      }
 
-    .dark-mode .repl-empty {
-      color: #aaa;
-    }
+      .dark-mode .repl-empty {
+        color: #aaa;
+      }
 
-    .repl-history-entry {
-      padding: 0.5em 1.25em;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-      background: #f9f9f9;
-    }
+      .repl-history-entry {
+        padding: 0.5em 1.25em;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        background: #f9f9f9;
+      }
 
-    .dark-mode .repl-history-entry {
-      background: rgb(33, 37, 43);
-      border-bottom-color: rgba(255, 255, 255, 0.1);
-    }
+      .dark-mode .repl-history-entry {
+        background: rgb(33, 37, 43);
+        border-bottom-color: rgba(255, 255, 255, 0.1);
+      }
 
-    .repl-input-line, .repl-output-line {
-      display: flex;
-      align-items: center;
-      font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-      font-size: 0.9em;
-      color: #333;
-    }
+      .repl-input-line,
+      .repl-output-line {
+        display: flex;
+        align-items: center;
+        font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono",
+          monospace;
+        font-size: 0.9em;
+        color: #333;
+      }
 
-    .dark-mode .repl-input-line, .dark-mode .repl-output-line {
-      color: #ccc;
-    }
+      .dark-mode .repl-input-line,
+      .dark-mode .repl-output-line {
+        color: #ccc;
+      }
 
-    .repl-prompt-label {
-      font-weight: bold;
-      margin-right: 0.5em;
-      opacity: 0.7;
-    }
+      .repl-prompt-label {
+        font-weight: bold;
+        margin-right: 0.5em;
+        opacity: 0.7;
+      }
 
-    .repl-prompt-number {
-      font-weight: bold;
-      margin-right: 0.5em;
-      opacity: 0.8;
-      color: #666;
-    }
+      .repl-prompt-number {
+        font-weight: bold;
+        margin-right: 0.5em;
+        opacity: 0.8;
+        color: #666;
+      }
 
-    .dark-mode .repl-prompt-number {
-      color: #aaa;
-    }
+      .dark-mode .repl-prompt-number {
+        color: #aaa;
+      }
 
-    .repl-input-code {
-      flex: 1;
-      white-space: pre-wrap;
-      word-break: break-all;
-      font-weight: bold;
-    }
+      .repl-input-code {
+        flex: 1;
+        white-space: pre-wrap;
+        word-break: break-all;
+        font-weight: bold;
+      }
 
-    .repl-output-error {
-      color: #dc3545; /* Red for errors */
-    }
+      .repl-output-error {
+        color: #dc3545; /* Red for errors */
+      }
 
-    .repl-output {
-      color: #28a745; /* Green for output */
-    }
-  </style>
-</head>
-<body>
-  <div id="command-palette-overlay">
-    <div class="command-palette-container">
-      <div class="command-palette-input-container">
-        <input type="text" id="command-palette-input" placeholder="Search tabs or type >w, >r..." readonly />
-      </div>
-      <div id="command-palette-suggestions" class="command-palette-suggestions has-thin-scrollbar">
-        <!-- Command suggestions will be populated here -->
-        <div class="command-palette-empty">
-          Type to search or use commands
+      .repl-output {
+        color: #28a745; /* Green for output */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="command-palette-overlay">
+      <div class="command-palette-container">
+        <div class="command-palette-input-container">
+          <input
+            type="text"
+            id="command-palette-input"
+            placeholder="Search tabs or type >w, >r..."
+            readonly
+          />
+        </div>
+        <div
+          id="command-palette-suggestions"
+          class="command-palette-suggestions has-thin-scrollbar"
+        >
+          <!-- Command suggestions will be populated here -->
+          <div class="command-palette-empty">
+            Type to search or use commands
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <script>
-    // Command palette overlay state
-    let isVisible = false;
-    let selectedIndex = 0;
-    let currentCandidates = [];
-    let lastRenderedKeys = [];
-    let lastSelectionIndex = -1;
-    let renderScheduled = false;
-    let lastReplSignature = '';
+    <script>
+      // Command palette overlay state
+      let isVisible = false;
+      let selectedIndex = 0;
+      let currentCandidates = [];
+      let lastRenderedKeys = [];
+      let lastSelectionIndex = -1;
+      let renderScheduled = false;
+      let lastReplSignature = "";
 
-    // Get DOM elements
-    const input = document.getElementById('command-palette-input');
-    const suggestions = document.getElementById('command-palette-suggestions');
+      // Get DOM elements
+      const input = document.getElementById("command-palette-input");
+      const suggestions = document.getElementById(
+        "command-palette-suggestions"
+      );
 
-    // Schedule a batched render on next animation frame
-    function scheduleRender() {
-      if (renderScheduled) return;
-      renderScheduled = true;
-      requestAnimationFrame(() => {
-        renderScheduled = false;
-        applyRender();
-      });
-    }
-
-    // Create suggestion element (structure reused for diffs)
-    function createSuggestionElement(key) {
-      const el = document.createElement('button');
-      el.className = 'command-suggestion';
-      el.dataset.key = key;
-      // number
-      const num = document.createElement('div');
-      num.className = 'command-suggestion-number';
-      el.appendChild(num);
-      // icon
-      const icon = document.createElement('i');
-      icon.className = 'i command-suggestion-icon';
-      el.appendChild(icon);
-      // content
-      const content = document.createElement('div');
-      content.className = 'command-suggestion-content';
-      const title = document.createElement('div');
-      title.className = 'command-suggestion-title';
-      const desc = document.createElement('div');
-      desc.className = 'command-suggestion-description';
-      content.appendChild(title);
-      content.appendChild(desc);
-      el.appendChild(content);
-      // shortcut
-      const shortcut = document.createElement('div');
-      shortcut.className = 'command-suggestion-shortcut';
-      el.appendChild(shortcut);
-
-      // Disable mouse interactions
-      const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
-      el.addEventListener('click', prevent);
-      el.addEventListener('mousedown', prevent);
-      el.addEventListener('mouseenter', prevent);
-
-      return el;
-    }
-
-    // Update or set content on an existing suggestion element
-    function updateSuggestionElement(el, candidate, index) {
-      // number
-      const numEl = el.querySelector('.command-suggestion-number');
-      if (index < 10) {
-        if (numEl) numEl.textContent = String(index);
-      } else if (numEl) {
-        numEl.textContent = '';
+      // Schedule a batched render on next animation frame
+      function scheduleRender() {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        requestAnimationFrame(() => {
+          renderScheduled = false;
+          applyRender();
+        });
       }
 
-      // icon
-      const iconEl = el.querySelector('.command-suggestion-icon');
-      const desiredIconClass = `i ${candidate.icon ?? 'carbon:search'} command-suggestion-icon`;
-      if (iconEl && iconEl.className !== desiredIconClass) {
-        iconEl.className = desiredIconClass;
+      // Create suggestion element (structure reused for diffs)
+      function createSuggestionElement(key) {
+        const el = document.createElement("button");
+        el.className = "command-suggestion";
+        el.dataset.key = key;
+        // number
+        const num = document.createElement("div");
+        num.className = "command-suggestion-number";
+        el.appendChild(num);
+        // icon
+        const icon = document.createElement("i");
+        icon.className = "i command-suggestion-icon";
+        el.appendChild(icon);
+        // content
+        const content = document.createElement("div");
+        content.className = "command-suggestion-content";
+        const title = document.createElement("div");
+        title.className = "command-suggestion-title";
+        const desc = document.createElement("div");
+        desc.className = "command-suggestion-description";
+        content.appendChild(title);
+        content.appendChild(desc);
+        el.appendChild(content);
+        // shortcut
+        const shortcut = document.createElement("div");
+        shortcut.className = "command-suggestion-shortcut";
+        el.appendChild(shortcut);
+
+        // Disable mouse interactions
+        const prevent = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        };
+        el.addEventListener("click", prevent);
+        el.addEventListener("mousedown", prevent);
+        el.addEventListener("mouseenter", prevent);
+
+        return el;
       }
 
-      // text content
-      const titleEl = el.querySelector('.command-suggestion-title');
-      const descEl = el.querySelector('.command-suggestion-description');
-      const shortcutEl = el.querySelector('.command-suggestion-shortcut');
-
-      if (titleEl && titleEl.textContent !== (candidate.title ?? 'Untitled')) {
-        titleEl.textContent = candidate.title ?? 'Untitled';
-      }
-
-      let description = candidate.description ?? '';
-      if (description && description.length > 60) description = description.substring(0, 60) + '...';
-      if (descEl) {
-        if (description) {
-          descEl.style.display = '';
-          if (descEl.textContent !== description) descEl.textContent = description;
-        } else {
-          descEl.style.display = 'none';
+      // Update or set content on an existing suggestion element
+      function updateSuggestionElement(el, candidate, index) {
+        // number
+        const numEl = el.querySelector(".command-suggestion-number");
+        if (index < 10) {
+          if (numEl) numEl.textContent = String(index);
+        } else if (numEl) {
+          numEl.textContent = "";
         }
-      }
 
-      if (shortcutEl) {
-        if (candidate.shortcut) {
-          shortcutEl.style.display = '';
-          if (shortcutEl.textContent !== candidate.shortcut) shortcutEl.textContent = candidate.shortcut;
-        } else {
-          shortcutEl.style.display = 'none';
+        // icon
+        const iconEl = el.querySelector(".command-suggestion-icon");
+        const desiredIconClass = `i ${
+          candidate.icon ?? "carbon:search"
+        } command-suggestion-icon`;
+        if (iconEl && iconEl.className !== desiredIconClass) {
+          iconEl.className = desiredIconClass;
         }
-      }
-    }
 
-    // Apply currentCandidates and selectedIndex to DOM with minimal changes
-    function applyRender() {
-      // REPL special rendering (skip if unchanged)
-      const isRepl = currentCandidates.length === 1 && currentCandidates[0] && currentCandidates[0].displayData && currentCandidates[0].displayData.mode === 'repl';
-      if (isRepl) {
-        const history = currentCandidates[0].displayData.history || [];
-        const sig = JSON.stringify(history.map(h => [h.id, h.input, h.output, !!h.isError]));
-        if (sig !== lastReplSignature) {
-          // Rebuild REPL history only if changed
-          const fragment = document.createDocumentFragment();
-          if (history.length === 0) {
-            const emptyEl = document.createElement('div');
-            emptyEl.className = 'repl-empty';
-            emptyEl.textContent = 'No commands executed yet. Type JavaScript code and press Enter.';
-            fragment.appendChild(emptyEl);
+        // text content
+        const titleEl = el.querySelector(".command-suggestion-title");
+        const descEl = el.querySelector(".command-suggestion-description");
+        const shortcutEl = el.querySelector(".command-suggestion-shortcut");
+
+        if (
+          titleEl &&
+          titleEl.textContent !== (candidate.title ?? "Untitled")
+        ) {
+          titleEl.textContent = candidate.title ?? "Untitled";
+        }
+
+        let description = candidate.description ?? "";
+        if (description && description.length > 60)
+          description = description.substring(0, 60) + "...";
+        if (descEl) {
+          if (description) {
+            descEl.style.display = "";
+            if (descEl.textContent !== description)
+              descEl.textContent = description;
           } else {
-            history.forEach((entry) => {
-              const historyEl = document.createElement('div');
-              historyEl.className = 'repl-history-entry';
+            descEl.style.display = "none";
+          }
+        }
 
-              let outputText = String(entry.output);
-              if (entry.output === null) outputText = 'null';
-              else if (entry.output === undefined) outputText = 'undefined';
-              else if (typeof entry.output === 'object') {
-                try { outputText = JSON.stringify(entry.output, null, 2); } catch (e) { outputText = String(entry.output); }
-              }
+        if (shortcutEl) {
+          if (candidate.shortcut) {
+            shortcutEl.style.display = "";
+            if (shortcutEl.textContent !== candidate.shortcut)
+              shortcutEl.textContent = candidate.shortcut;
+          } else {
+            shortcutEl.style.display = "none";
+          }
+        }
+      }
 
-              const isError = !!entry.isError;
-              const outputClass = isError ? 'repl-output-error' : 'repl-output';
-              historyEl.innerHTML = `
+      // Apply currentCandidates and selectedIndex to DOM with minimal changes
+      function applyRender() {
+        // REPL special rendering (skip if unchanged)
+        const isRepl =
+          currentCandidates.length === 1 &&
+          currentCandidates[0] &&
+          currentCandidates[0].displayData &&
+          currentCandidates[0].displayData.mode === "repl";
+        if (isRepl) {
+          const history = currentCandidates[0].displayData.history || [];
+          const sig = JSON.stringify(
+            history.map((h) => [h.id, h.input, h.output, !!h.isError])
+          );
+          if (sig !== lastReplSignature) {
+            // Rebuild REPL history only if changed
+            const fragment = document.createDocumentFragment();
+            if (history.length === 0) {
+              const emptyEl = document.createElement("div");
+              emptyEl.className = "repl-empty";
+              emptyEl.textContent =
+                "No commands executed yet. Type JavaScript code and press Enter.";
+              fragment.appendChild(emptyEl);
+            } else {
+              history.forEach((entry) => {
+                const historyEl = document.createElement("div");
+                historyEl.className = "repl-history-entry";
+
+                let outputText = String(entry.output);
+                if (entry.output === null) outputText = "null";
+                else if (entry.output === undefined) outputText = "undefined";
+                else if (typeof entry.output === "object") {
+                  try {
+                    outputText = JSON.stringify(entry.output, null, 2);
+                  } catch (e) {
+                    outputText = String(entry.output);
+                  }
+                }
+
+                const isError = !!entry.isError;
+                const outputClass = isError
+                  ? "repl-output-error"
+                  : "repl-output";
+                historyEl.innerHTML = `
                 <div class="repl-input-line">
                   <span class="repl-prompt-label">In</span>
                   <span class="repl-prompt-number">[${entry.id}]:</span>
@@ -471,177 +525,194 @@
                   <span class="${outputClass}"></span>
                 </div>
               `;
-              const setText = (el, text) => { const div = document.createElement('div'); div.textContent = text; el.innerHTML = div.innerHTML; };
-              setText(historyEl.querySelector('.repl-input-code'), String(entry.input ?? ''));
-              setText(historyEl.querySelector(`.${outputClass}`), outputText);
-              fragment.appendChild(historyEl);
-            });
+                const setText = (el, text) => {
+                  const div = document.createElement("div");
+                  div.textContent = text;
+                  el.innerHTML = div.innerHTML;
+                };
+                setText(
+                  historyEl.querySelector(".repl-input-code"),
+                  String(entry.input ?? "")
+                );
+                setText(historyEl.querySelector(`.${outputClass}`), outputText);
+                fragment.appendChild(historyEl);
+              });
+            }
+            suggestions.innerHTML = "";
+            suggestions.appendChild(fragment);
+            lastReplSignature = sig;
+            lastRenderedKeys = []; // reset normal cache
           }
-          suggestions.innerHTML = '';
+          // selection irrelevant in REPL view
+          lastSelectionIndex = selectedIndex;
+          return;
+        }
+
+        // Normal candidate list rendering with keyed diff
+        const keys = currentCandidates.map((c, i) =>
+          c.id ? String(c.id) : `${i}|${c.title ?? ""}|${c.description ?? ""}`
+        );
+
+        // If keys completely match, only update selection and changed content
+        const fullRebuild =
+          lastRenderedKeys.length === 0 ||
+          lastRenderedKeys.length !== keys.length ||
+          lastRenderedKeys.some((k, i) => k !== keys[i]);
+
+        if (fullRebuild) {
+          const fragment = document.createDocumentFragment();
+          for (let i = 0; i < currentCandidates.length; i++) {
+            const candidate = currentCandidates[i];
+            const key = keys[i];
+            const el = createSuggestionElement(key);
+            updateSuggestionElement(el, candidate, i);
+            if (i === selectedIndex) el.classList.add("selected");
+            fragment.appendChild(el);
+          }
+          suggestions.innerHTML = "";
           suggestions.appendChild(fragment);
-          lastReplSignature = sig;
-          lastRenderedKeys = []; // reset normal cache
+          lastRenderedKeys = keys;
+        } else {
+          // Update existing nodes in place
+          const children = suggestions.children;
+          for (let i = 0; i < currentCandidates.length; i++) {
+            const candidate = currentCandidates[i];
+            const el = children[i];
+            updateSuggestionElement(el, candidate, i);
+            if (i === selectedIndex) el.classList.add("selected");
+            else el.classList.remove("selected");
+          }
         }
-        // selection irrelevant in REPL view
-        lastSelectionIndex = selectedIndex;
-        return;
+
+        // Scroll selected into view only if it changed
+        if (selectedIndex !== lastSelectionIndex) {
+          const el = suggestions.children[selectedIndex];
+          if (el) el.scrollIntoView({ block: "nearest" });
+          lastSelectionIndex = selectedIndex;
+        }
+        // Reset REPL cache
+        lastReplSignature = "";
       }
 
-      // Normal candidate list rendering with keyed diff
-      const keys = currentCandidates.map((c, i) => (c.id ? String(c.id) : `${i}|${c.title ?? ''}|${c.description ?? ''}`));
-
-      // If keys completely match, only update selection and changed content
-      const fullRebuild = lastRenderedKeys.length === 0 || lastRenderedKeys.length !== keys.length || lastRenderedKeys.some((k, i) => k !== keys[i]);
-
-      if (fullRebuild) {
-        const fragment = document.createDocumentFragment();
-        for (let i = 0; i < currentCandidates.length; i++) {
-          const candidate = currentCandidates[i];
-          const key = keys[i];
-          const el = createSuggestionElement(key);
-          updateSuggestionElement(el, candidate, i);
-          if (i === selectedIndex) el.classList.add('selected');
-          fragment.appendChild(el);
-        }
-        suggestions.innerHTML = '';
-        suggestions.appendChild(fragment);
-        lastRenderedKeys = keys;
-      } else {
-        // Update existing nodes in place
-        const children = suggestions.children;
-        for (let i = 0; i < currentCandidates.length; i++) {
-          const candidate = currentCandidates[i];
-          const el = children[i];
-          updateSuggestionElement(el, candidate, i);
-          if (i === selectedIndex) el.classList.add('selected'); else el.classList.remove('selected');
+      // Utility functions
+      /**
+       * Safely update DOM element content
+       * @param {HTMLElement} element - Element to update
+       * @param {string} content - Content to set
+       */
+      function safeUpdateElement(element, content) {
+        if (element && typeof content === "string") {
+          element.innerHTML = content;
         }
       }
 
-      // Scroll selected into view only if it changed
-      if (selectedIndex !== lastSelectionIndex) {
-        const el = suggestions.children[selectedIndex];
-        if (el) el.scrollIntoView({ block: 'nearest' });
-        lastSelectionIndex = selectedIndex;
+      /**
+       * Validate candidate object structure
+       * @param {Object} candidate - Candidate object to validate
+       * @returns {boolean} True if valid
+       */
+      function isValidCandidate(candidate) {
+        return candidate && typeof candidate === "object" && candidate.title;
       }
-      // Reset REPL cache
-      lastReplSignature = '';
-    }
 
-    // Utility functions
-    /**
-     * Safely update DOM element content
-     * @param {HTMLElement} element - Element to update
-     * @param {string} content - Content to set
-     */
-    function safeUpdateElement(element, content) {
-      if (element && typeof content === 'string') {
-        element.innerHTML = content;
+      /**
+       * Update the overlay input content (called via RPC)
+       * @param {string} content - The content to set in the overlay input
+       */
+      function updateOverlayInput(content) {
+        if (input) {
+          input.value = content ?? "";
+        }
       }
-    }
 
-    /**
-     * Validate candidate object structure
-     * @param {Object} candidate - Candidate object to validate
-     * @returns {boolean} True if valid
-     */
-    function isValidCandidate(candidate) {
-      return candidate && typeof candidate === 'object' && candidate.title;
-    }
-
-    /**
-     * Update the overlay input content (called via RPC)
-     * @param {string} content - The content to set in the overlay input
-     */
-    function updateOverlayInput(content) {
-      if (input) {
-        input.value = content ?? '';
+      /**
+       * Clear the overlay input content
+       */
+      function clearOverlayInput() {
+        updateOverlayInput("");
       }
-    }
 
-    /**
-     * Clear the overlay input content
-     */
-    function clearOverlayInput() {
-      updateOverlayInput('');
-    }
-
-    /**
-     * Focus the overlay input (for visual feedback)
-     */
-    function focusOverlayInput() {
-      if (input) {
-        input.focus();
+      /**
+       * Focus the overlay input (for visual feedback)
+       */
+      function focusOverlayInput() {
+        if (input) {
+          input.focus();
+        }
       }
-    }
 
-    /**
-     * Update suggestions in the overlay (called via RPC)
-     * @param {Array} candidates - Array of serialized candidate objects
-     */
-    function updateSuggestions(candidates) {
-      currentCandidates = (candidates ?? []).filter(isValidCandidate);
-      scheduleRender();
-    }
+      /**
+       * Update suggestions in the overlay (called via RPC)
+       * @param {Array} candidates - Array of serialized candidate objects
+       */
+      function updateSuggestions(candidates) {
+        currentCandidates = (candidates ?? []).filter(isValidCandidate);
+        scheduleRender();
+      }
 
-    /**
-     * Update selection highlighting (called via RPC)
-     * @param {Object} selectionData - Selection data including index and candidate info
-     */
-    function updateSelection(selectionData) {
-      if (!selectionData) return;
-      selectedIndex = selectionData.index ?? 0;
-      scheduleRender();
-    }
+      /**
+       * Update selection highlighting (called via RPC)
+       * @param {Object} selectionData - Selection data including index and candidate info
+       */
+      function updateSelection(selectionData) {
+        if (!selectionData) return;
+        selectedIndex = selectionData.index ?? 0;
+        scheduleRender();
+      }
 
-    /**
-     * Clear all suggestions
-     */
-    function clearSuggestions() {
-      currentCandidates = [];
-      selectedIndex = 0;
-      lastRenderedKeys = [];
-      lastReplSignature = '';
-      suggestions.innerHTML = '<div class="command-palette-empty">Type to search or use commands</div>';
-    }
+      /**
+       * Clear all suggestions
+       */
+      function clearSuggestions() {
+        currentCandidates = [];
+        selectedIndex = 0;
+        lastRenderedKeys = [];
+        lastReplSignature = "";
+        suggestions.innerHTML =
+          '<div class="command-palette-empty">Type to search or use commands</div>';
+      }
 
-    /**
-     * Show the overlay
-     */
-    function showOverlay() {
-      if (isVisible) return;
-      isVisible = true;
-      document.body.style.display = 'flex';
-      selectedIndex = 0;
-      input.value = '';
-    }
+      /**
+       * Show the overlay
+       */
+      function showOverlay() {
+        if (isVisible) return;
+        isVisible = true;
+        document.body.style.display = "flex";
+        selectedIndex = 0;
+        input.value = "";
+      }
 
-    /**
-     * Hide the overlay
-     */
-    function hideOverlay() {
-      if (!isVisible) return;
-      isVisible = false;
-      document.body.style.display = 'none';
-      input.blur();
-      selectedIndex = 0;
-      currentCandidates = [];
-      clearSuggestions();
-    }
+      /**
+       * Hide the overlay
+       */
+      function hideOverlay() {
+        if (!isVisible) return;
+        isVisible = false;
+        document.body.style.display = "none";
+        input.blur();
+        selectedIndex = 0;
+        currentCandidates = [];
+        clearSuggestions();
+      }
 
-    // Make functions available globally for RPC calls
-    window.updateOverlayInput = updateOverlayInput;
-    window.clearOverlayInput = clearOverlayInput;
-    window.focusOverlayInput = focusOverlayInput;
-    window.updateSuggestions = updateSuggestions;
-    window.updateSelection = updateSelection;
-    window.clearSuggestions = clearSuggestions;
-    window.showOverlay = showOverlay;
-    window.hideOverlay = hideOverlay;
+      // Make functions available globally for RPC calls
+      window.updateOverlayInput = updateOverlayInput;
+      window.clearOverlayInput = clearOverlayInput;
+      window.focusOverlayInput = focusOverlayInput;
+      window.updateSuggestions = updateSuggestions;
+      window.updateSelection = updateSelection;
+      window.clearSuggestions = clearSuggestions;
+      window.showOverlay = showOverlay;
+      window.hideOverlay = hideOverlay;
 
-    // Check for dark mode
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.body.classList.add('dark-mode');
-    }
-  </script>
-</body>
-</html> 
+      // Check for dark mode
+      if (
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+      ) {
+        document.body.classList.add("dark-mode");
+      }
+    </script>
+  </body>
+</html>

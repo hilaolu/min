@@ -1,10 +1,10 @@
 /**
  * Command Palette Overlay
- * 
+ *
  * This module provides overlay functionality for the command palette.
  * The overlay shows when the command palette is visible and provides
  * visual feedback and context for the current command state.
- * 
+ *
  * Features:
  * - Visual overlay that appears when command palette is shown
  * - Context-aware display showing current command type
@@ -27,7 +27,7 @@ var commandPaletteOverlayManager = global.overlayManager || null
  * Check if overlay manager is available and ready
  * @returns {boolean} True if ready
  */
-function isOverlayManagerReady() {
+function isOverlayManagerReady () {
   return commandPaletteOverlayManager !== null
 }
 
@@ -35,7 +35,7 @@ function isOverlayManagerReady() {
  * Safely execute RPC calls with minimal error handling
  * @param {string} code - JavaScript code to execute
  */
-function safeRpcEval(code) {
+function safeRpcEval (code) {
   try {
     commandPaletteOverlayManager.eval(code)
   } catch (error) {
@@ -46,7 +46,7 @@ function safeRpcEval(code) {
 /**
  * Initialize the command palette overlay
  */
-function initCommandPaletteOverlay() {
+function initCommandPaletteOverlay () {
   if (!isOverlayManagerReady()) {
     return
   }
@@ -65,7 +65,7 @@ function initCommandPaletteOverlay() {
 /**
  * Show the command palette overlay
  */
-function showCommandPaletteOverlay() {
+function showCommandPaletteOverlay () {
   if (!isOverlayManagerReady()) {
     return
   }
@@ -73,16 +73,16 @@ function showCommandPaletteOverlay() {
   if (!commandPaletteOverlayManager.hasCurrent()) {
     initCommandPaletteOverlay()
   }
-  
+
   commandPaletteOverlayManager.show()
-  
+
   // Show the overlay via RPC
   try {
     safeRpcEval(`
       if (window.showOverlay) {
         window.showOverlay();
       }
-    `);
+    `)
   } catch (error) {
     // Silent fail for production - overlay will continue to work
   }
@@ -98,7 +98,7 @@ function showCommandPaletteOverlay() {
 /**
  * Hide the command palette overlay
  */
-function hideCommandPaletteOverlay() {
+function hideCommandPaletteOverlay () {
   if (!isOverlayManagerReady()) {
     return
   }
@@ -110,11 +110,11 @@ function hideCommandPaletteOverlay() {
         if (window.hideOverlay) {
           window.hideOverlay();
         }
-      `);
+      `)
     } catch (error) {
       // Silent fail for production - overlay will continue to work
     }
-    
+
     commandPaletteOverlayManager.hide()
   }
 }
@@ -123,7 +123,7 @@ function hideCommandPaletteOverlay() {
  * Update the overlay UI with complete state
  * @param {Object} overlayState - Complete state object with input, candidates, selection, and visibility
  */
-function updateOverlayUI(overlayState) {
+function updateOverlayUI (overlayState) {
   if (!isOverlayManagerReady() || !commandPaletteOverlayManager.isVisible()) {
     return
   }
@@ -142,7 +142,7 @@ function updateOverlayUI(overlayState) {
         if (window.updateOverlayInput) {
           window.updateOverlayInput(${JSON.stringify(overlayState.input)});
         }
-      `);
+      `)
     }
 
     // Update suggestions/candidates if provided
@@ -151,7 +151,7 @@ function updateOverlayUI(overlayState) {
         if (window.updateSuggestions) {
           window.updateSuggestions(${JSON.stringify(overlayState.candidates)});
         }
-      `);
+      `)
     }
 
     // Update selection if provided
@@ -167,12 +167,12 @@ function updateOverlayUI(overlayState) {
           displayData: overlayState.candidates[overlayState.selectedIndex].displayData ?? {}
         } : null
       }
-      
+
       safeRpcEval(`
         if (window.updateSelection) {
           window.updateSelection(${JSON.stringify(selectionData)});
         }
-      `);
+      `)
     }
   } catch (error) {
     // Silent fail for production - overlay will continue to work
@@ -182,7 +182,7 @@ function updateOverlayUI(overlayState) {
 /**
  * Destroy the command palette overlay
  */
-function destroyCommandPaletteOverlay() {
+function destroyCommandPaletteOverlay () {
   if (!isOverlayManagerReady()) {
     return
   }
@@ -204,4 +204,4 @@ global.initCommandPaletteOverlay = initCommandPaletteOverlay
 global.showCommandPaletteOverlay = showCommandPaletteOverlay
 global.hideCommandPaletteOverlay = hideCommandPaletteOverlay
 global.updateOverlayUI = updateOverlayUI
-global.destroyCommandPaletteOverlay = destroyCommandPaletteOverlay 
+global.destroyCommandPaletteOverlay = destroyCommandPaletteOverlay

@@ -1,15 +1,15 @@
 /**
  * Overlay Manager - A comprehensive system for creating and managing overlay views
- * 
+ *
  * This system provides a clean API for creating overlay views that can be displayed
  * on top of the main browser window. Only one overlay can exist at any given time.
- * 
+ *
  * Key Features:
  * - Single overlay instance (auto-destroys previous overlay)
  * - Non-focusable overlays (maintains main window keyboard shortcuts)
  * - RPC interface for JavaScript execution
  * - Automatic focus management
- * 
+ *
  * @example
  * // Initialize an overlay
  * overlayManager.init({
@@ -17,10 +17,10 @@
  *   position: 'center',
  *   html: '<div>Hello World</div>'
  * });
- * 
+ *
  * // Toggle visibility
  * overlayManager.toggle();
- * 
+ *
  * // Execute JavaScript in overlay
  * overlayManager.eval('console.log("Hello from overlay")');
  */
@@ -43,16 +43,16 @@ var overlayManager = {
    * @param {string} options.html - HTML content for the overlay (user provided) or file path
    * @param {Object} options.webPreferences - Custom web preferences (optional)
    */
-  init: function(options) {
+  init: function (options) {
     // Destroy any existing overlay first
     this.destroy()
-    
+
     const defaultSize = { width: 400, height: 400 }
     const size = options.size || defaultSize
-    
+
     const defaultPosition = 'center'
     const position = options.position || defaultPosition
-    
+
     // Get default web preferences from the global function
     const defaultWebPreferences = {
       ...(typeof getDefaultViewWebPreferences === 'function' ? getDefaultViewWebPreferences() : {
@@ -87,7 +87,7 @@ var overlayManager = {
 
     // Create the WebContentsView
     overlay.view = new WebContentsView({ webPreferences: webPreferences })
-    
+
     // Load the HTML content - check if it's a file path or inline HTML
     if (overlay.html.startsWith('file://') || overlay.html.startsWith('http')) {
       // Load from file path or URL
@@ -97,13 +97,13 @@ var overlayManager = {
       const htmlContent = this.createHTMLContent(overlay)
       overlay.view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent))
     }
-    
+
     // Ensure the overlay doesn't interfere with keyboard events
     overlay.view.webContents.setIgnoreMenuShortcuts(true)
-    
+
     // Store the overlay as current
     this.currentOverlay = overlay
-    
+
     // Add to viewMap for compatibility (use a fixed ID since only one overlay exists)
     const overlayId = 'overlay-current'
     if (typeof viewMap !== 'undefined') {
@@ -122,7 +122,7 @@ var overlayManager = {
    * @param {Object} overlay - Overlay object
    * @returns {string} HTML content
    */
-  createHTMLContent: function(overlay) {
+  createHTMLContent: function (overlay) {
     // Use user-provided HTML as-is
     return overlay.html
   },
@@ -132,7 +132,7 @@ var overlayManager = {
    * @param {Object} win - Window object (optional, uses current window if not provided)
    * @returns {boolean} - True if overlay is now visible, false if hidden
    */
-  toggle: function(win) {
+  toggle: function (win) {
     const overlay = this.currentOverlay
     if (!overlay) {
       console.warn('No overlay to toggle')
@@ -142,7 +142,7 @@ var overlayManager = {
     if (!win) {
       win = typeof windows !== 'undefined' ? windows.getCurrent() : null
     }
-    
+
     if (!win) {
       console.warn('No window available to toggle overlay')
       return false
@@ -161,7 +161,7 @@ var overlayManager = {
    * Show overlay
    * @param {Object} win - Window object (optional, uses current window if not provided)
    */
-  show: function(win) {
+  show: function (win) {
     const overlay = this.currentOverlay
     if (!overlay) {
       console.warn('No overlay to show')
@@ -171,7 +171,7 @@ var overlayManager = {
     if (!win) {
       win = typeof windows !== 'undefined' ? windows.getCurrent() : null
     }
-    
+
     if (!win) {
       console.warn('No window available to show overlay')
       return
@@ -184,7 +184,7 @@ var overlayManager = {
     // Calculate position
     const winBounds = win.getContentBounds()
     let overlayX, overlayY
-    
+
     if (overlay.position === 'center') {
       overlayX = Math.max(0, (winBounds.width - overlay.size.width) / 2)
       overlayY = Math.max(0, (winBounds.height - overlay.size.height) / 2)
@@ -224,7 +224,7 @@ var overlayManager = {
    * Hide overlay
    * @param {Object} win - Window object (optional, uses current window if not provided)
    */
-  hide: function(win) {
+  hide: function (win) {
     const overlay = this.currentOverlay
     if (!overlay) {
       console.warn('No overlay to hide')
@@ -234,7 +234,7 @@ var overlayManager = {
     if (!win) {
       win = overlay.window || (typeof windows !== 'undefined' ? windows.getCurrent() : null)
     }
-    
+
     if (!win || !overlay.visible) {
       return
     }
@@ -255,7 +255,7 @@ var overlayManager = {
    * @param {string} code - JavaScript code to execute
    * @returns {Promise} - Promise that resolves with the result
    */
-  eval: function(code) {
+  eval: function (code) {
     const overlay = this.currentOverlay
     if (!overlay) {
       return Promise.reject(new Error('No overlay to evaluate'))
@@ -271,7 +271,7 @@ var overlayManager = {
   /**
    * Destroy overlay
    */
-  destroy: function() {
+  destroy: function () {
     const overlay = this.currentOverlay
     if (!overlay) {
       return
@@ -297,7 +297,7 @@ var overlayManager = {
     if (overlay.view && overlay.view.webContents) {
       overlay.view.webContents.destroy()
     }
-    
+
     // Clean up references
     this.currentOverlay = null
     if (typeof viewMap !== 'undefined') {
@@ -311,7 +311,7 @@ var overlayManager = {
   /**
    * Destroy all overlays (same as destroy since only one overlay exists)
    */
-  destroyAll: function() {
+  destroyAll: function () {
     this.destroy()
   },
 
@@ -319,7 +319,7 @@ var overlayManager = {
    * Check if there is a current overlay
    * @returns {boolean} - True if there is a current overlay
    */
-  hasCurrent: function() {
+  hasCurrent: function () {
     return this.currentOverlay !== null
   },
 
@@ -327,7 +327,7 @@ var overlayManager = {
    * Check if overlay is visible
    * @returns {boolean} - True if overlay is visible
    */
-  isVisible: function() {
+  isVisible: function () {
     const overlay = this.currentOverlay
     return overlay ? overlay.visible : false
   },
@@ -335,7 +335,7 @@ var overlayManager = {
   /**
    * Recenter overlay in the current window using current size
    */
-  recenter: function(win) {
+  recenter: function (win) {
     const overlay = this.currentOverlay
     if (!overlay || !overlay.view) return
     if (!win) {
@@ -349,7 +349,7 @@ var overlayManager = {
     try {
       const minHeight = Math.max(overlay.size.height || 450, 450)
       const targetHeight = Math.floor(winBounds.height * 0.8) // up to 80% of window height
-      const maxAllowed = Math.max(0, winBounds.height - 40)    // keep 20px margin top/bottom
+      const maxAllowed = Math.max(0, winBounds.height - 40) // keep 20px margin top/bottom
       const newHeight = Math.min(Math.max(minHeight, targetHeight), maxAllowed)
       overlay.size.height = newHeight
     } catch (e) {}
@@ -379,4 +379,4 @@ module.exports = {
 }
 
 // Make overlayManager available globally for other modules in the concatenated build
-global.overlayManager = overlayManager 
+global.overlayManager = overlayManager

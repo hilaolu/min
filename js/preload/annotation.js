@@ -23,14 +23,14 @@ var annotationState = {
 
 // Highlighter colors
 var highlighterColors = [
-  '#ffeb3b', '#ff9800', '#f44336', '#e91e63', 
+  '#ffeb3b', '#ff9800', '#f44336', '#e91e63',
   '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
   '#03a9f4', '#00bcd4', '#009688', '#4caf50',
   '#8bc34a', '#cddc39', '#ffc107', '#ff5722'
 ]
 
 // Utility functions
-function makeid(length) {
+function makeid (length) {
   if (typeof length === 'undefined') length = 10
   var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   var result = ''
@@ -40,18 +40,18 @@ function makeid(length) {
   return result
 }
 
-function getNormalizedUrl() {
+function getNormalizedUrl () {
   return window.location.href.split('#')[0]
 }
 
-function sleep(ms) {
-  return new Promise(function(resolve) {
+function sleep (ms) {
+  return new Promise(function (resolve) {
     setTimeout(resolve, ms)
   })
 }
 
 // Function to get annotation settings via IPC
-function getAnnotationSettings(callback) {
+function getAnnotationSettings (callback) {
   ipc.send('getAnnotationSettings')
 
   // Listen for the response
@@ -68,7 +68,7 @@ function getAnnotationSettings(callback) {
  * Annotation API Client for communicating with Notelix Server
  * @constructor
  */
-function AnnotationApiClient() {
+function AnnotationApiClient () {
   this.baseUrl = ''
   this.headers = {}
 }
@@ -77,18 +77,17 @@ function AnnotationApiClient() {
  * Update API configuration with server settings
  * @param {Object} settings - Configuration object containing serverUrl, jwt, etc.
  */
-AnnotationApiClient.prototype.updateConfig = function(settings) {
+AnnotationApiClient.prototype.updateConfig = function (settings) {
   this.baseUrl = (settings.serverUrl && settings.serverUrl.replace(/\/$/, '')) || ''
   // Look for JWT token in settings (could be 'jwt' or 'annotationJwt')
   var jwtToken = settings.jwt || settings.annotationJwt
-  this.headers = jwtToken ? { 'Authorization': 'jwt ' + jwtToken } : {}
-
+  this.headers = jwtToken ? { Authorization: 'jwt ' + jwtToken } : {}
 }
 
-AnnotationApiClient.prototype.request = function(method, endpoint, data) {
+AnnotationApiClient.prototype.request = function (method, endpoint, data) {
   var self = this
   data = data || null
-  
+
   if (!this.baseUrl) {
     return Promise.reject(new Error('Server URL not configured'))
   }
@@ -105,18 +104,18 @@ AnnotationApiClient.prototype.request = function(method, endpoint, data) {
     options.body = JSON.stringify(data)
   }
 
-  return fetch(url, options).then(function(response) {
+  return fetch(url, options).then(function (response) {
     if (!response.ok) {
       throw new Error('HTTP ' + response.status + ': ' + response.statusText)
     }
     return response.json()
-  }).catch(function(error) {
+  }).catch(function (error) {
     console.error('API request failed:', error)
     throw error
   })
 }
 
-AnnotationApiClient.prototype.saveAnnotation = function(annotation) {
+AnnotationApiClient.prototype.saveAnnotation = function (annotation) {
   return this.request('POST', 'annotations/save', Object.assign({}, annotation, {
     url: getNormalizedUrl(),
     title: document.title,
@@ -124,18 +123,18 @@ AnnotationApiClient.prototype.saveAnnotation = function(annotation) {
   }))
 }
 
-AnnotationApiClient.prototype.deleteAnnotation = function(uid) {
+AnnotationApiClient.prototype.deleteAnnotation = function (uid) {
   return this.request('POST', 'annotations/delete', { uid: uid })
 }
 
-AnnotationApiClient.prototype.queryAnnotationsByUrl = function(url) {
-  return this.request('POST', 'annotations/queryByUrl', { url: url }).then(function(response) {
+AnnotationApiClient.prototype.queryAnnotationsByUrl = function (url) {
+  return this.request('POST', 'annotations/queryByUrl', { url: url }).then(function (response) {
     return response.list || []
   })
 }
 
-AnnotationApiClient.prototype.searchAnnotations = function(query) {
-  return this.request('POST', 'annotations/search', { q: query }).then(function(response) {
+AnnotationApiClient.prototype.searchAnnotations = function (query) {
+  return this.request('POST', 'annotations/search', { q: query }).then(function (response) {
     return (response.results && response.results.hits) || []
   })
 }
@@ -143,49 +142,49 @@ AnnotationApiClient.prototype.searchAnnotations = function(query) {
 var apiClient = new AnnotationApiClient()
 
 // Text selection and range utilities
-function TextSelectionHandler() {
+function TextSelectionHandler () {
   this.isSelecting = false
   this.setupSelectionListener()
 }
 
-TextSelectionHandler.prototype.setupSelectionListener = function() {
+TextSelectionHandler.prototype.setupSelectionListener = function () {
   var self = this
-  
-  document.addEventListener('selectionchange', function() {
+
+  document.addEventListener('selectionchange', function () {
     self.handleSelectionChange()
   })
 
-  document.addEventListener('mouseup', function(e) {
+  document.addEventListener('mouseup', function (e) {
     // Don't handle selection changes if clicking on popover elements
     if (e.target.closest('#min-annotate-popover') || e.target.closest('#min-edit-annotation-popover')) {
       return
     }
-    setTimeout(function() {
+    setTimeout(function () {
       self.handleSelectionChange()
     }, 10)
   })
 }
 
-TextSelectionHandler.prototype.handleSelectionChange = function() {
+TextSelectionHandler.prototype.handleSelectionChange = function () {
   var selection = document.getSelection()
-  
+
   // If popover is currently shown and we have a preserved selection, don't hide it
-  if (this.currentSelection && annotationState.annotatePopoverDom && 
+  if (this.currentSelection && annotationState.annotatePopoverDom &&
       annotationState.annotatePopoverDom.style.display === 'flex') {
     return
   }
-  
-  if (!selection.toString() || 
-      !selection.rangeCount || 
+
+  if (!selection.toString() ||
+      !selection.rangeCount ||
       selection.isCollapsed ||
       this.isRangeInContentEditable(selection.getRangeAt(0))) {
     this.hideAnnotatePopover()
-        } else {
+  } else {
     this.showAnnotatePopover()
   }
 }
 
-TextSelectionHandler.prototype.isRangeInContentEditable = function(range) {
+TextSelectionHandler.prototype.isRangeInContentEditable = function (range) {
   var ptr = range.commonAncestorContainer
   while (ptr) {
     if (ptr.isContentEditable) {
@@ -196,11 +195,11 @@ TextSelectionHandler.prototype.isRangeInContentEditable = function(range) {
   return false
 }
 
-TextSelectionHandler.prototype.serializeRange = function(range, options) {
+TextSelectionHandler.prototype.serializeRange = function (range, options) {
   options = options || {}
   var uid = options.uid
   var charsToKeepForTextBeforeAndTextAfter = options.charsToKeepForTextBeforeAndTextAfter || 128
-  
+
   try {
     var selectedText = range.toString().trim()
     if (!selectedText) return null
@@ -228,24 +227,23 @@ TextSelectionHandler.prototype.serializeRange = function(range, options) {
   }
 }
 
-TextSelectionHandler.prototype.showAnnotatePopover = function() {
+TextSelectionHandler.prototype.showAnnotatePopover = function () {
   var selection = document.getSelection()
   if (!selection.rangeCount) return
 
   var range = selection.getRangeAt(0)
   var rect = range.getBoundingClientRect()
-  
+
   // Store the current selection to preserve it
   this.currentSelection = {
     range: range.cloneRange(),
     text: selection.toString()
   }
-  
+
   annotationState.popoverPos = {
     x: rect.left + rect.width / 2 - 100,
     y: rect.top + window.scrollY - 50
   }
-
 
   if (annotationState.annotatePopoverDom) {
     annotationState.annotatePopoverDom.style.left = annotationState.popoverPos.x + 'px'
@@ -256,7 +254,7 @@ TextSelectionHandler.prototype.showAnnotatePopover = function() {
   }
 }
 
-TextSelectionHandler.prototype.hideAnnotatePopover = function() {
+TextSelectionHandler.prototype.hideAnnotatePopover = function () {
   if (annotationState.annotatePopoverDom) {
     annotationState.annotatePopoverDom.style.display = 'none'
   }
@@ -267,10 +265,10 @@ TextSelectionHandler.prototype.hideAnnotatePopover = function() {
 // AnnotationMarker is loaded by buildPreload.js before this file
 
 // Event handler functions for marker
-function showEditPopover(annotation, element) {
+function showEditPopover (annotation, element) {
   annotationState.selectedAnnotationId = annotation.uid
   var rect = element.getBoundingClientRect()
-  
+
   annotationState.popoverPos = {
     x: rect.left,
     y: rect.top + window.scrollY - 40
@@ -283,30 +281,25 @@ function showEditPopover(annotation, element) {
   }
 }
 
-function showNoteTooltip(element, notes) {
+function showNoteTooltip (element, notes) {
   var tooltip = document.createElement('div')
   tooltip.className = 'min-annotation-note'
   tooltip.textContent = notes
   element.appendChild(tooltip)
 }
 
-function hideNoteTooltip(element) {
+function hideNoteTooltip (element) {
   var tooltip = element.querySelector('.min-annotation-note')
   if (tooltip) {
     tooltip.remove()
   }
 }
 
-
-
-
-
 var marker = null
 var selectionHandler = null
 
 // Initialize these after DOM is ready
-function initializeMarkerAndHandler() {
-  
+function initializeMarkerAndHandler () {
   if (!marker) {
     try {
       marker = new AnnotationMarker()
@@ -314,7 +307,7 @@ function initializeMarkerAndHandler() {
       console.error('Failed to create AnnotationMarker:', error)
     }
   }
-  
+
   if (!selectionHandler) {
     try {
       selectionHandler = new TextSelectionHandler()
@@ -322,13 +315,12 @@ function initializeMarkerAndHandler() {
       console.error('Failed to create TextSelectionHandler:', error)
     }
   }
-  
 }
 
 // DOM UI Components
-function createAnnotatePopover() {
+function createAnnotatePopover () {
   if (annotationState.annotatePopoverDom) return
-  
+
   if (!document.body) {
     setTimeout(createAnnotatePopover, 100)
     return
@@ -336,7 +328,7 @@ function createAnnotatePopover() {
 
   var popover = document.createElement('div')
   popover.id = 'min-annotate-popover'
-  popover.style.cssText = 
+  popover.style.cssText =
     'position: absolute;' +
     'display: none;' +
     'flex-direction: row;' +
@@ -351,18 +343,18 @@ function createAnnotatePopover() {
   for (var i = 0; i < highlighterColors.length; i++) {
     var color = highlighterColors[i]
     var colorSpan = document.createElement('span')
-    colorSpan.style.cssText = 
+    colorSpan.style.cssText =
       'width: 20px;' +
       'height: 20px;' +
       'background-color: ' + color + ';' +
       'cursor: pointer;' +
       'border-radius: 2px;' +
       'border: 1px solid #ddd;'
-    
-    colorSpan.addEventListener('click', (function(c) {
-      return function() { onHighlightClick(c) }
+
+    colorSpan.addEventListener('click', (function (c) {
+      return function () { onHighlightClick(c) }
     })(color))
-    
+
     popover.appendChild(colorSpan)
   }
 
@@ -370,9 +362,9 @@ function createAnnotatePopover() {
   annotationState.annotatePopoverDom = popover
 }
 
-function createEditPopover() {
+function createEditPopover () {
   if (annotationState.editAnnotationPopoverDom) return
-  
+
   // Wait for DOM body to be ready
   if (!document.body) {
     setTimeout(createEditPopover, 100)
@@ -381,7 +373,7 @@ function createEditPopover() {
 
   var popover = document.createElement('div')
   popover.id = 'min-edit-popover'
-  popover.style.cssText = 
+  popover.style.cssText =
     'position: absolute;' +
     'display: none;' +
     'flex-direction: row;' +
@@ -410,24 +402,23 @@ function createEditPopover() {
 }
 
 // Event handlers
-function onHighlightClick(color) {
-  
+function onHighlightClick (color) {
   if (!selectionHandler || !marker) {
     console.warn('Annotation system not ready - selectionHandler:', !!selectionHandler, 'marker:', !!marker)
     return
   }
-  
+
   // Use the preserved selection instead of current selection
   if (!selectionHandler.currentSelection || !selectionHandler.currentSelection.range) {
     console.warn('No preserved selection available')
     return
   }
-  
+
   var range = selectionHandler.currentSelection.range
   var uid = makeid()
-  
+
   var serializedRange = selectionHandler.serializeRange(range, { uid: uid })
-  
+
   if (!serializedRange) {
     console.warn('Failed to serialize range')
     return
@@ -436,15 +427,15 @@ function onHighlightClick(color) {
   // Clear the actual selection and hide popover
   document.getSelection().removeAllRanges()
   selectionHandler.hideAnnotatePopover()
-  
+
   // Clear the preserved selection
   selectionHandler.currentSelection = null
 
   var annotation = {
     uid: uid,
-    data: { 
-      color: color, 
-      notes: '', 
+    data: {
+      color: color,
+      notes: '',
       text: serializedRange.text,
       textBefore: serializedRange.textBefore,
       textAfter: serializedRange.textAfter
@@ -452,14 +443,14 @@ function onHighlightClick(color) {
   }
 
   annotationState.annotations[uid] = annotation
-  
+
   try {
     marker.paint(annotation, {
       onClick: showEditPopover,
       onMouseEnter: showNoteTooltip,
       onMouseLeave: hideNoteTooltip
     })
-    
+
     // Verify the highlight was actually created
     var highlightElements = document.querySelectorAll('[annotation-id="' + annotation.uid + '"]')
     if (highlightElements.length === 0) {
@@ -471,8 +462,8 @@ function onHighlightClick(color) {
   }
 
   // Save to server
-  saveAnnotation(annotation).then(function() {
-  }).catch(function(error) {
+  saveAnnotation(annotation).then(function () {
+  }).catch(function (error) {
     console.error('Failed to save annotation:', error)
     if (marker) {
       marker.unpaint(uid)
@@ -481,7 +472,7 @@ function onHighlightClick(color) {
   })
 }
 
-function onEditNotesClick() {
+function onEditNotesClick () {
   var uid = annotationState.selectedAnnotationId
   if (!uid) return
 
@@ -495,7 +486,7 @@ function onEditNotesClick() {
   }
 }
 
-function showNotesEditDialog(annotation) {
+function showNotesEditDialog (annotation) {
   // Remove existing dialog if any
   var existingDialog = document.getElementById('min-notes-edit-dialog')
   if (existingDialog) {
@@ -505,7 +496,7 @@ function showNotesEditDialog(annotation) {
   // Create dialog overlay
   var overlay = document.createElement('div')
   overlay.id = 'min-notes-edit-dialog'
-  overlay.style.cssText = 
+  overlay.style.cssText =
     'position: fixed;' +
     'top: 0;' +
     'left: 0;' +
@@ -519,7 +510,7 @@ function showNotesEditDialog(annotation) {
 
   // Create dialog box
   var dialog = document.createElement('div')
-  dialog.style.cssText = 
+  dialog.style.cssText =
     'background: white;' +
     'border-radius: 8px;' +
     'padding: 20px;' +
@@ -531,7 +522,7 @@ function showNotesEditDialog(annotation) {
   // Create title
   var title = document.createElement('h3')
   title.textContent = 'Edit Note'
-  title.style.cssText = 
+  title.style.cssText =
     'margin: 0 0 15px 0;' +
     'font-size: 16px;' +
     'color: #333;'
@@ -540,7 +531,7 @@ function showNotesEditDialog(annotation) {
   var textarea = document.createElement('textarea')
   textarea.value = annotation.data.notes || ''
   textarea.placeholder = 'Enter your notes here...'
-  textarea.style.cssText = 
+  textarea.style.cssText =
     'width: 100%;' +
     'height: 100px;' +
     'border: 1px solid #ddd;' +
@@ -554,7 +545,7 @@ function showNotesEditDialog(annotation) {
 
   // Create button container
   var buttonContainer = document.createElement('div')
-  buttonContainer.style.cssText = 
+  buttonContainer.style.cssText =
     'display: flex;' +
     'gap: 10px;' +
     'justify-content: flex-end;'
@@ -562,7 +553,7 @@ function showNotesEditDialog(annotation) {
   // Create cancel button
   var cancelButton = document.createElement('button')
   cancelButton.textContent = 'Cancel'
-  cancelButton.style.cssText = 
+  cancelButton.style.cssText =
     'padding: 8px 16px;' +
     'border: 1px solid #ddd;' +
     'border-radius: 4px;' +
@@ -574,7 +565,7 @@ function showNotesEditDialog(annotation) {
   // Create save button
   var saveButton = document.createElement('button')
   saveButton.textContent = 'Save'
-  saveButton.style.cssText = 
+  saveButton.style.cssText =
     'padding: 8px 16px;' +
     'border: none;' +
     'border-radius: 4px;' +
@@ -584,32 +575,31 @@ function showNotesEditDialog(annotation) {
     'font-size: 14px;'
 
   // Add hover effects
-  cancelButton.addEventListener('mouseenter', function() {
+  cancelButton.addEventListener('mouseenter', function () {
     this.style.backgroundColor = '#f5f5f5'
   })
-  cancelButton.addEventListener('mouseleave', function() {
+  cancelButton.addEventListener('mouseleave', function () {
     this.style.backgroundColor = 'white'
   })
 
-  saveButton.addEventListener('mouseenter', function() {
+  saveButton.addEventListener('mouseenter', function () {
     this.style.backgroundColor = '#0056b3'
   })
-  saveButton.addEventListener('mouseleave', function() {
+  saveButton.addEventListener('mouseleave', function () {
     this.style.backgroundColor = '#007bff'
   })
 
   // Add event listeners
-  cancelButton.addEventListener('click', function() {
+  cancelButton.addEventListener('click', function () {
     overlay.remove()
   })
 
-  saveButton.addEventListener('click', function() {
+  saveButton.addEventListener('click', function () {
     var newNotes = textarea.value.trim()
     annotation.data.notes = newNotes
-    
+
     // Update the annotation
-    saveAnnotation(annotation).then(function() {
-      
+    saveAnnotation(annotation).then(function () {
       // Repaint the marker to show updated notes
       if (marker) {
         try {
@@ -625,23 +615,23 @@ function showNotesEditDialog(annotation) {
           console.error('Failed to repaint marker after notes update:', error)
         }
       }
-    }).catch(function(error) {
+    }).catch(function (error) {
       console.error('Failed to update notes:', error)
       alert('Failed to save notes. Please try again.')
     })
-    
+
     overlay.remove()
   })
 
   // Close on overlay click
-  overlay.addEventListener('click', function(e) {
+  overlay.addEventListener('click', function (e) {
     if (e.target === overlay) {
       overlay.remove()
     }
   })
 
   // Close on Escape key
-  document.addEventListener('keydown', function onEscape(e) {
+  document.addEventListener('keydown', function onEscape (e) {
     if (e.key === 'Escape') {
       overlay.remove()
       document.removeEventListener('keydown', onEscape)
@@ -651,22 +641,22 @@ function showNotesEditDialog(annotation) {
   // Assemble dialog
   buttonContainer.appendChild(cancelButton)
   buttonContainer.appendChild(saveButton)
-  
+
   dialog.appendChild(title)
   dialog.appendChild(textarea)
   dialog.appendChild(buttonContainer)
-  
+
   overlay.appendChild(dialog)
   document.body.appendChild(overlay)
 
   // Focus the textarea
-  setTimeout(function() {
+  setTimeout(function () {
     textarea.focus()
     textarea.select()
   }, 100)
 }
 
-function onDeleteClick() {
+function onDeleteClick () {
   var uid = annotationState.selectedAnnotationId
   if (!uid) return
 
@@ -684,20 +674,20 @@ function onDeleteClick() {
 }
 
 // API functions
-function saveAnnotation(annotation) {
+function saveAnnotation (annotation) {
   if (!annotationSettings.enabled) return Promise.resolve()
   return apiClient.saveAnnotation(annotation)
 }
 
-function deleteAnnotation(uid) {
+function deleteAnnotation (uid) {
   if (!annotationSettings.enabled) return Promise.resolve()
   return apiClient.deleteAnnotation(uid)
 }
 
-function loadAnnotations() {
+function loadAnnotations () {
   if (!annotationSettings.enabled) return Promise.resolve()
 
-  return apiClient.queryAnnotationsByUrl(getNormalizedUrl()).then(function(annotations) {
+  return apiClient.queryAnnotationsByUrl(getNormalizedUrl()).then(function (annotations) {
     for (var i = 0; i < annotations.length; i++) {
       var annotation = annotations[i]
       annotationState.annotations[annotation.uid] = annotation
@@ -713,33 +703,33 @@ function loadAnnotations() {
         }
       }
     }
-  }).catch(function(error) {
+  }).catch(function (error) {
     console.error('Failed to load annotations:', error)
   })
 }
 
-function searchAnnotations(query) {
+function searchAnnotations (query) {
   if (!annotationSettings.enabled) return Promise.resolve([])
   return apiClient.searchAnnotations(query)
 }
 
 // Initialize annotation functionality
-function initializeAnnotations() {
+function initializeAnnotations () {
   // Ensure DOM is ready before initializing
   if (!document.body || !document.head) {
     setTimeout(initializeAnnotations, 100)
     return
   }
-  
+
   // Initialize marker and selection handler
   initializeMarkerAndHandler()
-  
+
   createAnnotatePopover()
   createEditPopover()
 
   // Hide popovers when clicking outside
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('#min-annotate-popover') && 
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#min-annotate-popover') &&
         !e.target.closest('#min-edit-popover')) {
       if (selectionHandler) {
         selectionHandler.hideAnnotatePopover()
@@ -751,7 +741,7 @@ function initializeAnnotations() {
   })
 
   // Load existing annotations
-  getAnnotationSettings(function(settings) {
+  getAnnotationSettings(function (settings) {
     apiClient.updateConfig(settings)
     if (settings.enabled) {
       loadAnnotations()
@@ -760,7 +750,7 @@ function initializeAnnotations() {
 }
 
 // Wait for DOM to be ready before creating instances
-function waitForDOMReady(callback) {
+function waitForDOMReady (callback) {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', callback)
   } else {
@@ -771,16 +761,16 @@ function waitForDOMReady(callback) {
 // Initialize when page loads
 if (process.isMainFrame) {
   // Use multiple strategies to ensure DOM is ready
-  waitForDOMReady(function() {
+  waitForDOMReady(function () {
     // Additional delay to ensure everything is settled
-    setTimeout(function() {
+    setTimeout(function () {
       // Only initialize if DOM elements are available
       if (document.body && document.head) {
         initializeAnnotations()
       } else {
         // Fallback: keep trying until DOM is ready
         var retryCount = 0
-        var retryInit = function() {
+        var retryInit = function () {
           if (document.body && document.head) {
             initializeAnnotations()
           } else if (retryCount < 50) { // Max 5 seconds of retries

@@ -1,6 +1,6 @@
 /**
  * Strategy Manager for Command Palette
- * 
+ *
  * Manages registration and execution of command state strategies.
  * Handles input matching, state transitions, and fallback logic.
  */
@@ -15,16 +15,16 @@ const { CommandStateStrategy } = require('./CommandStateStrategy.js')
  */
 
 class StrategyManager {
-  constructor() {
+  constructor () {
     /** @type {Map<string, CommandStateStrategy>} */
     this.strategies = new Map()
-    
+
     /** @type {CommandStateStrategy|null} */
     this.currentStrategy = null
-    
+
     /** @type {CommandStateStrategy|null} */
     this.fallbackStrategy = null
-    
+
     this.eventListeners = new Map()
   }
 
@@ -32,13 +32,13 @@ class StrategyManager {
    * Register a command state strategy
    * @param {CommandStateStrategy} strategy - Strategy to register
    */
-  registerStrategy(strategy) {
+  registerStrategy (strategy) {
     if (!(strategy instanceof CommandStateStrategy)) {
       throw new Error('Strategy must extend CommandStateStrategy')
     }
-    
+
     this.strategies.set(strategy.stateName, strategy)
-    
+
     // Set fallback strategy (usually the one with lowest priority or empty state)
     if (!this.fallbackStrategy || strategy.stateName === 'EMPTY') {
       this.fallbackStrategy = strategy
@@ -49,16 +49,16 @@ class StrategyManager {
    * Unregister a strategy
    * @param {string} stateName - Name of the strategy to unregister
    */
-  unregisterStrategy(stateName) {
+  unregisterStrategy (stateName) {
     const strategy = this.strategies.get(stateName)
     if (strategy) {
       strategy.deactivate()
       this.strategies.delete(stateName)
-      
+
       if (this.currentStrategy === strategy) {
         this.currentStrategy = null
       }
-      
+
       if (this.fallbackStrategy === strategy) {
         this.fallbackStrategy = this.findBestFallback()
       }
@@ -70,9 +70,9 @@ class StrategyManager {
    * @param {string} input - Current input value
    * @returns {StateTransition|null} State transition information
    */
-  findMatchingStrategy(input) {
+  findMatchingStrategy (input) {
     const matches = []
-    
+
     // Test all strategies
     for (const strategy of this.strategies.values()) {
       try {
@@ -89,7 +89,7 @@ class StrategyManager {
         console.error(`Error testing strategy ${strategy.stateName}:`, error)
       }
     }
-    
+
     if (matches.length === 0) {
       // No matches, use fallback
       if (this.fallbackStrategy) {
@@ -101,10 +101,10 @@ class StrategyManager {
       }
       return null
     }
-    
+
     // Sort by priority (highest first)
     matches.sort((a, b) => b.priority - a.priority)
-    
+
     return matches[0]
   }
 
@@ -114,20 +114,20 @@ class StrategyManager {
    * @param {Object} context - Command palette context
    * @returns {Promise<boolean>} True if state changed, false otherwise
    */
-  async processInput(input, context) {
+  async processInput (input, context) {
     const transition = this.findMatchingStrategy(input)
-    
+
     if (!transition) {
       console.warn('No matching strategy found for input:', input)
       return false
     }
-    
+
     // Check if we need to transition to a different strategy
     if (this.currentStrategy !== transition.strategy) {
       await this.transitionTo(transition.strategy, transition.data, context)
       return true
     }
-    
+
     // Same strategy, just update UI with new data
     try {
       const candidates = await this.currentStrategy.updateUI(input, transition.data, context)
@@ -145,9 +145,9 @@ class StrategyManager {
    * @param {Object} data - State data
    * @param {Object} context - Command palette context
    */
-  async transitionTo(newStrategy, data, context) {
+  async transitionTo (newStrategy, data, context) {
     const previousStrategy = this.currentStrategy
-    
+
     // Exit current strategy
     if (this.currentStrategy) {
       try {
@@ -157,29 +157,28 @@ class StrategyManager {
         console.error(`Error exiting strategy ${this.currentStrategy.stateName}:`, error)
       }
     }
-    
+
     // Enter new strategy
     this.currentStrategy = newStrategy
-    
+
     try {
       newStrategy.activate()
       newStrategy.onEnter(context, data)
-      
+
       // Update UI
       const candidates = await newStrategy.updateUI(context.input.value, data, context)
-      
+
       // No direct DOM styling; overlay handles all visuals
-       
+
       this.emit('state-changed', {
         previousStrategy: previousStrategy?.stateName || null,
         currentStrategy: newStrategy.stateName,
         data,
         candidates
       })
-      
     } catch (error) {
       console.error(`Error entering strategy ${newStrategy.stateName}:`, error)
-      
+
       // Fallback to previous strategy or default
       if (previousStrategy && previousStrategy !== newStrategy) {
         this.currentStrategy = previousStrategy
@@ -196,12 +195,12 @@ class StrategyManager {
    * @param {Object} candidate - Selected candidate
    * @param {Object} context - Command palette context
    */
-  async executeAction(candidate, context) {
+  async executeAction (candidate, context) {
     if (!this.currentStrategy) {
       console.warn('No current strategy to execute action')
       return
     }
-    
+
     try {
       await this.currentStrategy.executeAction(candidate, context)
       this.emit('action-executed', { candidate, strategy: this.currentStrategy })
@@ -217,11 +216,11 @@ class StrategyManager {
    * @param {Object} context - Command palette context
    * @returns {boolean} True if event was handled
    */
-  handleKeydown(event, context) {
+  handleKeydown (event, context) {
     if (!this.currentStrategy) {
       return false
     }
-    
+
     try {
       return this.currentStrategy.handleKeydown(event, context)
     } catch (error) {
@@ -234,7 +233,7 @@ class StrategyManager {
    * Get current strategy information
    * @returns {Object} Current strategy information
    */
-  getCurrentState() {
+  getCurrentState () {
     return {
       strategy: this.currentStrategy?.stateName || null,
       isActive: this.currentStrategy?.isActive || false,
@@ -246,17 +245,17 @@ class StrategyManager {
    * Find the best fallback strategy
    * @returns {CommandStateStrategy|null}
    */
-  findBestFallback() {
+  findBestFallback () {
     let best = null
     let bestPriority = -Infinity
-    
+
     for (const strategy of this.strategies.values()) {
       if (strategy.stateName === 'EMPTY' || strategy.priority > bestPriority) {
         best = strategy
         bestPriority = strategy.priority
       }
     }
-    
+
     return best
   }
 
@@ -264,7 +263,7 @@ class StrategyManager {
    * Reset to fallback strategy
    * @param {Object} context - Command palette context
    */
-  async resetToFallback(context) {
+  async resetToFallback (context) {
     if (this.fallbackStrategy) {
       await this.transitionTo(this.fallbackStrategy, {}, context)
     }
@@ -275,7 +274,7 @@ class StrategyManager {
    * @param {string} event - Event name
    * @param {Function} listener - Event listener function
    */
-  on(event, listener) {
+  on (event, listener) {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, [])
     }
@@ -287,7 +286,7 @@ class StrategyManager {
    * @param {string} event - Event name
    * @param {Function} listener - Event listener function
    */
-  off(event, listener) {
+  off (event, listener) {
     const listeners = this.eventListeners.get(event)
     if (listeners) {
       const index = listeners.indexOf(listener)
@@ -302,7 +301,7 @@ class StrategyManager {
    * @param {string} event - Event name
    * @param {Object} data - Event data
    */
-  emit(event, data) {
+  emit (event, data) {
     const listeners = this.eventListeners.get(event)
     if (listeners) {
       listeners.forEach(listener => {
@@ -316,4 +315,4 @@ class StrategyManager {
   }
 }
 
-module.exports = StrategyManager 
+module.exports = StrategyManager

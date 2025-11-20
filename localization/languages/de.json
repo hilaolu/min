@@ -164,7 +164,7 @@
     "settingsShowDividerToggle": "Trennwand zwischen Tabs anzeigen",
     "settingsLanguageSelection": null, //missing translation
     "settingsSeparateTitlebarToggle": "Separate Titelleiste nutzen",
-    "settingsAutoplayToggle": "Automatische Wiedergabe erlauben", 
+    "settingsAutoplayToggle": "Automatische Wiedergabe erlauben",
     "settingsOpenTabsInForegroundToggle": "Neue Tabs im Vordergrund öffnen",
     "settingsUserscriptsExplanation": {
       "unsafeHTML": "Benutzerdefinierte Skripte erlauben es das Verhalten von Webseiten zu modifizieren - <a href=\"https://github.com/minbrowser/min/wiki/userscripts\"> mehr dazu.</a>."

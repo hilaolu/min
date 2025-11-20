@@ -228,7 +228,8 @@ function createWindowWithBounds (bounds, customArgs) {
         '--window-id=' + windows.nextId,
         ...((windows.getAll().length === 0 ? ['--initial-window'] : [])),
         ...(windows.hasEverCreatedWindow ? [] : ['--launch-window']),
-        ...(customArgs.initialTask ? ['--initial-task=' + customArgs.initialTask] : [])
+        ...(customArgs.initialTask ? ['--initial-task=' + customArgs.initialTask] : []),
+        ...(settings.get('smoothScrolling') ? ['--smooth-scrolling=' + settings.get('smoothScrolling')] : [])
       ]
     }
   })

@@ -57,16 +57,16 @@ let lastMatchesForQuery = ''
 // Generic command buffer (for multi-key commands & link hints)
 let cmdBuffer = ''
 let cmdBufferTimer = null
-function clearCmdBuffer() {
+function clearCmdBuffer () {
   cmdBuffer = ''
   if (cmdBufferTimer) { clearTimeout(cmdBufferTimer); cmdBufferTimer = null }
 }
-function bufferAppend(ch) {
+function bufferAppend (ch) {
   cmdBuffer += ch
   if (cmdBufferTimer) clearTimeout(cmdBufferTimer)
   cmdBufferTimer = setTimeout(clearCmdBuffer, VIM_CONFIG.keyTimeout)
 }
-function bufferBackspace() {
+function bufferBackspace () {
   cmdBuffer = cmdBuffer.slice(0, -1)
   if (cmdBufferTimer) { clearTimeout(cmdBufferTimer); cmdBufferTimer = setTimeout(clearCmdBuffer, VIM_CONFIG.keyTimeout) }
 }
@@ -75,7 +75,7 @@ function bufferBackspace() {
 const HUD = (function () {
   let hudEl = null
   let hideTimeout = null
-  function ensure() {
+  function ensure () {
     if (!hudEl) {
       hudEl = document.createElement('div')
       hudEl.setAttribute('style', VIM_CONFIG.hudStyle)
@@ -85,7 +85,7 @@ const HUD = (function () {
     }
     return hudEl
   }
-  function show(text, persistMs = 1200) {
+  function show (text, persistMs = 1200) {
     const el = ensure()
     el.textContent = text
     el.style.display = 'block'
@@ -94,12 +94,12 @@ const HUD = (function () {
       hideTimeout = setTimeout(() => { el.style.display = 'none' }, persistMs)
     }
   }
-  function hide() {
+  function hide () {
     if (!hudEl) return
     hudEl.style.display = 'none'
     if (hideTimeout) clearTimeout(hideTimeout)
   }
-  function set(text) {
+  function set (text) {
     const el = ensure()
     el.textContent = text
     el.style.display = 'block'
@@ -116,16 +116,16 @@ try { if (!window.__minHUD) window.__minHUD = HUD } catch (e) {}
 // Strategy Pattern
 // ===============
 class VimStateStrategy {
-  getName() { return 'BASE' }
-  onEnter(ctx) {}
-  onExit(ctx) {}
-  handleKeydown(e, ctx) { return false }
-  handleKeyup(e, ctx) { return false }
+  getName () { return 'BASE' }
+  onEnter (ctx) {}
+  onExit (ctx) {}
+  handleKeydown (e, ctx) { return false }
+  handleKeyup (e, ctx) { return false }
 }
 
 class NormalStrategy extends VimStateStrategy {
-  getName() { return 'NORMAL' }
-  handleKeydown(e, ctx) {
+  getName () { return 'NORMAL' }
+  handleKeydown (e, ctx) {
     // Emergency exit handled globally by manager
     if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       ctx.transition('SEARCH')
@@ -168,16 +168,18 @@ class NormalStrategy extends VimStateStrategy {
 }
 
 class SearchStrategy extends VimStateStrategy {
-  getName() { return 'SEARCH' }
-  onEnter(ctx) {
+  getName () { return 'SEARCH' }
+  onEnter (ctx) {
     ctx.searchBuffer = ''
     try { document.body.focus() } catch (e) {}
     HUD.set(`/${ctx.searchBuffer}`)
   }
-  onExit(ctx) {
+
+  onExit (ctx) {
     // Clean exit from search mode
   }
-  handleKeydown(e, ctx) {
+
+  handleKeydown (e, ctx) {
     // Esc no longer exits; use Ctrl+C globally
     if (e.key === 'Enter') {
       ctx.lastSearchQuery = ctx.searchBuffer
@@ -201,9 +203,9 @@ class SearchStrategy extends VimStateStrategy {
 }
 
 class VisualStrategy extends VimStateStrategy {
-  getName() { return 'VISUAL' }
-  onEnter(ctx) { try { document.body.focus() } catch (e) {} updateVisualIndicator() }
-  handleKeydown(e, ctx) {
+  getName () { return 'VISUAL' }
+  onEnter (ctx) { try { document.body.focus() } catch (e) {} updateVisualIndicator() }
+  handleKeydown (e, ctx) {
     // Esc no longer exits; use Ctrl+C globally
     if (e.key === 'y' && !e.ctrlKey && !e.metaKey && !e.altKey) { copyCurrentSelection(); return true }
     if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) { extendSelectionByWord(true); return true }
@@ -213,20 +215,22 @@ class VisualStrategy extends VimStateStrategy {
 }
 
 class LinkHintStrategy extends VimStateStrategy {
-  getName() { return 'LINK_HINT' }
-  onEnter(ctx) {
+  getName () { return 'LINK_HINT' }
+  onEnter (ctx) {
     // Reset buffers for fresh hint session
     ctx.bufferClear()
     try { blockKeybindings.select() } catch (e) {}
     // Show initial count
     try { HUD.show(`HINTS: ${currentLinkItems.length}`, 800) } catch (e) {}
   }
-  onExit(ctx) {
+
+  onExit (ctx) {
     hideLinkKeys()
     ctx.bufferClear()
     try { blockKeybindings.blur() } catch (e) {}
   }
-  handleKeydown(e, ctx) {
+
+  handleKeydown (e, ctx) {
     // Prevent page handlers and process immediately
     // Esc no longer exits; use Ctrl+C globally
     if (e.key === 'Backspace') { ctx.bufferBackspace(); processLinkHintBuffer(); return true }
@@ -234,7 +238,8 @@ class LinkHintStrategy extends VimStateStrategy {
     if (VIM_CONFIG.alphabet.includes(keyLower)) { ctx.bufferAppend(keyLower); processLinkHintBuffer(); return true }
     return false
   }
-  handleKeyup(e, ctx) {
+
+  handleKeyup (e, ctx) {
     const keyLower = e.key.toLowerCase()
     // Esc no longer exits; use Ctrl+C globally
     if (VIM_CONFIG.alphabet.includes(keyLower)) { /* handled in keydown */ return true }
@@ -243,45 +248,52 @@ class LinkHintStrategy extends VimStateStrategy {
 }
 
 class InputFocusStrategy extends VimStateStrategy {
-  getName() { return 'INPUT_FOCUS' }
-  onEnter(ctx) {
+  getName () { return 'INPUT_FOCUS' }
+  onEnter (ctx) {
     // Focus on the input element if available, otherwise body
-    try { 
+    try {
       if (document.activeElement && isCurrentlyInInput()) {
         // Already in an input, keep focus
       } else {
-        document.body.focus() 
+        document.body.focus()
       }
     } catch (e) {}
     HUD.set('INPUT FOCUS - Press Ctrl+C to exit')
   }
-  onExit(ctx) {
+
+  onExit (ctx) {
     // Clear any input buffer state if needed
     ctx.bufferClear()
   }
-  handleKeydown(e, ctx) {
+
+  handleKeydown (e, ctx) {
     // Capture ALL input and prevent any state transitions
     // Only Ctrl+C (handled globally by VimStateManager) can exit this mode
-    
+
     // Consume all keys to prevent normal page behavior
     // No state transitions allowed in this mode
     return true
   }
-  handleKeyup(e, ctx) {
+
+  handleKeyup (e, ctx) {
     // Consume all keyup events as well
     return true
   }
 }
 
 class VimStateManager {
-  constructor() {
+  constructor () {
     this.ctx = {
-      get searchBuffer() { return searchBuffer }, set searchBuffer(v) { searchBuffer = v },
-      get lastSearchQuery() { return lastSearchQuery }, set lastSearchQuery(v) { lastSearchQuery = v },
-      get lastSearchMatches() { return lastSearchMatches }, set lastSearchMatches(v) { lastSearchMatches = v },
-      get lastSearchIndex() { return lastSearchIndex }, set lastSearchIndex(v) { lastSearchIndex = v },
-      get buffer() { return cmdBuffer },
-      set buffer(v) { cmdBuffer = v },
+      get searchBuffer () { return searchBuffer },
+      set searchBuffer (v) { searchBuffer = v },
+      get lastSearchQuery () { return lastSearchQuery },
+      set lastSearchQuery (v) { lastSearchQuery = v },
+      get lastSearchMatches () { return lastSearchMatches },
+      set lastSearchMatches (v) { lastSearchMatches = v },
+      get lastSearchIndex () { return lastSearchIndex },
+      set lastSearchIndex (v) { lastSearchIndex = v },
+      get buffer () { return cmdBuffer },
+      set buffer (v) { cmdBuffer = v },
       bufferAppend: (ch) => bufferAppend(ch),
       bufferBackspace: () => bufferBackspace(),
       bufferClear: () => clearCmdBuffer(),
@@ -298,14 +310,16 @@ class VimStateManager {
     }
     this.current = this.strategies.NORMAL
   }
-  transition(name) {
+
+  transition (name) {
     if (this.current && this.current.onExit) this.current.onExit(this.ctx)
     this.current = this.strategies[name] || this.strategies.NORMAL
     // Clear command buffer on state change
     clearCmdBuffer()
     if (this.current && this.current.onEnter) this.current.onEnter(this.ctx)
   }
-  processKeydown(e) {
+
+  processKeydown (e) {
     // Global Ctrl+C
     if (e.ctrlKey && e.key === 'c') {
       e.preventDefault(); e.stopPropagation()
@@ -316,7 +330,8 @@ class VimStateManager {
     }
     return this.current.handleKeydown(e, this.ctx) === true
   }
-  processKeyup(e) {
+
+  processKeyup (e) {
     // Allow LINK_HINT to consume keyup letters
     if (this.current.handleKeyup) return this.current.handleKeyup(e, this.ctx) === true
     return false
@@ -326,7 +341,7 @@ class VimStateManager {
 let vimManager = null
 
 // Initialize Vim mode
-function initVimMode() {
+function initVimMode () {
   // Create hidden input for blocking keybindings
   blockKeybindings = document.createElement('input')
   blockKeybindings.style = 'position: fixed; top: 0; left: -9999px;'
@@ -340,7 +355,7 @@ function initVimMode() {
 }
 
 // Set up all event listeners
-function setupEventListeners() {
+function setupEventListeners () {
   // Click handler to keep focus on blockKeybindings
   document.body.addEventListener('click', function () {
     if (vimManager && vimManager.current.getName() === 'LINK_HINT') {
@@ -395,42 +410,42 @@ function setupEventListeners() {
   }, true)
 }
 
-  // Handle keyup events for legacy buffered commands only
-  function handleKeyup(e) {
-    // Only handle legacy buffered commands (yy, gg) - no state transitions
-    if (!isCurrentlyInInput() && vimManager && vimManager.current.getName() === 'NORMAL' &&
+// Handle keyup events for legacy buffered commands only
+function handleKeyup (e) {
+  // Only handle legacy buffered commands (yy, gg) - no state transitions
+  if (!isCurrentlyInInput() && vimManager && vimManager.current.getName() === 'NORMAL' &&
         (VIM_CONFIG.alphabet.includes(e.key) || e.key === 'G') &&
         !e.ctrlKey && !e.metaKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      command += e.key
-      var match = true
-      
-      switch (command) {
-        case 'yy':
-          copyUrlToClipboard()
-          HUD.show('Copied URL', 800)
-          break
-        case 'gg':
-          window.scrollTo(0, 0)
-          break
-        default:
-          match = false
-          break
-      }
-      
-      if (!match && command.length === 1) {
-        setTimeout(function () {
-          command = ''
-        }, VIM_CONFIG.keyTimeout)
-      } else if (match) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    command += e.key
+    var match = true
+
+    switch (command) {
+      case 'yy':
+        copyUrlToClipboard()
+        HUD.show('Copied URL', 800)
+        break
+      case 'gg':
+        window.scrollTo(0, 0)
+        break
+      default:
+        match = false
+        break
+    }
+
+    if (!match && command.length === 1) {
+      setTimeout(function () {
         command = ''
-      }
+      }, VIM_CONFIG.keyTimeout)
+    } else if (match) {
+      command = ''
     }
   }
+}
 
-function updateSearchIndicator() {
+function updateSearchIndicator () {
   // Don't override visual HUD while in visual mode
   if (vimManager && vimManager.current.getName() === 'VISUAL') return
   if (vimManager && vimManager.current.getName() === 'SEARCH') {
@@ -445,7 +460,7 @@ function updateSearchIndicator() {
   }
 }
 
-function ensureMatchesForQuery(q) {
+function ensureMatchesForQuery (q) {
   if (lastMatchesForQuery === q) return
   if (!q) {
     lastMatchesForQuery = ''
@@ -458,7 +473,7 @@ function ensureMatchesForQuery(q) {
   lastSearchIndex = -1
 }
 
-function collectMatches(q) {
+function collectMatches (q) {
   const matches = []
   const MAX_MATCHES = 1000
   const query = q.toLowerCase()
@@ -498,7 +513,11 @@ function collectMatches(q) {
   return matches
 }
 
-function selectMatchAt(index) {
+const smoothScrolling = process.argv.some(arg => arg.startsWith('--smooth-scrolling'))
+  ? process.argv.find(arg => arg.startsWith('--smooth-scrolling')).split('=')[1]
+  : 'true'
+
+function selectMatchAt (index) {
   if (index < 0 || index >= lastSearchMatches.length) return
   const range = lastSearchMatches[index]
   const sel = window.getSelection()
@@ -508,12 +527,12 @@ function selectMatchAt(index) {
   } catch (e) {}
   const el = range.startContainer.parentElement || document.body
   if (el && el.scrollIntoView) {
-    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (e) { el.scrollIntoView() }
+    try { el.scrollIntoView({ behavior: smoothScrolling === 'true' ? 'smooth' : 'auto', block: 'center' }) } catch (e) { el.scrollIntoView() }
   }
   HUD.show(`/${lastSearchQuery} ${index + 1}/${lastSearchMatches.length}`)
 }
 
-function navigateMatch(backwards = false) {
+function navigateMatch (backwards = false) {
   if (!lastSearchQuery) return
   ensureMatchesForQuery(lastSearchQuery)
   const total = lastSearchMatches.length
@@ -527,7 +546,7 @@ function navigateMatch(backwards = false) {
 }
 
 // Visual mode helpers
-function enterVisualMode() {
+function enterVisualMode () {
   try { document.body.focus() } catch (e) {}
   // Ensure there is a selection; if none, try to select current match or start of body
   const sel = window.getSelection()
@@ -545,20 +564,20 @@ function enterVisualMode() {
   updateVisualIndicator()
 }
 
-function exitVisualMode() {
+function exitVisualMode () {
   // After leaving visual, show last search briefly if available
   updateSearchIndicator()
 }
 
-function updateVisualIndicator() {
+function updateVisualIndicator () {
   const sel = window.getSelection()
   let len = 0
   try { len = (sel && sel.toString()) ? sel.toString().length : 0 } catch (e) { len = 0 }
   // Visual mode HUD without current/total (optional char count)
-  HUD.set(len > 0 ? `VISUAL (${len} chars)` : 'VISUAL') 
+  HUD.set(len > 0 ? `VISUAL (${len} chars)` : 'VISUAL')
 }
 
-function extendSelectionByWord(forward = true) {
+function extendSelectionByWord (forward = true) {
   const sel = window.getSelection()
   if (!sel) return
   try {
@@ -599,7 +618,7 @@ function extendSelectionByWord(forward = true) {
   updateVisualIndicator()
 }
 
-function copyCurrentSelection() {
+function copyCurrentSelection () {
   const sel = window.getSelection()
   const text = sel ? sel.toString() : ''
   if (text) {
@@ -617,7 +636,7 @@ function copyCurrentSelection() {
 }
 
 // Create link hint element
-function createLinkItem(link, rect, key) {
+function createLinkItem (link, rect, key) {
   var item = document.createElement('span')
   item.setAttribute('style', VIM_CONFIG.hintStyle)
   item.textContent = key
@@ -627,7 +646,7 @@ function createLinkItem(link, rect, key) {
 }
 
 // Check if element is visible in viewport
-function isVisible(rect) {
+function isVisible (rect) {
   return (
     rect.top > 0 &&
     rect.top < window.innerHeight &&
@@ -637,8 +656,8 @@ function isVisible(rect) {
 }
 
 // Get next key combination for hints
-function getNextKeyCombination(index) {
-  let halfIndex = Math.floor(VIM_CONFIG.alphabet.length / 2)
+function getNextKeyCombination (index) {
+  const halfIndex = Math.floor(VIM_CONFIG.alphabet.length / 2)
   if (index < halfIndex) {
     return VIM_CONFIG.alphabet[index]
   } else {
@@ -650,7 +669,7 @@ function getNextKeyCombination(index) {
 }
 
 // Show link hints
-function showLinkKeys() {
+function showLinkKeys () {
   var links = []
   var linkRects = []
 
@@ -678,7 +697,7 @@ function showLinkKeys() {
 }
 
 // Hide link hints
-function hideLinkKeys() {
+function hideLinkKeys () {
   for (var i = 0; i < currentLinkItems.length; i++) {
     if (currentLinkItems[i].element.parentNode) {
       currentLinkItems[i].element.parentNode.removeChild(currentLinkItems[i].element)
@@ -688,13 +707,13 @@ function hideLinkKeys() {
 }
 
 // Handle typed text for link hints
-function onTextTyped(key) {
+function onTextTyped (key) {
   bufferAppend(key)
   processLinkHintBuffer()
 }
 
 // Apply current buffer to filter hints and act when matched
-function processLinkHintBuffer() {
+function processLinkHintBuffer () {
   var viableElementRemaining = false
   let remaining = 0
   const typed = cmdBuffer
@@ -702,9 +721,9 @@ function processLinkHintBuffer() {
     if (link.key === typed) {
       viableElementRemaining = true
       if (link.link.tagName === 'A') {
-        if (linkAction === "copyToClipboard") {
+        if (linkAction === 'copyToClipboard') {
           copyToClipboard(link.link.href)
-        } else if (linkAction === "openInNewTab") {
+        } else if (linkAction === 'openInNewTab') {
           window.open(link.link.href)
         } else {
           window.open(link.link.href, '_top')
@@ -729,7 +748,7 @@ function processLinkHintBuffer() {
       remaining++
     }
   })
- 
+
   if (!viableElementRemaining) {
     // Use proper state transition instead of direct HUD call
     if (vimManager) vimManager.transition('NORMAL')
@@ -740,17 +759,17 @@ function processLinkHintBuffer() {
 }
 
 // Utility functions
-function isCurrentlyInInput() {
+function isCurrentlyInInput () {
   const ae = document.activeElement || document.body
   return (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
 }
 
-function isFocusable(element) {
-  return ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(element.tagName) >= 0 || 
+function isFocusable (element) {
+  return ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(element.tagName) >= 0 ||
          element.isContentEditable
 }
 
-function copyToClipboard(text) {
+function copyToClipboard (text) {
   var dummy = document.createElement('input')
   document.body.appendChild(dummy)
   dummy.value = text
@@ -759,20 +778,20 @@ function copyToClipboard(text) {
   document.body.removeChild(dummy)
 }
 
-function copyUrlToClipboard() {
+function copyUrlToClipboard () {
   copyToClipboard(window.location.href)
 }
 
 // Exit to normal mode - blur any focused element
-function exitToNormalMode() {
+function exitToNormalMode () {
   // Blur any currently focused element
   if (document.activeElement && document.activeElement !== document.body) {
     document.activeElement.blur()
   }
-  
+
   // Focus the body to ensure we're in normal mode
   document.body.focus()
-  
+
   // Clear any ongoing commands
   command = ''
 }
@@ -782,4 +801,4 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initVimMode)
 } else {
   initVimMode()
-} 
+}

@@ -1,6 +1,6 @@
 /**
  * Command State Strategy Interface
- * 
+ *
  * Defines the interface that all command state strategies must implement.
  * Each strategy handles input pattern matching, UI updates, and action execution
  * for a specific command palette state.
@@ -32,7 +32,7 @@ class CommandStateStrategy {
    * @param {string} stateName - The name of the state this strategy handles
    * @param {number} priority - Priority for conflict resolution (higher = higher priority)
    */
-  constructor(stateName, priority = 0) {
+  constructor (stateName, priority = 0) {
     this.stateName = stateName
     this.priority = priority
     this.isActive = false
@@ -43,7 +43,7 @@ class CommandStateStrategy {
    * @param {string} input - Current input value
    * @returns {MatchResult} Match result with extracted data
    */
-  matches(input) {
+  matches (input) {
     throw new Error('matches() must be implemented by subclass')
   }
 
@@ -51,7 +51,7 @@ class CommandStateStrategy {
    * Get the regex pattern for this strategy
    * @returns {RegExp} Regular expression pattern
    */
-  getPattern() {
+  getPattern () {
     throw new Error('getPattern() must be implemented by subclass')
   }
 
@@ -62,7 +62,7 @@ class CommandStateStrategy {
    * @param {Object} context - Command palette context (DOM elements, etc.)
    * @returns {Promise<Candidate[]>} Array of candidates to display
    */
-  async updateUI(input, data, context) {
+  async updateUI (input, data, context) {
     throw new Error('updateUI() must be implemented by subclass')
   }
 
@@ -72,7 +72,7 @@ class CommandStateStrategy {
    * @param {Object} context - Command palette context
    * @returns {Promise<void>}
    */
-  async executeAction(candidate, context) {
+  async executeAction (candidate, context) {
     if (candidate.action && typeof candidate.action === 'function') {
       try {
         await candidate.action()
@@ -88,7 +88,7 @@ class CommandStateStrategy {
    * @param {Object} context - Command palette context
    * @returns {boolean} True if event was handled, false otherwise
    */
-  handleKeydown(event, context) {
+  handleKeydown (event, context) {
     // Default implementation does nothing
     return false
   }
@@ -98,21 +98,21 @@ class CommandStateStrategy {
    * @param {Object} data - Current state data
    * @returns {string} Placeholder text
    */
-  getPlaceholder(data = {}) {
+  getPlaceholder (data = {}) {
     return 'Enter command...'
   }
 
   /**
    * Activate this strategy
    */
-  activate() {
+  activate () {
     this.isActive = true
   }
 
   /**
    * Deactivate this strategy
    */
-  deactivate() {
+  deactivate () {
     this.isActive = false
   }
 
@@ -120,7 +120,7 @@ class CommandStateStrategy {
    * Get CSS classes to apply to input element
    * @returns {string[]} Array of CSS class names
    */
-  getInputClasses() {
+  getInputClasses () {
     return []
   }
 
@@ -129,7 +129,7 @@ class CommandStateStrategy {
    * @param {Object} context - Command palette context
    * @param {Object} data - State data
    */
-  onEnter(context, data) {
+  onEnter (context, data) {
     // Override in subclasses if needed
   }
 
@@ -137,16 +137,16 @@ class CommandStateStrategy {
    * Called when transitioning out of this state
    * @param {Object} context - Command palette context
    */
-  onExit(context) {
+  onExit (context) {
     // Override in subclasses if needed
   }
 }
 
 module.exports = {
-  CommandStateStrategy,
+  CommandStateStrategy
   // Export types for JSDoc
   /**
    * @typedef {Candidate} Candidate
    * @typedef {MatchResult} MatchResult
    */
-} 
+}
