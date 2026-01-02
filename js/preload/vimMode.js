@@ -279,6 +279,12 @@ class InputFocusStrategy extends VimStateStrategy {
   }
 }
 
+class PassthroughStrategy extends VimStateStrategy {
+  getName () { return 'PASSTHROUGH' }
+  onEnter (ctx) { HUD.set('PASSTHROUGH MODE - Press Ctrl+P to exit') }
+  handleKeydown (e, ctx) { return false }
+}
+
 class VimStateManager {
   constructor () {
     this.ctx = {
@@ -304,7 +310,8 @@ class VimStateManager {
       SEARCH: new SearchStrategy(),
       VISUAL: new VisualStrategy(),
       LINK_HINT: new LinkHintStrategy(),
-      INPUT_FOCUS: new InputFocusStrategy()
+      INPUT_FOCUS: new InputFocusStrategy(),
+      PASSTHROUGH: new PassthroughStrategy()
     }
     this.current = this.strategies.NORMAL
   }
@@ -318,8 +325,20 @@ class VimStateManager {
   }
 
   processKeydown (e) {
-    // Global Ctrl+C
-    if (e.ctrlKey && e.key === 'c') {
+    // Global Ctrl+P to toggle Passthrough
+    if (e.ctrlKey && e.key === 'p') {
+      e.preventDefault(); e.stopPropagation()
+      if (this.current.getName() === 'PASSTHROUGH') {
+        this.transition('NORMAL')
+        HUD.show('NORMAL', 1200)
+      } else {
+        this.transition('PASSTHROUGH')
+      }
+      return true
+    }
+
+    // Global Ctrl+C (disabled in Passthrough)
+    if (e.ctrlKey && e.key === 'c' && this.current.getName() !== 'PASSTHROUGH') {
       e.preventDefault(); e.stopPropagation()
       this.transition('NORMAL')
       exitToNormalMode()
@@ -363,7 +382,7 @@ function setupEventListeners () {
 
   // Focus event handler - automatically switch to INPUT_FOCUS mode when input is focused
   document.addEventListener('focusin', function (e) {
-    if (vimManager && isCurrentlyInInput() && vimManager.current.getName() !== 'INPUT_FOCUS') {
+    if (vimManager && isCurrentlyInInput() && vimManager.current.getName() !== 'INPUT_FOCUS' && vimManager.current.getName() !== 'PASSTHROUGH') {
       vimManager.transition('INPUT_FOCUS')
     }
   }, true)
@@ -391,12 +410,16 @@ function setupEventListeners () {
 
   // Keydown handler (capture phase)
   document.addEventListener('keydown', function (e) {
-    if (vimManager && vimManager.processKeydown(e)) return
+    if (vimManager) {
+      vimManager.processKeydown(e)
+    }
   }, true)
 
   // Keyup handler (capture)
   document.addEventListener('keyup', function (e) {
-    if (vimManager && vimManager.processKeyup(e)) return
+    if (vimManager) {
+      vimManager.processKeyup(e)
+    }
   }, true)
 }
 
