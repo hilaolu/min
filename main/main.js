@@ -62,10 +62,13 @@ if (isDevelopmentMode) {
 
 // workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
+// treat file:// as a secure origin to enable WebHID debugging
+app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', 'file://')
 // Use the legacy IOHID backend and disable the axis offset/events to prevent 'snapping' to binary values
 app.commandLine.appendSwitch('macos-gamepad-backend', 'iohid')
 app.commandLine.appendSwitch('disable-features', 'GamepadButtonAxisOffset,GamepadButtonAxisEvents')
-app.commandLine.appendSwitch('enable-features', 'StandardGamepadAsDefault')
+app.commandLine.appendSwitch('enable-features', 'StandardGamepadAsDefault,WebHID')
+app.commandLine.appendSwitch('enable-gamepad-extensions')
 
 var userDataPath = app.getPath('userData')
 
