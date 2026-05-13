@@ -120,7 +120,13 @@ module.exports = function (platform, extraOptions) {
           }
         ],
         NSUserActivityTypes: ['NSUserActivityTypeBrowsingWeb'], // macOS handoff support
-        LSFileQuarantineEnabled: true // https://github.com/minbrowser/min/issues/2073
+        LSFileQuarantineEnabled: true, // https://github.com/minbrowser/min/issues/2073
+        GCSupportedGameControllers: [
+          {
+            ProfileName: 'ExtendedGamepad'
+          }
+        ],
+        GCSupportsControllerUserCustomization: true
         // need to revisit if implementing autoupdate, see https://github.com/brave/browser-laptop/issues/13817
       }
     },
