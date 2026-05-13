@@ -62,9 +62,9 @@ if (isDevelopmentMode) {
 
 // workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
-// Force the modern GameController backend but disable the specific macOS 15 'Fix' and Axis Events which can cause quantization/shadowing
-app.commandLine.appendSwitch('macos-gamepad-backend', 'gamecontroller')
-app.commandLine.appendSwitch('disable-features', 'GamepadButtonAxisEvents,GamepadMacOS15Fix')
+// Use the legacy IOHID backend and disable the axis offset/events to prevent 'snapping' to binary values
+app.commandLine.appendSwitch('macos-gamepad-backend', 'iohid')
+app.commandLine.appendSwitch('disable-features', 'GamepadButtonAxisOffset,GamepadButtonAxisEvents')
 app.commandLine.appendSwitch('enable-features', 'StandardGamepadAsDefault')
 
 var userDataPath = app.getPath('userData')
