@@ -62,10 +62,9 @@ if (isDevelopmentMode) {
 
 // workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
-// try the legacy IOHID backend which can sometimes provide better analog support for non-standard controllers
-app.commandLine.appendSwitch('macos-gamepad-backend', 'iohid')
-app.commandLine.appendSwitch('enable-features', 'GamepadButtonAxisEvents')
-app.commandLine.appendSwitch('enable-gamepad-extensions')
+// Force the modern GameController backend and enable specific fixes for Xbox 360 (045e:028e) devices on macOS
+app.commandLine.appendSwitch('macos-gamepad-backend', 'gamecontroller')
+app.commandLine.appendSwitch('enable-features', 'GamepadButtonAxisEvents,GamepadMacOS15Fix,XboxUseGameControllerDataFetcherMac,StandardGamepadAsDefault')
 
 var userDataPath = app.getPath('userData')
 
