@@ -1,6 +1,7 @@
 var pendingPermissions = []
 var grantedPermissions = []
 var nextPermissionId = 1
+var grantedHidDevices = []
 
 /*
 All permission requests are given to the renderer on each change,
@@ -116,7 +117,7 @@ function pagePermissionRequestHandler (webContents, permission, callback, detail
   Geolocation requires a Google API key (https://www.electronjs.org/docs/api/environment-variables#google_api_key), so it is disabled.
   Other permissions aren't supported for now to simplify the UI
   */
-  if (['media', 'notifications', 'pointerLock'].includes(permission)) {
+  if (['media', 'notifications', 'pointerLock', 'hid'].includes(permission)) {
     /*
     If permission was previously granted for this origin in a different tab, new requests should be allowed
     */
@@ -203,14 +204,53 @@ function pagePermissionCheckHandler (webContents, permission, requestingOrigin, 
   return isPermissionGrantedForOrigin(requestHostname, permission, details)
 }
 
+function setupHidHandlers (session) {
+  session.on('select-hid-device', function (event, details, callback) {
+    event.preventDefault()
+
+    // find a previously granted device by vendorId/productId
+    var matchedDevice = details.deviceList.find(function (device) {
+      return grantedHidDevices.some(function (granted) {
+        return granted.vendorId === device.vendorId && granted.productId === device.productId
+      })
+    })
+
+    if (matchedDevice) {
+      callback(matchedDevice.deviceId)
+    } else if (details.deviceList.length > 0) {
+      // auto-grant the first available HID device
+      var device = details.deviceList[0]
+      grantedHidDevices.push({
+        vendorId: device.vendorId,
+        productId: device.productId,
+        deviceId: device.deviceId
+      })
+      callback(device.deviceId)
+    } else {
+      callback('')
+    }
+  })
+
+  session.setDevicePermissionHandler(function (details) {
+    if (details.deviceType === 'hid') {
+      return grantedHidDevices.some(function (granted) {
+        return granted.vendorId === details.device.vendorId && granted.productId === details.device.productId
+      })
+    }
+    return false
+  })
+}
+
 app.once('ready', function () {
   session.defaultSession.setPermissionRequestHandler(pagePermissionRequestHandler)
   session.defaultSession.setPermissionCheckHandler(pagePermissionCheckHandler)
+  setupHidHandlers(session.defaultSession)
 })
 
 app.on('session-created', function (session) {
   session.setPermissionRequestHandler(pagePermissionRequestHandler)
   session.setPermissionCheckHandler(pagePermissionCheckHandler)
+  setupHidHandlers(session)
 })
 
 ipc.on('permissionGranted', function (e, permissionId) {
