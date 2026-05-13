@@ -4,7 +4,7 @@
   "author": "PalmerAL",
   "version": "1.38.1",
   "description": "A fast, minimal browser that protects your privacy",
-  "electronVersion": "41.2.0",
+  "electronVersion": "42.0.1",
   "main": "main.build.js",
   "standard": {
     "globals": [
