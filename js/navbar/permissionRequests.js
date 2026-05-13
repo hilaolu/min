@@ -16,6 +16,8 @@ const permissionRequests = {
       return ['carbon:chat']
     } else if (request.permission === 'pointerLock') {
       return ['carbon:cursor-1']
+    } else if (request.permission === 'hid') {
+      return ['carbon:usb']
     } else if (request.permission === 'media' && request.details.mediaTypes) {
       var mediaIcons = {
         video: 'carbon:video',

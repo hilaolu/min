@@ -5,7 +5,6 @@ var grantedHidDevices = []
 
 /*
 All permission requests are given to the renderer on each change,
-it will figure out what updates to make
 */
 function sendPermissionsToRenderers () {
   // send all requests to all windows - the tab bar in each will figure out what to display
@@ -42,6 +41,10 @@ function isPermissionGrantedForOrigin (requestOrigin, requestPermission, request
       }
 
       if (requestPermission === 'pointerLock' && grantedPermissions[i].permission === 'pointerLock') {
+        return true
+      }
+
+      if (requestPermission === 'hid' && grantedPermissions[i].permission === 'hid') {
         return true
       }
 
@@ -256,11 +259,11 @@ app.on('session-created', function (session) {
 ipc.on('permissionGranted', function (e, permissionId) {
   for (var i = 0; i < pendingPermissions.length; i++) {
     if (permissionId && pendingPermissions[i].permissionId === permissionId) {
-      // Focus the webContents before granting pointerLock, since clicking
+      // Focus the webContents before granting pointerLock or hid, since clicking
       // the tab-bar permission button shifts focus away from the webview
-      // and Chromium's pointerLock activation can silently fail if the
+      // and Chromium's activation can silently fail if the
       // document isn't focused when the callback is processed.
-      if (pendingPermissions[i].permission === 'pointerLock') {
+      if (pendingPermissions[i].permission === 'pointerLock' || pendingPermissions[i].permission === 'hid') {
         pendingPermissions[i].contents.focus()
       }
 
