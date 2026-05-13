@@ -64,7 +64,7 @@ if (isDevelopmentMode) {
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
 // try the legacy IOHID backend which can sometimes provide better analog support for non-standard controllers
 app.commandLine.appendSwitch('macos-gamepad-backend', 'iohid')
-app.commandLine.appendSwitch('enable-features', 'GamepadButtonAxisEvents,StandardGamepadAsDefault')
+app.commandLine.appendSwitch('enable-features', 'GamepadButtonAxisEvents')
 app.commandLine.appendSwitch('enable-gamepad-extensions')
 
 var userDataPath = app.getPath('userData')
