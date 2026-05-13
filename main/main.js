@@ -62,9 +62,10 @@ if (isDevelopmentMode) {
 
 // workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
-// Force the modern GameController backend and enable specific fixes for Xbox 360 (045e:028e) devices on macOS
+// Force the modern GameController backend but disable the specific macOS 15 'Fix' and Axis Events which can cause quantization/shadowing
 app.commandLine.appendSwitch('macos-gamepad-backend', 'gamecontroller')
-app.commandLine.appendSwitch('enable-features', 'GamepadButtonAxisEvents,GamepadMacOS15Fix,XboxUseGameControllerDataFetcherMac,StandardGamepadAsDefault')
+app.commandLine.appendSwitch('disable-features', 'GamepadButtonAxisEvents,GamepadMacOS15Fix')
+app.commandLine.appendSwitch('enable-features', 'StandardGamepadAsDefault')
 
 var userDataPath = app.getPath('userData')
 
