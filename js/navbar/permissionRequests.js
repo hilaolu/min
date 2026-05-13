@@ -48,6 +48,7 @@ const permissionRequests = {
         button.addEventListener('click', function (e) {
           e.stopPropagation()
           if (request.granted) {
+            ipcRenderer.send('revokePermission', request.permissionId)
             webviews.callAsync(tabId, 'reload')
           } else {
             permissionRequests.grantPermission(request.permissionId)
