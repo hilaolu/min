@@ -1,4 +1,5 @@
 const currrentDownloadItems = {}
+const mainFrameDownloadNavigations = new Map()
 
 ipc.on('cancelDownload', function (e, path) {
   if (currrentDownloadItems[path]) {
@@ -14,6 +15,17 @@ function downloadHandler (event, item, webContents) {
   let sourceWindow = windows.windowFromContents(webContents)?.win
   if (!sourceWindow) {
     sourceWindow = windows.getCurrent()
+  }
+
+  const navigationDownload = mainFrameDownloadNavigations.get(webContents.id)
+  const itemURL = typeof item.getURL === 'function' ? item.getURL() : null
+
+  if (navigationDownload && (!itemURL || navigationDownload.url === itemURL)) {
+    clearTimeout(navigationDownload.timeout)
+    mainFrameDownloadNavigations.delete(webContents.id)
+    sendIPCToWindow(sourceWindow, 'download-navigation', {
+      tabId: getTabIDFromWebContents(webContents)
+    })
   }
 
   var savePathFilename
@@ -84,6 +96,22 @@ function listenForDownloadHeaders (ses) {
       // Needed to save files correctly: https://github.com/minbrowser/min/issues/1717
       // It doesn't make much sense to have this here, but only one onHeadersReceived instance can be created per session
       const isFileView = typeHeader instanceof Array && !typeHeader.some(t => t.includes('text/html'))
+
+      if (details.webContents && (attachment || isFileView)) {
+        const previousNavigation = mainFrameDownloadNavigations.get(details.webContents.id)
+        if (previousNavigation) {
+          clearTimeout(previousNavigation.timeout)
+        }
+
+        const timeout = setTimeout(function () {
+          mainFrameDownloadNavigations.delete(details.webContents.id)
+        }, 30000)
+
+        mainFrameDownloadNavigations.set(details.webContents.id, {
+          url: details.url,
+          timeout
+        })
+      }
 
       sendIPCToWindow(sourceWindow, 'set-file-view', {
         url: details.url,

@@ -171,6 +171,7 @@ function setAudioMutedOnCreate (tabId, muted) {
 
 const webviews = {
   viewFullscreenMap: {}, // tabId, isFullscreen
+  downloadNavigationViews: {}, // tabIds whose main-frame navigation turned into a download
   selectedId: null,
   placeholderRequests: [],
   asyncCallbacks: {},
@@ -326,6 +327,7 @@ const webviews = {
     ipc.send('destroyView', id)
 
     delete webviews.viewFullscreenMap[id]
+    delete webviews.downloadNavigationViews[id]
     if (webviews.selectedId === id) {
       webviews.selectedId = null
     }
@@ -388,6 +390,13 @@ const webviews = {
   focus: function () {
     if (webviews.selectedId) {
       ipc.send('focusView', webviews.selectedId)
+    }
+  },
+  focusActiveContent: function () {
+    if (webviews.downloadNavigationViews[webviews.selectedId]) {
+      webviews.releaseFocus()
+    } else {
+      webviews.focus()
     }
   },
   resize: function () {
@@ -495,6 +504,9 @@ ipc.on('leave-full-screen', function () {
 })
 
 webviews.bindEvent('did-start-navigation', onNavigationStart)
+webviews.bindEvent('did-start-navigation', function (tabId) {
+  delete webviews.downloadNavigationViews[tabId]
+})
 webviews.bindEvent('will-redirect', onNavigate)
 webviews.bindEvent('did-navigate', function (tabId, url, httpResponseCode, httpStatusText) {
   onPageURLChange(tabId, url)
@@ -612,8 +624,6 @@ ipc.on('view-ipc', function (e, args) {
   })
 })
 
-
-
 ipc.on('captureData', function (e, data) {
   tabs.update(data.id, { previewImage: data.url })
   previewImageManager.markCaptured(data.id)
@@ -623,11 +633,23 @@ ipc.on('captureData', function (e, data) {
   }
 })
 
+ipc.on('download-navigation', function (e, data) {
+  if (!data.tabId) {
+    return
+  }
+
+  webviews.downloadNavigationViews[data.tabId] = true
+
+  if (data.tabId === webviews.selectedId && document.activeElement.tagName !== 'INPUT') {
+    webviews.focusActiveContent()
+  }
+})
+
 /* focus the view when the window is focused */
 
 ipc.on('windowFocus', function () {
   if (webviews.placeholderRequests.length === 0 && document.activeElement.tagName !== 'INPUT') {
-    webviews.focus()
+    webviews.focusActiveContent()
   }
 })
 

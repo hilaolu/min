@@ -272,10 +272,16 @@ function createWindowWithBounds (bounds, customArgs) {
     saveWindowBounds()
   })
 
-  newWin.on('focus', function () {
-    if (!windows.getState(newWin).isMinimized) {
+  function refocusBrowserContents () {
+    const isMinimized = newWin.isMinimized()
+    windows.getState(newWin).isMinimized = isMinimized
+    if (!isMinimized) {
       sendIPCToWindow(newWin, 'windowFocus')
     }
+  }
+
+  newWin.on('focus', function () {
+    refocusBrowserContents()
   })
 
   newWin.on('minimize', function () {
@@ -284,7 +290,7 @@ function createWindowWithBounds (bounds, customArgs) {
   })
 
   newWin.on('restore', function () {
-    windows.getState(newWin).isMinimized = false
+    refocusBrowserContents()
   })
 
   newWin.on('maximize', function () {
