@@ -1,3 +1,5 @@
+const browserSession = require('tabState.js')
+const { ipcRenderer: ipc } = require('electron')
 const remoteMenu = require('remoteMenuRenderer.js')
 const browserUI = require('browserUI.js')
 const webviews = require('webviews.js')
@@ -11,11 +13,7 @@ const tabContextMenu = {
         {
           label: 'Duplicate Tab',
           click: function () {
-            const sourceTab = tabs.get(tabId)
-            // strip tab id so that a new one is generated
-            const newTab = tabs.add({ ...sourceTab, id: undefined })
-
-            browserUI.addTab(newTab, { enterEditMode: false })
+            browserUI.duplicateTab(tabId, { enterEditMode: false })
           }
         },
         {
@@ -23,30 +21,27 @@ const tabContextMenu = {
           click: function () {
             // insert after current task
             let index
-            if (tasks.getSelected()) {
-              index = tasks.getIndex(tasks.getSelected().id) + 1
+            if (browserSession.tasks.getSelected()) {
+              index = browserSession.tasks.getIndex(browserSession.tasks.getSelected().id) + 1
             }
-            const newTask = tasks.get(tasks.add({}, index))
+            const currentTaskId = browserSession.tasks.getSelected().id
+            const newTaskId = browserSession.createTask({}, { index })
+            browserSession.moveTabToTask(tabId, newTaskId, { index: 0 })
 
-            const targetTab = tabs.get(tabId)
-            tabs.destroy(targetTab.id)
+            ipc.send('newWindow', { initialTask: newTaskId })
 
-            newTask.tabs.add(targetTab)
-
-            ipc.send('newWindow', { initialTask: newTask.id })
-
-            browserUI.switchToTask(tasks.getSelected().id)
+            browserUI.switchToTask(currentTaskId, { stateAlreadySelected: true })
           }
         }
       ]
     ]
 
-    if (tabs.get(tabId).url && (readerView.isReader(tabId) || !urlParser.isInternalURL(tabs.get(tabId).url))) {
+    if (browserSession.tabs.get(tabId).url && (readerView.isReader(tabId) || !urlParser.isInternalURL(browserSession.tabs.get(tabId).url))) {
       if (!readerView.isReader(tabId)) {
         tabMenu[0].push({
           label: 'Enter Reader View',
           click: function () {
-            readerView.enter(tabId, tabs.get(tabId).url)
+            readerView.enter(tabId, browserSession.tabs.get(tabId).url)
           }
         })
       } else {
@@ -62,9 +57,9 @@ const tabContextMenu = {
     tabMenu[0].push({
       label: 'Reload',
       click: function () {
-        if (tabs.get(tabId).url.startsWith(webviews.internalPages.error)) {
+        if (browserSession.tabs.get(tabId).url.startsWith(webviews.internalPages.error)) {
           // reload the original page rather than show the error page again
-          webviews.update(tabId, new URL(tabs.get(tabId).url).searchParams.get('url'))
+          webviews.update(tabId, new URL(browserSession.tabs.get(tabId).url).searchParams.get('url'))
         } else {
           // this can't be an error page, use the normal reload method
           webviews.callAsync(tabId, 'reload')

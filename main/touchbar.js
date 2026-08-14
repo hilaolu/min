@@ -1,62 +1,66 @@
-const TouchBar = require('electron').TouchBar
-const nativeImage = require('electron').nativeImage
-const { TouchBarButton, TouchBarSpacer } = TouchBar
+function createTouchBar ({ TouchBar, nativeImage, sendIPCToWindow, windows }) {
+  const { TouchBarButton, TouchBarSpacer } = TouchBar
 
-function buildTouchBar () {
-  if (process.platform !== 'darwin') {
-    return null
-  }
+  function buildTouchBar () {
+    if (process.platform !== 'darwin') {
+      return null
+    }
 
-  function getTouchBarIcon (name) {
+    function getTouchBarIcon (name) {
     // the icons created by nativeImage are too big by default, shrink them to the correct size for the touchbar
-    var image = nativeImage.createFromNamedImage(name, [-1, 0, 1])
-    var size = image.getSize()
-    return image.resize({
-      width: Math.round(size.width * 0.65),
-      height: Math.round(size.height * 0.65)
+      var image = nativeImage.createFromNamedImage(name, [-1, 0, 1])
+      var size = image.getSize()
+      return image.resize({
+        width: Math.round(size.width * 0.65),
+        height: Math.round(size.height * 0.65)
+      })
+    }
+    return new TouchBar({
+      items: [
+        new TouchBarButton({
+          accessibilityLabel: 'Go Back',
+          icon: getTouchBarIcon('NSImageNameTouchBarGoBackTemplate'),
+          click: function () {
+            sendIPCToWindow(windows.getCurrent(), 'goBack')
+          }
+        }),
+        new TouchBarButton({
+          accessibilityLabel: 'Go Forward',
+          icon: getTouchBarIcon('NSImageNameTouchBarGoForwardTemplate'),
+          click: function () {
+            sendIPCToWindow(windows.getCurrent(), 'goForward')
+          }
+        }),
+        new TouchBarSpacer({ size: 'flexible' }),
+        new TouchBarButton({
+          icon: getTouchBarIcon('NSImageNameTouchBarSearchTemplate'),
+          iconPosition: 'left',
+          // TODO this is really hacky, find a better way to set the size
+          label: '    Search or enter address                     ',
+          click: function () {
+            sendIPCToWindow(windows.getCurrent(), 'openEditor')
+          }
+        }),
+        new TouchBarSpacer({ size: 'flexible' }),
+        new TouchBarButton({
+          icon: getTouchBarIcon('NSImageNameTouchBarAdd'),
+          accessibilityLabel: 'New Tab',
+          click: function () {
+            sendIPCToWindow(windows.getCurrent(), 'addTab')
+          }
+        }),
+        new TouchBarButton({
+          accessibilityLabel: 'View Tasks',
+          icon: getTouchBarIcon('NSImageNameTouchBarListViewTemplate'),
+          click: function () {
+            sendIPCToWindow(windows.getCurrent(), 'toggleTaskOverlay')
+          }
+        })
+      ]
     })
   }
-  return new TouchBar({
-    items: [
-      new TouchBarButton({
-        accessibilityLabel: 'Go Back',
-        icon: getTouchBarIcon('NSImageNameTouchBarGoBackTemplate'),
-        click: function () {
-          sendIPCToWindow(windows.getCurrent(), 'goBack')
-        }
-      }),
-      new TouchBarButton({
-        accessibilityLabel: 'Go Forward',
-        icon: getTouchBarIcon('NSImageNameTouchBarGoForwardTemplate'),
-        click: function () {
-          sendIPCToWindow(windows.getCurrent(), 'goForward')
-        }
-      }),
-      new TouchBarSpacer({ size: 'flexible' }),
-      new TouchBarButton({
-        icon: getTouchBarIcon('NSImageNameTouchBarSearchTemplate'),
-        iconPosition: 'left',
-        // TODO this is really hacky, find a better way to set the size
-        label: '    Search or enter address                     ',
-        click: function () {
-          sendIPCToWindow(windows.getCurrent(), 'openEditor')
-        }
-      }),
-      new TouchBarSpacer({ size: 'flexible' }),
-      new TouchBarButton({
-        icon: getTouchBarIcon('NSImageNameTouchBarAdd'),
-        accessibilityLabel: 'New Tab',
-        click: function () {
-          sendIPCToWindow(windows.getCurrent(), 'addTab')
-        }
-      }),
-      new TouchBarButton({
-        accessibilityLabel: 'View Tasks',
-        icon: getTouchBarIcon('NSImageNameTouchBarListViewTemplate'),
-        click: function () {
-          sendIPCToWindow(windows.getCurrent(), 'toggleTaskOverlay')
-        }
-      })
-    ]
-  })
+
+  return { buildTouchBar }
 }
+
+module.exports = createTouchBar

@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 /* Handles messages that get sent from the menu bar in the main process */
 
 var webviews = require('webviews.js')
@@ -13,26 +14,26 @@ var taskOverlay = require('taskOverlay/taskOverlay.js')
 module.exports = {
   initialize: function () {
     ipc.on('zoomIn', function () {
-      webviewGestures.zoomWebviewIn(tabs.getSelected())
+      webviewGestures.zoomWebviewIn(browserSession.tabs.getSelected())
     })
 
     ipc.on('zoomOut', function () {
-      webviewGestures.zoomWebviewOut(tabs.getSelected())
+      webviewGestures.zoomWebviewOut(browserSession.tabs.getSelected())
     })
 
     ipc.on('zoomReset', function () {
-      webviewGestures.resetWebviewZoom(tabs.getSelected())
+      webviewGestures.resetWebviewZoom(browserSession.tabs.getSelected())
     })
 
     ipc.on('print', function () {
-      if (PDFViewer.isPDFViewer(tabs.getSelected())) {
-        PDFViewer.printPDF(tabs.getSelected())
-      } else if (readerView.isReader(tabs.getSelected())) {
-        readerView.printArticle(tabs.getSelected())
+      if (PDFViewer.isPDFViewer(browserSession.tabs.getSelected())) {
+        PDFViewer.printPDF(browserSession.tabs.getSelected())
+      } else if (readerView.isReader(browserSession.tabs.getSelected())) {
+        readerView.printArticle(browserSession.tabs.getSelected())
       } else if (webviews.placeholderRequests.length === 0) {
         // work around #1281 - calling print() when the view is hidden crashes on Linux in Electron 12
         // TODO figure out why webContents.print() doesn't work in Electron 4
-        webviews.callAsync(tabs.getSelected(), 'executeJavaScript', 'window.print()')
+        webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'window.print()')
       }
     })
 
@@ -41,19 +42,19 @@ module.exports = {
     })
 
     ipc.on('inspectPage', function () {
-      webviews.callAsync(tabs.getSelected(), 'toggleDevTools')
+      webviews.callAsync(browserSession.tabs.getSelected(), 'toggleDevTools')
     })
 
     ipc.on('openEditor', function () {
-      tabEditor.show(tabs.getSelected())
+      tabEditor.show(browserSession.tabs.getSelected())
     })
 
     ipc.on('showBookmarks', function () {
-      tabEditor.show(tabs.getSelected(), '!bookmarks ')
+      tabEditor.show(browserSession.tabs.getSelected(), '!bookmarks ')
     })
 
     ipc.on('showHistory', function () {
-      tabEditor.show(tabs.getSelected(), '!history ')
+      tabEditor.show(browserSession.tabs.getSelected(), '!history ')
     })
 
     ipc.on('addTab', function (e, data) {
@@ -63,17 +64,15 @@ module.exports = {
         return
       }
 
-      var newTab = tabs.add({
+      browserUI.addTab({
         url: data.url || ''
-      })
-
-      browserUI.addTab(newTab, {
+      }, {
         enterEditMode: !data.url // only enter edit mode if the new tab is empty
       })
     })
 
     ipc.on('saveCurrentPage', async function () {
-      var currentTab = tabs.get(tabs.getSelected())
+      var currentTab = browserSession.tabs.get(browserSession.tabs.getSelected())
 
       // new tabs cannot be saved
       if (!currentTab.url) {
@@ -81,13 +80,13 @@ module.exports = {
       }
 
       // if the current tab is a PDF, let the PDF viewer handle saving the document
-      if (PDFViewer.isPDFViewer(tabs.getSelected())) {
-        PDFViewer.savePDF(tabs.getSelected())
+      if (PDFViewer.isPDFViewer(browserSession.tabs.getSelected())) {
+        PDFViewer.savePDF(browserSession.tabs.getSelected())
         return
       }
 
-      if (tabs.get(tabs.getSelected()).isFileView) {
-        webviews.callAsync(tabs.getSelected(), 'downloadURL', [tabs.get(tabs.getSelected()).url])
+      if (browserSession.tabs.get(browserSession.tabs.getSelected()).isFileView) {
+        webviews.callAsync(browserSession.tabs.getSelected(), 'downloadURL', [browserSession.tabs.get(browserSession.tabs.getSelected()).url])
       } else {
         var savePath = await ipc.invoke('showSaveDialog', {
           defaultPath: currentTab.title.replace(/[/\\]/g, '_')
@@ -98,7 +97,7 @@ module.exports = {
           if (!savePath.endsWith('.html')) {
             savePath = savePath + '.html'
           }
-          webviews.callAsync(tabs.getSelected(), 'savePage', [savePath, 'HTMLComplete'])
+          webviews.callAsync(browserSession.tabs.getSelected(), 'savePage', [savePath, 'HTMLComplete'])
         }
       }
     })
@@ -110,9 +109,9 @@ module.exports = {
         return
       }
 
-      browserUI.addTab(tabs.add({
+      browserUI.addTab({
         private: true
-      }))
+      })
     })
 
     ipc.on('toggleTaskOverlay', function () {
@@ -120,11 +119,11 @@ module.exports = {
     })
 
     ipc.on('goBack', function () {
-      webviews.callAsync(tabs.getSelected(), 'goBack')
+      webviews.callAsync(browserSession.tabs.getSelected(), 'goBack')
     })
 
     ipc.on('goForward', function () {
-      webviews.callAsync(tabs.getSelected(), 'goForward')
+      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
     })
   }
 }

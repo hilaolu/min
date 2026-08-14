@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 /**
  * Command palette commands module
  * Defines available vim-like commands for the command palette
@@ -12,7 +13,7 @@ const availableCommands = [
     icon: 'carbon:close',
     action: () => {
       var browserUI = require('browserUI.js')
-      browserUI.closeTab(tabs.getSelected())
+      browserUI.closeTab(browserSession.tabs.getSelected())
     }
   },
   {

@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var webviews = require('webviews.js')
 
 var webviewGestures = {
@@ -92,7 +93,7 @@ function onSwipeGestureLowVelocity () {
     return
   }
 
-  webviews.callAsync(tabs.getSelected(), 'getZoomFactor', function(err, result) {
+  webviews.callAsync(browserSession.tabs.getSelected(), 'getZoomFactor', function(err, result) {
     const minScrollDistance = 150 * result;
 
       if ((leftMouseMove / rightMouseMove > 5) || (rightMouseMove / leftMouseMove > 5)) {
@@ -101,7 +102,7 @@ function onSwipeGestureLowVelocity () {
         if (beginningScrollRight < 5) {
           resetDistanceCounters()
           resetScrollCounters()
-          webviews.callAsync(tabs.getSelected(), 'goForward')
+          webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
         }
       }
 
@@ -110,7 +111,7 @@ function onSwipeGestureLowVelocity () {
         if (beginningScrollLeft < 5) {
           resetDistanceCounters()
           resetScrollCounters()
-          webviews.goBackIgnoringRedirects(tabs.getSelected())
+          webviews.goBackIgnoringRedirects(browserSession.tabs.getSelected())
         }
       }
     }
@@ -136,7 +137,7 @@ webviews.bindIPC('wheel-event', function (tabId, e) {
   var platformSecondaryKey = ((navigator.platform === 'MacIntel') ? e.ctrlKey : false)
 
   if (beginningScrollLeft === null || beginningScrollRight === null) {
-    webviews.callAsync(tabs.getSelected(), 'executeJavaScript', `
+    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', `
     (function () {
       var left = 0
       var right = 0
@@ -199,12 +200,12 @@ webviews.bindIPC('wheel-event', function (tabId, e) {
   if (platformZoomKey && initialZoomKeyState) {
     if (verticalMouseMove > 50) {
       verticalMouseMove = -10
-      webviewGestures.zoomWebviewOut(tabs.getSelected())
+      webviewGestures.zoomWebviewOut(browserSession.tabs.getSelected())
     }
 
     if (verticalMouseMove < -50) {
       verticalMouseMove = -10
-      webviewGestures.zoomWebviewIn(tabs.getSelected())
+      webviewGestures.zoomWebviewIn(browserSession.tabs.getSelected())
     }
   }
 })

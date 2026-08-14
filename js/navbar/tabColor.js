@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var webviews = require('webviews.js')
 var settings = require('util/settings/settings.js')
 
@@ -185,7 +186,7 @@ const tabColor = {
   initialize: function () {
     webviews.bindEvent('page-favicon-updated', function (tabId, favicons) {
       tabColor.updateFromImage(favicons, tabId, function () {
-        if (tabId === tabs.getSelected()) {
+        if (tabId === browserSession.tabs.getSelected()) {
           tabColor.updateColors()
         }
       })
@@ -193,7 +194,7 @@ const tabColor = {
 
     webviews.bindEvent('did-change-theme-color', function (tabId, color) {
       tabColor.updateFromThemeColor(color, tabId)
-      if (tabId === tabs.getSelected()) {
+      if (tabId === browserSession.tabs.getSelected()) {
         tabColor.updateColors()
       }
     })
@@ -205,7 +206,7 @@ const tabColor = {
      */
     webviews.bindEvent('did-start-navigation', function (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
       if (isMainFrame) {
-        tabs.update(tabId, {
+        browserSession.updateTab(tabId, {
           backgroundColor: null,
           favicon: null
         })
@@ -231,11 +232,11 @@ const tabColor = {
       }
     })
 
-    tasks.on('tab-selected', this.updateColors)
+    browserSession.tasks.on('tab-selected', this.updateColors)
   },
   updateFromThemeColor: function (color, tabId) {
     if (!color) {
-      tabs.update(tabId, {
+      browserSession.updateTab(tabId, {
         themeColor: null
       })
       return
@@ -244,7 +245,7 @@ const tabColor = {
     const rgb = getColorFromString(color)
     const rgbAdjusted = adjustColorForTheme(rgb)
 
-    tabs.update(tabId, {
+    browserSession.updateTab(tabId, {
       themeColor: {
         color: getRGBString(rgbAdjusted),
         textColor: getTextColor(rgbAdjusted),
@@ -254,7 +255,7 @@ const tabColor = {
   },
   updateFromImage: function (favicons, tabId, callback) {
     // private tabs always use a special color, we don't need to get the icon
-    if (tabs.get(tabId).private === true) {
+    if (browserSession.tabs.get(tabId).private === true) {
       return
     }
 
@@ -263,7 +264,7 @@ const tabColor = {
         const backgroundColor = getColorFromImage(colorExtractorImage)
         const backgroundColorAdjusted = adjustColorForTheme(backgroundColor)
 
-        tabs.update(tabId, {
+        browserSession.updateTab(tabId, {
           backgroundColor: {
             color: getRGBString(backgroundColorAdjusted),
             textColor: getTextColor(backgroundColorAdjusted),
@@ -285,7 +286,7 @@ const tabColor = {
     })
   },
   updateColors: function () {
-    const tab = tabs.get(tabs.getSelected())
+    const tab = browserSession.tabs.get(browserSession.tabs.getSelected())
 
     // private tabs have their own color scheme
     if (tab.private) {

@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 const clipboard = electron.clipboard
 
 const webviews = require('webviews.js')
@@ -11,7 +12,7 @@ const remoteMenu = require('remoteMenuRenderer.js')
 const webviewMenu = {
   menuData: null,
   showMenu: function (data, extraData) { // data comes from a context-menu event
-    var currentTab = tabs.get(tabs.getSelected())
+    var currentTab = browserSession.tabs.get(browserSession.tabs.getSelected())
 
     var menuSections = []
 
@@ -24,7 +25,7 @@ const webviewMenu = {
         {
           label: 'Picture in Picture',
           click: function () {
-            webviews.callAsync(tabs.getSelected(), 'send', ['enterPictureInPicture', { x: data.x, y: data.y }])
+            webviews.callAsync(browserSession.tabs.getSelected(), 'send', ['enterPictureInPicture', { x: data.x, y: data.y }])
           }
         }
       ])
@@ -37,7 +38,7 @@ const webviewMenu = {
         return {
           label: suggestion,
           click: function () {
-            webviews.callAsync(tabs.getSelected(), 'replaceMisspelling', suggestion)
+            webviews.callAsync(browserSession.tabs.getSelected(), 'replaceMisspelling', suggestion)
           }
         }
       })
@@ -84,7 +85,7 @@ const webviewMenu = {
         linkActions.push({
           label: 'Open in New Tab',
           click: function () {
-            browserUI.addTab(tabs.add({ url: link }), { enterEditMode: false, openInBackground: openInBackground })
+            browserUI.addTab({ url: link }, { enterEditMode: false, openInBackground: openInBackground })
           }
         })
       }
@@ -92,14 +93,14 @@ const webviewMenu = {
       linkActions.push({
         label: 'Open in New Private Tab',
         click: function () {
-          browserUI.addTab(tabs.add({ url: link, private: true }), { enterEditMode: false, openInBackground: openInBackground })
+          browserUI.addTab({ url: link, private: true }, { enterEditMode: false, openInBackground: openInBackground })
         }
       })
 
       linkActions.push({
         label: 'Save Link As...',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'downloadURL', [link])
+          webviews.callAsync(browserSession.tabs.getSelected(), 'downloadURL', [link])
         }
       })
 
@@ -121,7 +122,7 @@ const webviewMenu = {
       imageActions.push({
         label: 'View Image',
         click: function () {
-          webviews.update(tabs.getSelected(), mediaURL)
+          webviews.update(browserSession.tabs.getSelected(), mediaURL)
         }
       })
 
@@ -129,7 +130,7 @@ const webviewMenu = {
         imageActions.push({
           label: 'Open Image in New Tab',
           click: function () {
-            browserUI.addTab(tabs.add({ url: mediaURL }), { enterEditMode: false, openInBackground: openInBackground })
+            browserUI.addTab({ url: mediaURL }, { enterEditMode: false, openInBackground: openInBackground })
           }
         })
       }
@@ -137,14 +138,14 @@ const webviewMenu = {
       imageActions.push({
         label: 'Open Image in New Private Tab',
         click: function () {
-          browserUI.addTab(tabs.add({ url: mediaURL, private: true }), { enterEditMode: false, openInBackground: openInBackground })
+          browserUI.addTab({ url: mediaURL, private: true }, { enterEditMode: false, openInBackground: openInBackground })
         }
       })
 
       imageActions.push({
         label: 'Save Image As',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'downloadURL', [mediaURL])
+          webviews.callAsync(browserSession.tabs.getSelected(), 'downloadURL', [mediaURL])
         }
       })
 
@@ -160,11 +161,10 @@ const webviewMenu = {
         {
           label: `Search with ${searchEngine.getCurrent().name}`,
           click: function () {
-            var newTab = tabs.add({
+            browserUI.addTab({
               url: searchEngine.getCurrent().searchURL.replace('%s', encodeURIComponent(selection)),
               private: currentTab.private
-            })
-            browserUI.addTab(newTab, {
+            }, {
               enterEditMode: false,
               openInBackground: false
             })
@@ -180,14 +180,14 @@ const webviewMenu = {
       clipboardActions.push({
         label: 'Copy',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'copyImageAt', [data.x, data.y])
+          webviews.callAsync(browserSession.tabs.getSelected(), 'copyImageAt', [data.x, data.y])
         }
       })
     } else if (selection) {
       clipboardActions.push({
         label: 'Copy',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'copy')
+          webviews.callAsync(browserSession.tabs.getSelected(), 'copy')
         }
       })
     }
@@ -196,7 +196,7 @@ const webviewMenu = {
       clipboardActions.push({
         label: 'Paste',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'paste')
+          webviews.callAsync(browserSession.tabs.getSelected(), 'paste')
         }
       })
     }
@@ -205,7 +205,7 @@ const webviewMenu = {
       clipboardActions.push({
         label: 'Paste and Match Style',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'pasteAndMatchStyle')
+          webviews.callAsync(browserSession.tabs.getSelected(), 'pasteAndMatchStyle')
         }
       })
     }
@@ -240,7 +240,7 @@ const webviewMenu = {
         label: 'Go Back',
         click: function () {
           try {
-            webviews.goBackIgnoringRedirects(tabs.getSelected())
+            webviews.goBackIgnoringRedirects(browserSession.tabs.getSelected())
           } catch (e) { }
         }
       },
@@ -248,7 +248,7 @@ const webviewMenu = {
         label: 'Go Forward',
         click: function () {
           try {
-            webviews.callAsync(tabs.getSelected(), 'goForward')
+            webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
           } catch (e) { }
         }
       }
@@ -261,14 +261,14 @@ const webviewMenu = {
       {
         label: 'Inspect Element',
         click: function () {
-          webviews.callAsync(tabs.getSelected(), 'inspectElement', [data.x || 0, data.y || 0])
+          webviews.callAsync(browserSession.tabs.getSelected(), 'inspectElement', [data.x || 0, data.y || 0])
         }
       }
     ])
 
     /* Userscripts */
 
-    var contextMenuScripts = userscripts.getMatchingScripts(tabs.get(tabs.getSelected()).url).filter(function (script) {
+    var contextMenuScripts = userscripts.getMatchingScripts(browserSession.tabs.get(browserSession.tabs.getSelected()).url).filter(function (script) {
       if (script.options['run-at'] && script.options['run-at'].includes('context-menu')) {
         return true
       }
@@ -285,7 +285,7 @@ const webviewMenu = {
         scriptActions.push({
           label: script.name,
           click: function () {
-            userscripts.runScript(tabs.getSelected(), script)
+            userscripts.runScript(browserSession.tabs.getSelected(), script)
           }
         })
       })
@@ -300,7 +300,7 @@ const webviewMenu = {
   initialize: function () {
     webviews.bindEvent('context-menu', function (tabId, data) {
       webviewMenu.menuData = data
-      webviews.callAsync(tabs.getSelected(), 'send', ['getContextMenuData', { x: data.x, y: data.y }])
+      webviews.callAsync(browserSession.tabs.getSelected(), 'send', ['getContextMenuData', { x: data.x, y: data.y }])
     })
     webviews.bindIPC('contextMenuData', function (tabId, args) {
       webviewMenu.showMenu(webviewMenu.menuData, args[0])

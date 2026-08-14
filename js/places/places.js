@@ -1,4 +1,5 @@
-/* global tabs */
+const browserSession = require('tabState.js')
+const { ipcRenderer: ipc } = require('electron')
 
 var webviews = require('webviews.js')
 const searchEngine = require('util/searchEngine.js')
@@ -31,7 +32,7 @@ const places = {
   savePage: function (tabId, extractedText) {
     /* this prevents pages that are immediately left from being saved to history, and also gives the page-favicon-updated event time to fire (so the colors saved to history are correct). */
     setTimeout(function () {
-      const tab = tabs.get(tabId)
+      const tab = browserSession.tabs.get(tabId)
       if (tab) {
         const data = {
           url: urlParser.removeTextFragment(urlParser.getSourceURL(tab.url)), // for PDF viewer and reader mode, save the original page URL and not the viewer URL
@@ -53,7 +54,7 @@ const places = {
   receiveHistoryData: function (tabId, args) {
     // called when js/preload/textExtractor.js returns the page's text content
 
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
     var data = args[0]
 
     if (tab.url.startsWith('data:') || tab.url.length > 5000) {
@@ -193,7 +194,7 @@ const places = {
     })
   },
   initialize: function () {
-    const { port1, port2 } = new MessageChannel()
+    const { port1, port2 } = new window.MessageChannel()
 
     ipc.postMessage('places-connect', null, [port1])
     places.messagePort = port2

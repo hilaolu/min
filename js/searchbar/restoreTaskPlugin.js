@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
 var searchbarUtils = require('searchbar/searchbarUtils.js')
 
@@ -15,8 +16,8 @@ function getFormattedTitle (tab) {
 function showRestoreTask () {
   searchbarPlugins.reset('restoreTask')
 
-  var lastTask = tasks.slice().sort((a, b) => {
-    return tasks.getLastActivity(b.id) - tasks.getLastActivity(a.id)
+  var lastTask = browserSession.tasks.slice().sort((a, b) => {
+    return browserSession.tasks.getLastActivity(b.id) - browserSession.tasks.getLastActivity(a.id)
   })[1]
   var recentTabs = lastTask.tabs.get().sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 3)
 
@@ -34,7 +35,7 @@ function showRestoreTask () {
     descriptionBlock: taskDescription,
     icon: 'carbon:redo',
     click: function (e) {
-      var thisTask = tasks.getSelected().id
+      var thisTask = browserSession.tasks.getSelected().id
       browserUI.switchToTask(lastTask.id)
       browserUI.closeTask(thisTask)
     }
@@ -45,7 +46,7 @@ function initialize () {
   searchbarPlugins.register('restoreTask', {
     index: 0,
     trigger: function (text) {
-      return !text && performance.now() < 15000 && tasks.getSelected().tabs.isEmpty() && window.createdNewTaskOnStartup
+      return !text && performance.now() < 15000 && browserSession.tasks.getSelected().tabs.isEmpty() && window.createdNewTaskOnStartup
     },
     showResults: showRestoreTask
   })

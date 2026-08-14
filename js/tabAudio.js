@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var webviews = require('webviews.js')
 var keybindings = require('keybindings.js')
 
@@ -22,7 +23,7 @@ var tabAudio = {
   },
   updateButton: function (tabId, button) {
     var button = button || document.querySelector('.tab-audio-button[data-tab="{id}"]'.replace('{id}', tabId))
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
 
     var muteIcon = tabAudio.muteIcon
     var volumeIcon = tabAudio.volumeIcon
@@ -40,23 +41,23 @@ var tabAudio = {
     }
   },
   toggleAudio: function (tabId) {
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
     // can be muted if has audio, can be unmuted if muted
     if (tab.hasAudio || tab.muted) {
       webviews.callAsync(tabId, 'setAudioMuted', !tab.muted)
-      tabs.update(tabId, { muted: !tab.muted })
+      browserSession.updateTab(tabId, { muted: !tab.muted })
     }
   },
   initialize: function () {
     keybindings.defineShortcut('toggleTabAudio', function () {
-      tabAudio.toggleAudio(tabs.getSelected())
+      tabAudio.toggleAudio(browserSession.tabs.getSelected())
     })
 
     webviews.bindEvent('media-started-playing', function (tabId) {
-      tabs.update(tabId, { hasAudio: true })
+      browserSession.updateTab(tabId, { hasAudio: true })
     })
     webviews.bindEvent('media-paused', function (tabId) {
-      tabs.update(tabId, { hasAudio: false })
+      browserSession.updateTab(tabId, { hasAudio: false })
     })
   }
 }

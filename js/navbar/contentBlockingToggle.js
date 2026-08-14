@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 const webviews = require('webviews.js')
 const settings = require('util/settings/settings.js')
 const remoteMenu = require('remoteMenuRenderer.js')
@@ -18,7 +19,7 @@ const contentBlockingToggle = {
     }
     setting.exceptionDomains = setting.exceptionDomains.filter(d => d.replace(/^www\./g, '') !== domain.replace(/^www\./g, ''))
     settings.set('filtering', setting)
-    webviews.callAsync(tabs.getSelected(), 'reload')
+    webviews.callAsync(browserSession.tabs.getSelected(), 'reload')
   },
   disableBlocking: function (url) {
     if (!url) {
@@ -38,7 +39,7 @@ const contentBlockingToggle = {
       setting.exceptionDomains.push(domain)
     }
     settings.set('filtering', setting)
-    webviews.callAsync(tabs.getSelected(), 'reload')
+    webviews.callAsync(browserSession.tabs.getSelected(), 'reload')
   },
   isBlockingEnabled: function (url) {
     try {
@@ -61,7 +62,7 @@ const contentBlockingToggle = {
     return button
   },
   showMenu: function (button) {
-    var url = tabs.get(tabs.getSelected()).url
+    var url = browserSession.tabs.get(browserSession.tabs.getSelected()).url
     var menu = [
       [
         {
@@ -74,7 +75,7 @@ const contentBlockingToggle = {
             } else {
               contentBlockingToggle.enableBlocking(url)
             }
-            contentBlockingToggle.update(tabs.getSelected(), button)
+            contentBlockingToggle.update(browserSession.tabs.getSelected(), button)
           }
         }
       ],
@@ -82,8 +83,7 @@ const contentBlockingToggle = {
         {
           label: 'Report a Bug',
           click: function () {
-            var newTab = tabs.add({ url: 'https://github.com/minbrowser/min/issues/new?title=Content%20blocking%20issue%20on%20' + encodeURIComponent(url) })
-            require('browserUI.js').addTab(newTab, { enterEditMode: false })
+            require('browserUI.js').addTab({ url: 'https://github.com/minbrowser/min/issues/new?title=Content%20blocking%20issue%20on%20' + encodeURIComponent(url) }, { enterEditMode: false })
           }
         }
       ]
@@ -91,7 +91,7 @@ const contentBlockingToggle = {
     remoteMenu.open(menu)
   },
   update: function (tabId, button) {
-    if (!tabs.get(tabId).url.startsWith('http') && !tabs.get(tabId).url.startsWith('https')) {
+    if (!browserSession.tabs.get(tabId).url.startsWith('http') && !browserSession.tabs.get(tabId).url.startsWith('https')) {
       button.hidden = true
       return
     }
@@ -102,7 +102,7 @@ const contentBlockingToggle = {
     }
 
     button.hidden = false
-    if (contentBlockingToggle.isBlockingEnabled(tabs.get(tabId).url)) {
+    if (contentBlockingToggle.isBlockingEnabled(browserSession.tabs.get(tabId).url)) {
       button.style.opacity = 1
     } else {
       button.style.opacity = 0.4

@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
 
 var urlParser = require('util/urlParser.js')
@@ -53,7 +54,7 @@ function initialize () {
   searchbarPlugins.register('searchSuggestions', {
     index: 4,
     trigger: function (text) {
-      return !!text && text.indexOf('!') !== 0 && !tabs.get(tabs.getSelected()).private
+      return !!text && text.indexOf('!') !== 0 && !browserSession.tabs.get(browserSession.tabs.getSelected()).private
     },
     showResults: debounce(showSearchSuggestions, 50)
   })

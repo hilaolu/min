@@ -1,3 +1,4 @@
+const browserSession = require('../../tabState.js')
 /**
  * Tab Search State Strategy
  *
@@ -35,13 +36,7 @@ class TabSearchStrategy extends CommandStateStrategy {
    */
   async updateUI (input, data, context) {
     try {
-      // Ensure tabs module is available
-      if (typeof tabs === 'undefined' || !tabs.get) {
-        console.warn('Tabs module not available')
-        return []
-      }
-
-      const allTabs = tabs.get()
+      const allTabs = browserSession.tabs.get()
       const searchQuery = (data.query || '').toLowerCase()
 
       // Filter tabs by search query

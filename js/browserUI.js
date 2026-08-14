@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var statistics = require('js/statistics.js')
 var searchEngine = require('js/util/searchEngine.js')
 var urlParser = require('js/util/urlParser.js')
@@ -16,13 +17,14 @@ var searchbar = require('searchbar/searchbar.js')
 function addTask () {
   // insert after current task
   let index
-  if (tasks.getSelected()) {
-    index = tasks.getIndex(tasks.getSelected().id) + 1
+  if (browserSession.tasks.getSelected()) {
+    index = browserSession.tasks.getIndex(browserSession.tasks.getSelected().id) + 1
   }
-  tasks.setSelected(tasks.add({}, index))
+  const taskId = browserSession.createTask({}, { index, select: true })
 
   tabBar.updateAll()
-  addTab()
+  addTab({}, { taskId })
+  return taskId
 }
 
 /* creates a new tab */
@@ -32,23 +34,34 @@ options
   options.enterEditMode - whether to enter editing mode when the tab is created. Defaults to true.
   options.openInBackground - whether to open the tab without switching to it. Defaults to false.
 */
-function addTab (tabId = tabs.add(), options = {}) {
-  /*
-  adding a new tab should destroy the current one if either:
-  * The current tab is an empty, non-private tab, and the new tab is private
-  * The current tab is empty, and the new tab has a URL
-  */
+function addTab (tab = {}, options = {}) {
+  return presentOpenedTab(browserSession.openTab(tab, options), options)
+}
 
-  if (!options.openInBackground && !tabs.get(tabs.getSelected()).url && ((!tabs.get(tabs.getSelected()).private && tabs.get(tabId).private) || tabs.get(tabId).url)) {
-    destroyTab(tabs.getSelected())
-  }
+function duplicateTab (tabId, options = {}) {
+  return presentOpenedTab(browserSession.duplicateTab(tabId, options), options)
+}
+
+function restoreTab (taskId, options = {}) {
+  const result = browserSession.restoreClosedTab(taskId, options)
+  return result ? presentOpenedTab(result, options) : null
+}
+
+function presentOpenedTab (result, options) {
+  const tabId = result.tabId
+
+  result.closedTabIds.forEach(function (closedTabId) {
+    tabBar.removeTab(closedTabId)
+    webviews.destroy(closedTabId)
+  })
 
   tabBar.addTab(tabId)
-  webviews.add(tabId)
+  webviews.add(tabId, options.existingViewId)
 
   if (!options.openInBackground) {
     switchToTab(tabId, {
-      focusWebview: options.enterEditMode === false
+      focusWebview: options.enterEditMode === false,
+      stateAlreadySelected: true
     })
     if (options.enterEditMode !== false) {
       tabEditor.show(tabId)
@@ -56,64 +69,51 @@ function addTab (tabId = tabs.add(), options = {}) {
   } else {
     tabBar.getTab(tabId).scrollIntoView()
   }
+  return tabId
 }
 
-function moveTabLeft (tabId = tabs.getSelected()) {
-  tabs.moveBy(tabId, -1)
+function moveTabLeft (tabId = browserSession.tabs.getSelected()) {
+  browserSession.moveTabBy(tabId, -1)
   tabBar.updateAll()
 }
 
-function moveTabRight (tabId = tabs.getSelected()) {
-  tabs.moveBy(tabId, 1)
+function moveTabRight (tabId = browserSession.tabs.getSelected()) {
+  browserSession.moveTabBy(tabId, 1)
   tabBar.updateAll()
 }
 
 /* destroys a task object and the associated webviews */
 
 function destroyTask (id) {
-  var task = tasks.get(id)
-
-  task.tabs.forEach(function (tab) {
-    webviews.destroy(tab.id)
-  })
-
-  tasks.destroy(id)
+  return closeTask(id)
 }
 
 /* destroys the webview and tab element for a tab */
 function destroyTab (id) {
+  const result = browserSession.closeTab(id)
+  if (!result) return false
   tabBar.removeTab(id)
-  tabs.destroy(id) // remove from state - returns the index of the destroyed tab
-  webviews.destroy(id) // remove the webview
+  webviews.destroy(id)
+  tabBar.updateAll()
+  if (result.selectedTabId && browserSession.tasks.getSelected()?.id === result.taskId) {
+    switchToTab(result.selectedTabId, { stateAlreadySelected: true })
+  }
+  return result
 }
 
 /* destroys a task, and either switches to the next most-recent task or creates a new one */
 
 function closeTask (taskId) {
-  var previousCurrentTask = tasks.getSelected().id
-
-  destroyTask(taskId)
-
-  if (taskId === previousCurrentTask) {
-    // the current task was destroyed, find another task to switch to
-
-    if (tasks.getLength() === 0) {
-      // there are no tasks left, create a new one
-      return addTask()
-    } else {
-      // switch to the most-recent task
-
-      var recentTaskList = tasks.map(function (task) {
-        return { id: task.id, lastActivity: tasks.getLastActivity(task.id) }
-      })
-
-      const mostRecent = recentTaskList.reduce(
-        (latest, current) => current.lastActivity > latest.lastActivity ? current : latest
-      )
-
-      return switchToTask(mostRecent.id)
-    }
+  const result = browserSession.closeTask(taskId)
+  if (!result) return false
+  result.closedTabIds.forEach(function (tabId) {
+    webviews.destroy(tabId)
+  })
+  tabBar.updateAll()
+  if (result.selectedTaskId) {
+    switchToTask(result.selectedTaskId, { stateAlreadySelected: true })
   }
+  return result
 }
 
 /* destroys a tab, and either switches to the next tab or creates a new one */
@@ -125,21 +125,7 @@ function closeTab (tabId) {
     return
   }
 
-  if (tabId === tabs.getSelected()) {
-    var currentIndex = tabs.getIndex(tabs.getSelected())
-    var nextTab =
-    tabs.getAtIndex(currentIndex - 1) || tabs.getAtIndex(currentIndex + 1)
-
-    destroyTab(tabId)
-
-    if (nextTab) {
-      switchToTab(nextTab.id)
-    } else {
-      addTab()
-    }
-  } else {
-    destroyTab(tabId)
-  }
+  return destroyTab(tabId)
 }
 
 /* changes the currently-selected task and updates the UI */
@@ -152,12 +138,14 @@ function setWindowTitle (taskData) {
   }
 }
 
-function switchToTask (id) {
-  tasks.setSelected(id)
+function switchToTask (id, options = {}) {
+  if (!options.stateAlreadySelected) {
+    browserSession.selectTask(id)
+  }
 
   tabBar.updateAll()
 
-  var taskData = tasks.get(id)
+  var taskData = browserSession.tasks.get(id)
 
   if (taskData.tabs.count() > 0) {
     var selectedTab = taskData.tabs.getSelected()
@@ -170,17 +158,17 @@ function switchToTask (id) {
       })[0].id
     }
 
-    switchToTab(selectedTab)
+    switchToTab(selectedTab, { stateAlreadySelected: options.stateAlreadySelected })
   } else {
-    addTab()
+    addTab({}, { taskId: id })
   }
 
   setWindowTitle(taskData)
 }
 
-tasks.on('task-updated', function (id, key) {
-  if (key === 'name' && id === tasks.getSelected().id) {
-    setWindowTitle(tasks.get(id))
+browserSession.tasks.on('task-updated', function (id, key) {
+  if (key === 'name' && id === browserSession.tasks.getSelected().id) {
+    setWindowTitle(browserSession.tasks.get(id))
   }
 })
 
@@ -189,7 +177,9 @@ tasks.on('task-updated', function (id, key) {
 function switchToTab (id, options) {
   options = options || {}
 
-  tabs.setSelected(id)
+  if (!options.stateAlreadySelected) {
+    browserSession.selectTab(id)
+  }
   tabBar.setActiveTab(id)
   webviews.setSelected(id, {
     focus: options.focusWebview !== false
@@ -197,37 +187,32 @@ function switchToTab (id, options) {
 
   tabEditor.hide()
 
-  if (!tabs.get(id).url) {
+  if (!browserSession.tabs.get(id).url) {
     document.body.classList.add('is-ntp')
   } else {
     document.body.classList.remove('is-ntp')
   }
 }
 
-tasks.on('tab-updated', function (id, key) {
-  if (key === 'url' && id === tabs.getSelected()) {
+browserSession.tasks.on('tab-updated', function (id, key) {
+  if (key === 'url' && id === browserSession.tabs.getSelected()) {
     document.body.classList.remove('is-ntp')
   }
 })
 
 webviews.bindEvent('did-create-popup', function (tabId, popupId, initialURL) {
-  var popupTab = tabs.add({
+  addTab({
     // in most cases, initialURL will be overwritten once the popup loads, but if the URL is a downloaded file, it will remain the same
     url: initialURL,
-    private: tabs.get(tabId).private
-  })
-  tabBar.addTab(popupTab)
-  webviews.add(popupTab, popupId)
-  switchToTab(popupTab)
+    private: browserSession.tabs.get(tabId).private
+  }, { enterEditMode: false, existingViewId: popupId })
 })
 
 webviews.bindEvent('new-tab', function (tabId, url, openInForeground) {
-  var newTab = tabs.add({
+  addTab({
     url: url,
-    private: tabs.get(tabId).private // inherit private status from the current tab
-  })
-
-  addTab(newTab, {
+    private: browserSession.tabs.get(tabId).private // inherit private status from the current tab
+  }, {
     enterEditMode: false,
     openInBackground: !settings.get('openTabsInForeground') && !openInForeground
   })
@@ -238,9 +223,9 @@ webviews.bindIPC('close-window', function (tabId, args) {
 })
 
 ipc.on('set-file-view', function (e, data) {
-  tabs.get().forEach(function (tab) {
+  browserSession.tabs.get().forEach(function (tab) {
     if (tab.url === data.url) {
-      tabs.update(tab.id, { isFileView: data.isFileView })
+      browserSession.updateTab(tab.id, { isFileView: data.isFileView })
     }
   })
 })
@@ -252,16 +237,15 @@ searchbar.events.on('url-selected', function (data) {
   }
 
   if (data.background) {
-    var newTab = tabs.add({
+    addTab({
       url: data.url,
-      private: tabs.get(tabs.getSelected()).private
-    })
-    addTab(newTab, {
+      private: browserSession.tabs.get(browserSession.tabs.getSelected()).private
+    }, {
       enterEditMode: false,
       openInBackground: !data.openInForeground
     })
   } else {
-    webviews.update(tabs.getSelected(), data.url)
+    webviews.update(browserSession.tabs.getSelected(), data.url)
     tabEditor.hide()
   }
 })
@@ -277,6 +261,7 @@ tabBar.events.on('tab-closed', function (id) {
 module.exports = {
   addTask,
   addTab,
+  duplicateTab,
   destroyTask,
   destroyTab,
   closeTask,
@@ -284,5 +269,6 @@ module.exports = {
   switchToTask,
   switchToTab,
   moveTabLeft,
-  moveTabRight
+  moveTabRight,
+  restoreTab
 }

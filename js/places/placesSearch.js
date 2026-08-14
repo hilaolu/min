@@ -1,4 +1,4 @@
-/* global spacesRegex historyInMemoryCache calculateHistoryScore */
+/* global calculateHistoryScore historyInMemoryCache oneDayInMS quickScore spacesRegex */
 
 /* depends on placesWorker.js */
 
@@ -115,3 +115,6 @@ function searchPlaces (searchText, callback, options) {
 
   callback(matches.slice(0, resultsLimit))
 }
+
+window.getSearchTextCache = getSearchTextCache
+window.searchPlaces = searchPlaces

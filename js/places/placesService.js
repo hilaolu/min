@@ -1,4 +1,4 @@
-/* global db searchPlaces fullTextPlacesSearch */
+/* global db fullTextPlacesSearch getSearchTextCache searchPlaces tagIndex tokenize */
 
 const { ipcRenderer } = require('electron')
 
@@ -99,7 +99,7 @@ function loadHistoryInMemory () {
 
 loadHistoryInMemory()
 
-function handleRequest (data, cb) {
+function handleRequest (data, respond) {
   const action = data.action
   const pageData = data.pageData
   const flags = data.flags || {}
@@ -111,7 +111,7 @@ function handleRequest (data, cb) {
     let found = false
     for (let i = 0; i < historyInMemoryCache.length; i++) {
       if (historyInMemoryCache[i].url === pageData.url) {
-        cb({
+        respond({
           result: historyInMemoryCache[i],
           callbackId: callbackId
         })
@@ -120,7 +120,7 @@ function handleRequest (data, cb) {
       }
     }
     if (!found) {
-      cb({
+      respond({
         result: null,
         callbackId: callbackId
       })
@@ -128,7 +128,7 @@ function handleRequest (data, cb) {
   }
 
   if (action === 'getAllPlaces') {
-    cb({
+    respond({
       result: historyInMemoryCache,
       callbackId: callbackId
     })
@@ -177,7 +177,7 @@ function handleRequest (data, cb) {
         } else {
           addOrUpdateHistoryCache(item)
         }
-        cb({
+        respond({
           result: null,
           callbackId: callbackId
         })
@@ -204,28 +204,28 @@ function handleRequest (data, cb) {
   }
 
   if (action === 'getSuggestedTags') {
-    cb({
+    respond({
       result: tagIndex.getSuggestedTags(historyInMemoryCache.find(i => i.url === pageData.url)),
       callbackId: callbackId
     })
   }
 
   if (action === 'getAllTagsRanked') {
-    cb({
+    respond({
       result: tagIndex.getAllTagsRanked(historyInMemoryCache.find(i => i.url === pageData.url)),
       callbackId: callbackId
     })
   }
 
   if (action === 'getSuggestedItemsForTags') {
-    cb({
+    respond({
       result: tagIndex.getSuggestedItemsForTags(pageData.tags),
       callbackId: callbackId
     })
   }
 
   if (action === 'autocompleteTags') {
-    cb({
+    respond({
       result: tagIndex.autocompleteTags(pageData.tags),
       callbackId: callbackId
     })
@@ -233,7 +233,7 @@ function handleRequest (data, cb) {
 
   if (action === 'searchPlaces') { // do a history search
     searchPlaces(searchText, function (matches) {
-      cb({
+      respond({
         result: matches,
         callbackId: callbackId
       })
@@ -246,7 +246,7 @@ function handleRequest (data, cb) {
         return calculateHistoryScore(b) - calculateHistoryScore(a)
       })
 
-      cb({
+      respond({
         result: matches.slice(0, 100),
         callbackId: callbackId
       })
@@ -254,7 +254,7 @@ function handleRequest (data, cb) {
   }
 
   if (action === 'getPlaceSuggestions') {
-    function returnSuggestionResults () {
+    const returnSuggestionResults = function () {
       const cTime = Date.now()
 
       let results = historyInMemoryCache.slice().filter(i => cTime - i.lastVisit < 604800000)
@@ -267,7 +267,7 @@ function handleRequest (data, cb) {
         return b.hScore - a.hScore
       })
 
-      cb({
+      respond({
         result: results.slice(0, 100),
         callbackId: callbackId
       })

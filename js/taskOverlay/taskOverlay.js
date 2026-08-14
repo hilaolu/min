@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 const { ipcRenderer } = require('electron')
 
 var webviews = require('webviews.js')
@@ -28,7 +29,7 @@ function addTaskFromMenu () {
   taskOverlay.show()
   setTimeout(function () {
     taskOverlay.hide()
-    tabEditor.show(tabs.getSelected())
+    tabEditor.show(browserSession.tabs.getSelected())
   }, 600)
 }
 
@@ -42,19 +43,16 @@ function deleteTabFromOverlay (item) {
 
   var tabId = item.getAttribute('data-tab')
 
-  var task = tasks.getTaskContainingTab(tabId)
+  var task = browserSession.tasks.getTaskContainingTab(tabId)
 
-  tasks.get(task.id).tabs.destroy(tabId)
-  webviews.destroy(tabId)
-
-  tabBar.updateAll()
-
-  // if there are no tabs left, remove the task
-  if (task.tabs.count() === 0) {
+  // if this is the final Tab, close the Task through the Browser Session workflow
+  if (task.tabs.count() === 1) {
     // remove the task element from the overlay
     getTaskContainer(task.id).remove()
     // close the task
     browserUI.closeTask(task.id)
+  } else {
+    browserUI.destroyTab(tabId)
   }
 
   if (itemIsFocused && successorTab) {
@@ -83,11 +81,7 @@ var taskOverlay = {
         var droppedTaskId = e.item.getAttribute('data-task')
         const insertionPoint = Array.from(taskContainer.children).indexOf(e.item)
 
-        // remove the task from the tasks list
-        var droppedTask = tasks.splice(tasks.getIndex(droppedTaskId), 1)[0]
-
-        // reinsert the task
-        tasks.splice(insertionPoint, 0, droppedTask)
+        browserSession.moveTask(droppedTaskId, insertionPoint)
       }
     })
     taskOverlay.sortableInstances.push(sortable)
@@ -120,40 +114,20 @@ var taskOverlay = {
         if (e.to === addTaskButton) {
           // insert after current task
           let index
-          if (tasks.getSelected()) {
-            index = tasks.getIndex(tasks.getSelected().id) + 1
+          if (browserSession.tasks.getSelected()) {
+            index = browserSession.tasks.getIndex(browserSession.tasks.getSelected().id) + 1
           }
-          newTask = tasks.get(tasks.add({}, index))
+          newTask = browserSession.tasks.get(browserSession.createTask({}, { index }))
         } else {
         // otherwise, find a source task to add this tab to
-          newTask = tasks.get(e.to.getAttribute('data-task'))
+          newTask = browserSession.tasks.get(e.to.getAttribute('data-task'))
         }
 
         sortedItems.forEach(function (item) {
           var tabId = item.getAttribute('data-tab')
-          var previousTask = tasks.getTaskContainingTab(tabId) // note: can't use e.from here, because it contains only a single element and items could be coming from multiple tasks
+          var previousTask = browserSession.tasks.getTaskContainingTab(tabId) // note: can't use e.from here, because it contains only a single element and items could be coming from multiple tasks
 
-          var oldTab = previousTask.tabs.splice(previousTask.tabs.getIndex(tabId), 1)[0]
-
-          if (oldTab.selected) {
-            // find a new tab in the old task to become the current one
-            var mostRecentTab = previousTask.tabs.get().sort(function (a, b) {
-              return b.lastActivity - a.lastActivity
-            })[0]
-            if (mostRecentTab) {
-              previousTask.tabs.setSelected(mostRecentTab.id)
-            }
-
-            // shouldn't become selected in the new task
-            oldTab.selected = false
-          }
-
-          // if the old task has no tabs left in it, destroy it
-
-          if (previousTask.tabs.count() === 0) {
-            browserUI.closeTask(previousTask.id)
-            getTaskContainer(previousTask.id).remove()
-          }
+          const shouldClosePreviousTask = previousTask.id !== newTask.id && previousTask.tabs.count() === 1
 
           if (e.to === addTaskButton) {
             item.remove()
@@ -161,8 +135,13 @@ var taskOverlay = {
 
           var newIdx = Array.from(e.to.children).findIndex(t => t === item)
 
-          // insert the tab at the correct spot
-          newTask.tabs.splice(newIdx, 0, oldTab)
+          browserSession.moveTabToTask(tabId, newTask.id, { index: newIdx })
+
+          if (shouldClosePreviousTask) {
+            browserUI.closeTask(previousTask.id)
+            const previousTaskContainer = getTaskContainer(previousTask.id)
+            if (previousTaskContainer) previousTaskContainer.remove()
+          }
         })
         tabBar.updateAll()
         taskOverlay.render()
@@ -195,7 +174,7 @@ var taskOverlay = {
     this.overlayElement.hidden = false
 
     // scroll to the selected element and focus it
-    var currentTabElement = document.querySelector('.task-tab-item[data-tab="{id}"]'.replace('{id}', tasks.getSelected().tabs.getSelected()))
+    var currentTabElement = document.querySelector('.task-tab-item[data-tab="{id}"]'.replace('{id}', browserSession.tasks.getSelected().tabs.getSelected()))
 
     if (currentTabElement) {
       currentTabElement.classList.add('fakefocus')
@@ -211,7 +190,7 @@ var taskOverlay = {
     taskOverlay.addTaskDragging()
 
     // show the task elements
-    tasks.forEach(function (task, index) {
+    browserSession.tasks.forEach(function (task, index) {
       const el = createTaskContainer(task, index, {
         tabSelect: function () {
           browserUI.switchToTask(task.id)
@@ -254,8 +233,8 @@ var taskOverlay = {
 
       // if the current tab has been deleted, switch to the most recent one
 
-      if (!tabs.getSelected()) {
-        var mostRecentTab = tabs.get().sort(function (a, b) {
+      if (!browserSession.tabs.getSelected()) {
+        var mostRecentTab = browserSession.tabs.get().sort(function (a, b) {
           return b.lastActivity - a.lastActivity
         })[0]
 
@@ -265,8 +244,8 @@ var taskOverlay = {
       }
 
       // force the UI to rerender
-      browserUI.switchToTask(tasks.getSelected().id)
-      browserUI.switchToTab(tabs.getSelected())
+      browserUI.switchToTask(browserSession.tasks.getSelected().id)
+      browserUI.switchToTab(browserSession.tabs.getSelected())
 
       taskSwitcherButton.classList.remove('active')
     }
@@ -306,7 +285,7 @@ var taskOverlay = {
 
       var totalTabMatches = 0
 
-      tasks.forEach(function (task) {
+      browserSession.tasks.forEach(function (task) {
         var taskContainer = document.querySelector(`.task-container[data-task="${task.id}"]`)
 
         var taskTabMatches = 0
@@ -404,14 +383,14 @@ var taskOverlay = {
     addTaskButton.addEventListener('click', function (e) {
       browserUI.addTask()
       taskOverlay.hide()
-      tabEditor.show(tabs.getSelected())
+      tabEditor.show(browserSession.tabs.getSelected())
     })
 
     taskOverlayNavbar.addEventListener('click', function () {
       taskOverlay.hide()
     })
 
-    tasks.on('state-sync-change', function () {
+    browserSession.tasks.on('state-sync-change', function () {
       if (taskOverlay.isShown) {
         taskOverlay.render()
       }

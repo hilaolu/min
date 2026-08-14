@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 /*
 There are three possible ways that keybindings can be handled.
  Shortcuts that appear in the menubar are registered in main.js, and send IPC messages to the window (which are handled by menuRenderer.js)
@@ -20,8 +21,8 @@ single-letter shortcuts and shortcuts used for text editing can't run when an in
 */
 function checkShortcutCanRun (combo, cb) {
   if (/^(shift)?\+?\w$/.test(combo) || combo === 'mod+left' || combo === 'mod+right') {
-    webviews.callAsync(tabs.getSelected(), 'isFocused', function (err, isFocused) {
-      if (err || !tabs.get(tabs.getSelected()).url || !isFocused) {
+    webviews.callAsync(browserSession.tabs.getSelected(), 'isFocused', function (err, isFocused) {
+      if (err || !browserSession.tabs.get(browserSession.tabs.getSelected()).url || !isFocused) {
       // check whether an input is focused in the browser UI
         if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
           cb(false)
@@ -30,7 +31,7 @@ function checkShortcutCanRun (combo, cb) {
         }
       } else {
       // check whether an input is focused in the webview
-        webviews.callAsync(tabs.getSelected(), 'executeJavaScript', `
+        webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', `
           document.activeElement.tagName === "INPUT"
           || document.activeElement.tagName === "TEXTAREA"
           || document.activeElement.tagName === "IFRAME"

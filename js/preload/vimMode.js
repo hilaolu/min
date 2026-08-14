@@ -455,16 +455,18 @@ function collectMatches (q) {
   const matches = []
   const MAX_MATCHES = 1000
   const query = q.toLowerCase()
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+  const nodeFilter = window.NodeFilter
+  const getStyle = window.getComputedStyle
+  const walker = document.createTreeWalker(document.body, nodeFilter.SHOW_TEXT, {
     acceptNode: function (node) {
-      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT
+      if (!node.nodeValue || !node.nodeValue.trim()) return nodeFilter.FILTER_REJECT
       const parent = node.parentElement
-      if (!parent) return NodeFilter.FILTER_REJECT
-      if (parent.closest('[data-min-vim-hud]')) return NodeFilter.FILTER_REJECT
+      if (!parent) return nodeFilter.FILTER_REJECT
+      if (parent.closest('[data-min-vim-hud]')) return nodeFilter.FILTER_REJECT
       const tag = parent.tagName
-      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return NodeFilter.FILTER_REJECT
-      if (getComputedStyle(parent).visibility === 'hidden' || getComputedStyle(parent).display === 'none') return NodeFilter.FILTER_REJECT
-      return NodeFilter.FILTER_ACCEPT
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return nodeFilter.FILTER_REJECT
+      if (getStyle(parent).visibility === 'hidden' || getStyle(parent).display === 'none') return nodeFilter.FILTER_REJECT
+      return nodeFilter.FILTER_ACCEPT
     }
   })
   let node

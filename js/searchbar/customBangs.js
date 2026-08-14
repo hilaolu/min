@@ -1,6 +1,7 @@
+const browserSession = require('tabState.js')
 /* list of the available custom commands */
 
-const { ipcRenderer } = require('electron')
+const { ipcRenderer: ipc } = require('electron')
 const fs = require('fs')
 const quickScore = require('quick-score').quickScore
 
@@ -20,20 +21,15 @@ const formatRelativeDate = require('util/relativeDate.js')
 function moveToTaskCommand (taskId) {
   // remove the tab from the current task
 
-  const currentTab = tabs.get(tabs.getSelected())
-  tabs.destroy(currentTab.id)
+  const currentTabId = browserSession.tabs.getSelected()
+  const newTask = browserSession.tasks.get(taskId)
+  browserSession.moveTabToTask(currentTabId, taskId, {
+    index: newTask.tabs.count(),
+    select: true
+  })
 
-  // make sure the task has at least one tab in it
-  if (tabs.count() === 0) {
-    tabs.add()
-  }
-
-  const newTask = tasks.get(taskId)
-
-  newTask.tabs.add(currentTab, { atEnd: true })
-
-  browserUI.switchToTask(newTask.id)
-  browserUI.switchToTab(currentTab.id)
+  browserUI.switchToTask(newTask.id, { stateAlreadySelected: true })
+  browserUI.switchToTab(currentTabId, { stateAlreadySelected: true })
 
   taskOverlay.show()
 
@@ -62,16 +58,16 @@ function switchToTaskCommand (taskId) {
 function getTaskByNameOrNumber (text) {
   const textAsNumber = parseInt(text)
 
-  return tasks.find((task, index) => (task.name && task.name.toLowerCase() === text) || index + 1 === textAsNumber
+  return browserSession.tasks.find((task, index) => (task.name && task.name.toLowerCase() === text) || index + 1 === textAsNumber
   )
 }
 
 // return an array of tasks sorted by last activity
 // if a search string is present, filter the results with a basic fuzzy search
 function searchAndSortTasks (text) {
-  let taskResults = tasks
-    .filter(t => t.id !== tasks.getSelected().id)
-    .map(t => Object.assign({}, { task: t }, { lastActivity: tasks.getLastActivity(t.id) }))
+  let taskResults = browserSession.tasks
+    .filter(t => t.id !== browserSession.tasks.getSelected().id)
+    .map(t => Object.assign({}, { task: t }, { lastActivity: browserSession.tasks.getLastActivity(t.id) }))
 
   taskResults = taskResults.sort(function (a, b) {
     return b.lastActivity - a.lastActivity
@@ -83,7 +79,7 @@ function searchAndSortTasks (text) {
 
     taskResults = taskResults.filter(function (t) {
       const task = t.task
-      const taskName = (task.name || `Task ${tasks.getIndex(task.id) + 1}`).toLowerCase()
+      const taskName = (task.name || `Task ${browserSession.tasks.getIndex(task.id) + 1}`).toLowerCase()
       const exactMatch = taskName.indexOf(searchText) !== -1
       const fuzzyTitleScore = quickScore(taskName, searchText)
 
@@ -101,7 +97,7 @@ function initialize () {
     icon: 'carbon:settings',
     isAction: true,
     fn: function (text) {
-      webviews.update(tabs.getSelected(), 'min://settings')
+      webviews.update(browserSession.tabs.getSelected(), 'min://settings')
     }
   })
 
@@ -110,7 +106,7 @@ function initialize () {
     snippet: 'Go Back',
     isAction: true,
     fn: function (text) {
-      webviews.callAsync(tabs.getSelected(), 'goBack')
+      webviews.callAsync(browserSession.tabs.getSelected(), 'goBack')
     }
   })
 
@@ -119,7 +115,7 @@ function initialize () {
     snippet: 'Go Forward',
     isAction: true,
     fn: function (text) {
-      webviews.callAsync(tabs.getSelected(), 'goForward')
+      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
     }
   })
 
@@ -130,7 +126,7 @@ function initialize () {
     isAction: true,
     fn: function (text) {
       setTimeout(function () { // wait so that the view placeholder is hidden
-        ipcRenderer.send('saveViewCapture', { id: tabs.getSelected() })
+        ipc.send('saveViewCapture', { id: browserSession.tabs.getSelected() })
       }, 400)
     }
   })
@@ -153,7 +149,7 @@ function initialize () {
     snippet: 'Enable content blocking for this site',
     isAction: true,
     fn: function (text) {
-      contentBlockingToggle.enableBlocking(tabs.get(tabs.getSelected()).url)
+      contentBlockingToggle.enableBlocking(browserSession.tabs.get(browserSession.tabs.getSelected()).url)
     }
   })
 
@@ -162,7 +158,7 @@ function initialize () {
     snippet: 'Disable content blocking for this site',
     isAction: true,
     fn: function (text) {
-      contentBlockingToggle.disableBlocking(tabs.get(tabs.getSelected()).url)
+      contentBlockingToggle.disableBlocking(browserSession.tabs.get(browserSession.tabs.getSelected()).url)
     }
   })
 
@@ -180,7 +176,7 @@ function initialize () {
         const task = t.task
         const lastActivity = t.lastActivity
 
-        const taskName = task.name || `Task ${tasks.getIndex(task.id) + 1}`
+        const taskName = task.name || `Task ${browserSession.tasks.getIndex(task.id) + 1}`
 
         const data = {
           title: taskName,
@@ -214,9 +210,9 @@ function initialize () {
       // if there is no search text or no result, need to create a new task
       let task = searchAndSortTasks(text)[0]?.task
       if (!text || !task) {
-        task = tasks.get(tasks.add({
+        task = browserSession.tasks.get(browserSession.createTask({
           name: text
-        }, tasks.getIndex(tasks.getSelected().id) + 1))
+        }, { index: browserSession.tasks.getIndex(browserSession.tasks.getSelected().id) + 1 }))
       }
 
       return moveToTaskCommand(task.id)
@@ -238,7 +234,7 @@ function initialize () {
         const task = t.task
         const lastActivity = t.lastActivity
 
-        const taskName = task.name || `Task ${tasks.getIndex(task.id) + 1}`
+        const taskName = task.name || `Task ${browserSession.tasks.getIndex(task.id) + 1}`
 
         const data = {
           title: taskName,
@@ -280,7 +276,7 @@ function initialize () {
       setTimeout(function () {
         browserUI.addTask()
         if (text) {
-          tasks.update(tasks.getSelected().id, { name: text })
+          browserSession.updateTask(browserSession.tasks.getSelected().id, { name: text })
         }
       }, 600)
     }
@@ -292,13 +288,13 @@ function initialize () {
     icon: 'carbon:folder-off',
     isAction: false,
     fn: function (text) {
-      const currentTask = tasks.getSelected()
+      const currentTask = browserSession.tasks.getSelected()
       let taskToClose
 
       if (text) {
         taskToClose = getTaskByNameOrNumber(text)
       } else {
-        taskToClose = tasks.getSelected()
+        taskToClose = browserSession.tasks.getSelected()
       }
 
       if (taskToClose) {
@@ -318,7 +314,7 @@ function initialize () {
     snippet: 'Name this task',
     isAction: false,
     fn: function (text) {
-      tasks.update(tasks.getSelected().id, { name: text })
+      browserSession.updateTask(browserSession.tasks.getSelected().id, { name: text })
     }
   })
 
@@ -365,7 +361,7 @@ function initialize () {
     snippet: 'Add bookmark',
     icon: 'carbon:star',
     fn: function (text) {
-      const url = tabs.get(tabs.getSelected()).url
+      const url = browserSession.tabs.get(browserSession.tabs.getSelected()).url
       if (url) {
         places.updateItem(url, {
           isBookmarked: true,

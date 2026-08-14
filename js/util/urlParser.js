@@ -1,4 +1,4 @@
-const punycode = require('punycode')
+const { domainToASCII } = require('url')
 
 const searchEngine = require('util/searchEngine.js')
 const hosts = require('./hosts.js')
@@ -15,7 +15,6 @@ function removeTrailingSlash (url) {
 var urlParser = {
   validIP4Regex: /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/i,
   validDomainRegex: /^(?!-)(?:.*@)*?([a-z0-9-._]+[a-z0-9]|\[[:a-f0-9]+\])/i,
-  unicodeRegex: /[^\u0000-\u00ff]/,
   removeProtocolRegex: /^(https?|file):\/\//i,
   protocolRegex: /^[a-z0-9]+:\/\//, // URI schemes can be alphanum
   isURL: function (url) {
@@ -132,8 +131,8 @@ var urlParser = {
   },
   // primitive domain validation based on RFC1034
   validateDomain: function (domain) {
-    domain = urlParser.unicodeRegex.test(domain)
-      ? punycode.toASCII(domain)
+    domain = Array.from(domain).some(character => character.codePointAt(0) > 255)
+      ? domainToASCII(domain)
       : domain
 
     if (!urlParser.validDomainRegex.test(domain)) {

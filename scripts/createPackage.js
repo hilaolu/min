@@ -41,7 +41,7 @@ function toPath (platform, arch) {
 }
 
 module.exports = function (platform, extraOptions) {
-  //https://github.com/electron-userland/electron-builder/issues/6365#issuecomment-1186038034
+  // https://github.com/electron-userland/electron-builder/issues/6365#issuecomment-1186038034
   const afterPack = async context => {
     const ext = {
       darwin: '.app',
@@ -79,8 +79,7 @@ module.exports = function (platform, extraOptions) {
       // this is copied during the build
       '!**/icons/icon.icns',
       '!scripts/',
-      // These are bundled in.
-      '!**/main',
+      // Main-process CommonJS Modules are loaded directly by main.build.js.
       // parts of modules that aren"t needed
       '!**/node_modules/@types/',
       '!**/node_modules/pdfjs-dist/legacy',

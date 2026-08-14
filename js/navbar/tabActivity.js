@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 /* fades out tabs that are inactive */
 
 var tabBar = require('navbar/tabBar.js')
@@ -6,8 +7,8 @@ var tabActivity = {
   minFadeAge: 330000,
   refresh: function () {
     requestAnimationFrame(function () {
-      var tabSet = tabs.get()
-      var selected = tabs.getSelected()
+      var tabSet = browserSession.tabs.get()
+      var selected = browserSession.tabs.getSelected()
       var time = Date.now()
 
       tabSet.forEach(function (tab) {
@@ -26,7 +27,7 @@ var tabActivity = {
   initialize: function () {
     setInterval(tabActivity.refresh, 7500)
 
-    tasks.on('tab-selected', this.refresh)
+    browserSession.tasks.on('tab-selected', this.refresh)
   }
 }
 

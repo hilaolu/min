@@ -1,3 +1,4 @@
+const browserSession = require('../../tabState.js')
 /**
  * Vim Command With Args Strategy
  *
@@ -177,7 +178,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
 
     if (!args) {
       // No arguments - show current page reload option
-      const currentTab = tabs.get(tabs.getSelected())
+      const currentTab = browserSession.tabs.get(browserSession.tabs.getSelected())
       if (currentTab?.url) {
         const reloadCandidate = this.createReloadCandidate(currentTab.url, 'Current page')
         if (reloadCandidate) {
@@ -221,7 +222,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
       action: () => {
         const modules = this._getModules()
         if (modules.browserUI) {
-          modules.browserUI.closeTab(tabs.getSelected())
+          modules.browserUI.closeTab(browserSession.tabs.getSelected())
         }
       }
     }]
@@ -326,7 +327,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
           openInForeground: true
         })
       } else {
-        modules.webviews.update(tabs.getSelected(), parsedUrl)
+        modules.webviews.update(browserSession.tabs.getSelected(), parsedUrl)
       }
       modules.webviews.focus()
     } catch (error) {
@@ -370,7 +371,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
           openInForeground: true
         })
       } else {
-        modules.webviews.update(tabs.getSelected(), url)
+        modules.webviews.update(browserSession.tabs.getSelected(), url)
       }
       modules.webviews.focus()
     } catch (error) {
@@ -427,7 +428,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
 
     try {
       const parsedUrl = modules.urlParser.parse(url)
-      modules.webviews.update(tabs.getSelected(), parsedUrl)
+      modules.webviews.update(browserSession.tabs.getSelected(), parsedUrl)
       modules.webviews.focus()
     } catch (error) {
       console.error('Error executing reload action:', error)

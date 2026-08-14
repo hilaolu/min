@@ -6,7 +6,7 @@ function enableDarkMode () {
   document.body.classList.add('dark-mode')
   window.isDarkMode = true
   requestAnimationFrame(function () {
-    window.dispatchEvent(new CustomEvent('themechange'))
+    window.dispatchEvent(new window.CustomEvent('themechange'))
   })
 }
 
@@ -14,7 +14,7 @@ function disableDarkMode () {
   document.body.classList.remove('dark-mode')
   window.isDarkMode = false
   requestAnimationFrame(function () {
-    window.dispatchEvent(new CustomEvent('themechange'))
+    window.dispatchEvent(new window.CustomEvent('themechange'))
   })
 }
 

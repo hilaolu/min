@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 const webviews = require('webviews.js')
 
 var navigationButtons = {
@@ -6,18 +7,18 @@ var navigationButtons = {
   backButton: document.getElementById('back-button'),
   forwardButton: document.getElementById('forward-button'),
   update: function () {
-    if (!tabs.get(tabs.getSelected()).url) {
+    if (!browserSession.tabs.get(browserSession.tabs.getSelected()).url) {
       navigationButtons.backButton.disabled = true
       navigationButtons.forwardButton.disabled = true
       return
     }
-    webviews.callAsync(tabs.getSelected(), 'canGoBack', function (err, canGoBack) {
+    webviews.callAsync(browserSession.tabs.getSelected(), 'canGoBack', function (err, canGoBack) {
       if (err) {
         return
       }
       navigationButtons.backButton.disabled = !canGoBack
     })
-    webviews.callAsync(tabs.getSelected(), 'canGoForward', function (err, canGoForward) {
+    webviews.callAsync(browserSession.tabs.getSelected(), 'canGoForward', function (err, canGoForward) {
       if (err) {
         return
       }
@@ -33,11 +34,11 @@ var navigationButtons = {
     navigationButtons.container.hidden = false
 
     navigationButtons.backButton.addEventListener('click', function (e) {
-      webviews.goBackIgnoringRedirects(tabs.getSelected())
+      webviews.goBackIgnoringRedirects(browserSession.tabs.getSelected())
     })
 
     navigationButtons.forwardButton.addEventListener('click', function () {
-      webviews.callAsync(tabs.getSelected(), 'goForward')
+      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
     })
 
     navigationButtons.container.addEventListener('mouseenter', function () {
@@ -55,7 +56,7 @@ var navigationButtons = {
       navigationButtons.tabsList.classList.remove('disable-scroll')
     })
 
-    tasks.on('tab-selected', this.update)
+    browserSession.tasks.on('tab-selected', this.update)
     webviews.bindEvent('did-navigate', this.update)
     webviews.bindEvent('did-navigate-in-page', this.update)
   }

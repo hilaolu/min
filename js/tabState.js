@@ -1,8 +1,55 @@
-const TaskList = require('tabState/task.js')
+const BrowserSession = require('./tabState/browserSession.js')
 
-function initialize () {
-  window.tasks = new TaskList()
-  window.tabs = undefined
+let currentSession = null
+
+function initialize (options = {}) {
+  currentSession = new BrowserSession({
+    ...options,
+    windowId: options.windowId || window.windowId
+  })
+  return currentSession
 }
 
-module.exports = { initialize }
+function get () {
+  if (!currentSession) {
+    throw new Error('Browser Session has not been initialized')
+  }
+  return currentSession
+}
+
+const browserSession = { BrowserSession, get, initialize }
+
+;[
+  'applyChange',
+  'closeTab',
+  'closeTask',
+  'createTask',
+  'duplicateTab',
+  'emit',
+  'getCopyableSnapshot',
+  'getPersistedSnapshot',
+  'getTab',
+  'moveTabBy',
+  'moveTabToIndex',
+  'moveTabToTask',
+  'moveTask',
+  'on',
+  'onChange',
+  'openTab',
+  'restoreClosedTab',
+  'restoreSnapshot',
+  'selectTab',
+  'selectTask',
+  'updateTab',
+  'updateTask'
+].forEach(method => {
+  browserSession[method] = (...args) => get()[method](...args)
+})
+
+Object.defineProperties(browserSession, {
+  tabs: { get: () => get().tabs },
+  tasks: { get: () => get().tasks },
+  windowId: { get: () => get().windowId }
+})
+
+module.exports = browserSession

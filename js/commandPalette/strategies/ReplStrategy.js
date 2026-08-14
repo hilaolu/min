@@ -1,3 +1,4 @@
+const browserSession = require('../../tabState.js')
 /**
  * REPL State Strategy
  *
@@ -193,8 +194,8 @@ class ReplStrategy extends CommandStateStrategy {
     // Safely access current tab from global tabs if available
     let currentTab = null
     try {
-      if (typeof tabs !== 'undefined' && tabs && typeof tabs.getSelected === 'function') {
-        currentTab = tabs.getSelected()
+      if (browserSession.tabs && typeof browserSession.tabs.getSelected === 'function') {
+        currentTab = browserSession.tabs.getSelected()
       }
     } catch (e) {
       // ignore

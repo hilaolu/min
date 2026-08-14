@@ -116,9 +116,13 @@ var registryInstaller = {
   install: function () {
     return new Promise(function (resolve, reject) {
       regedit.createKey(keysToCreate, function (err) {
+        if (err) {
+          reject(err)
+          return
+        }
         regedit.putValue(registryConfig, function (err) {
           if (err) {
-            reject()
+            reject(err)
           } else {
             resolve()
           }
@@ -130,7 +134,7 @@ var registryInstaller = {
     return new Promise(function (resolve, reject) {
       regedit.deleteKey(keysToCreate, function (err) {
         if (err) {
-          reject()
+          reject(err)
         } else {
           resolve()
         }
@@ -138,3 +142,5 @@ var registryInstaller = {
     })
   }
 }
+
+module.exports = registryInstaller

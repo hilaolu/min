@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var browserUI = require('browserUI.js')
 var searchbarUtils = require('searchbar/searchbarUtils.js')
 var urlParser = require('util/urlParser.js')
@@ -14,7 +15,7 @@ function getTaskRelativeDate (task) {
   minimumTime = minimumTime.getTime()
   minimumTime -= (5 * 24 * 60 * 60 * 1000)
 
-  var time = tasks.getLastActivity(task.id)
+  var time = browserSession.tasks.getLastActivity(task.id)
   var d = new Date(time)
 
   // don't show times for recent tasks in order to save space
@@ -26,14 +27,14 @@ function getTaskRelativeDate (task) {
 }
 
 function toggleCollapsed (taskContainer, task) {
-  tasks.update(task.id, { collapsed: !tasks.isCollapsed(task.id) })
+  browserSession.updateTask(task.id, { collapsed: !browserSession.tasks.isCollapsed(task.id) })
   taskContainer.classList.toggle('collapsed')
 
   var collapseButton = taskContainer.querySelector('.task-collapse-button')
   collapseButton.classList.toggle('carbon:chevron-right')
   collapseButton.classList.toggle('carbon:chevron-down')
 
-  if (tasks.isCollapsed(task.id)) {
+  if (browserSession.tasks.isCollapsed(task.id)) {
     collapseButton.setAttribute('aria-expanded', 'false')
   } else {
     collapseButton.setAttribute('aria-expanded', 'true')
@@ -49,7 +50,7 @@ var TaskOverlayBuilder = {
         collapseButton.setAttribute('tabindex', '-1')
 
         collapseButton.setAttribute('aria-haspopup', 'true')
-        if (tasks.isCollapsed(task.id)) {
+        if (browserSession.tasks.isCollapsed(task.id)) {
           collapseButton.classList.add('carbon:chevron-right')
           collapseButton.setAttribute('aria-expanded', 'false')
         } else {
@@ -77,11 +78,11 @@ var TaskOverlayBuilder = {
             this.blur()
           }
 
-          tasks.update(task.id, { name: this.value })
+          browserSession.updateTask(task.id, { name: this.value })
         })
 
         input.addEventListener('focusin', function (e) {
-          if (tasks.isCollapsed(task.id)) {
+          if (browserSession.tasks.isCollapsed(task.id)) {
             this.blur()
             return
           }
@@ -202,16 +203,16 @@ var TaskOverlayBuilder = {
         var container = document.createElement('div')
         container.className = 'task-container'
 
-        if (task.id !== tasks.getSelected().id && tasks.isCollapsed(task.id)) {
+        if (task.id !== browserSession.tasks.getSelected().id && browserSession.tasks.isCollapsed(task.id)) {
           container.classList.add('collapsed')
         }
-        if (task.id === tasks.getSelected().id) {
+        if (task.id === browserSession.tasks.getSelected().id) {
           container.classList.add('selected')
         }
         container.setAttribute('data-task', task.id)
 
         container.addEventListener('click', function (e) {
-          if (tasks.isCollapsed(task.id)) {
+          if (browserSession.tasks.isCollapsed(task.id)) {
             toggleCollapsed(container, task)
           }
         })

@@ -1,3 +1,6 @@
+/* global historyInMemoryCache tokenize */
+/* exported tagIndex */
+
 var tagIndex = {
   totalDocs: 0,
   termDocCounts: {},

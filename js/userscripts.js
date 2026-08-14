@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 /* implements userscript support */
 
 var path = require('path')
@@ -174,7 +175,7 @@ const userscripts = {
     })
   },
   runScript: function (tabId, script) {
-    if (urlParser.isInternalURL(tabs.get(tabId).url)) {
+    if (urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
       return
     }
     webviews.callAsync(tabId, 'executeJavaScript', [script.content, false, null])
@@ -184,7 +185,7 @@ const userscripts = {
       return
     }
 
-    var src = tabs.get(tabId).url
+    var src = browserSession.tabs.get(tabId).url
 
     userscripts.getMatchingScripts(src).forEach(function (script) {
       // TODO run different types of scripts at the correct time
@@ -228,7 +229,7 @@ const userscripts = {
               fakeFocus: isFirst && text,
               click: function () {
                 tabEditor.hide()
-                userscripts.runScript(tabs.getSelected(), script)
+                userscripts.runScript(browserSession.tabs.getSelected(), script)
               }
             })
             isFirst = false
@@ -241,7 +242,7 @@ const userscripts = {
         }
         var matchingScript = userscripts.scripts.find(script => script.name.toLowerCase().startsWith(text.toLowerCase()))
         if (matchingScript) {
-          userscripts.runScript(tabs.getSelected(), matchingScript)
+          userscripts.runScript(browserSession.tabs.getSelected(), matchingScript)
         }
       }
     })

@@ -1,3 +1,5 @@
+/* global electron ipc */
+
 /* send bookmarks data.  */
 
 function isVisible (el) {
@@ -65,7 +67,7 @@ function extractPageText (doc, win) {
   return text
 }
 
-function getPageData (cb) {
+function getPageData (respond) {
   requestAnimationFrame(function () {
     var text = extractPageText(document, window)
 
@@ -83,7 +85,7 @@ function getPageData (cb) {
 
     text = text.substring(0, 300000)
 
-    cb({
+    respond({
       extractedText: text
     })
   })

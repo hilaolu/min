@@ -1,3 +1,5 @@
+const fs = require('fs')
+
 var hosts = []
 
 var HOSTS_FILE = process.platform === 'win32'

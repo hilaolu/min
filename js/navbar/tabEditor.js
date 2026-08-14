@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbar = require('searchbar/searchbar.js')
 var webviews = require('webviews.js')
 var urlParser = require('util/urlParser.js')
@@ -21,7 +22,7 @@ const tabEditor = {
 
     document.body.classList.add('is-edit-mode')
 
-    var currentURL = urlParser.getSourceURL(tabs.get(tabId).url)
+    var currentURL = urlParser.getSourceURL(browserSession.tabs.get(tabId).url)
     if (currentURL === 'min://newtab') {
       currentURL = ''
     }
@@ -45,7 +46,7 @@ const tabEditor = {
     }
 
     /* animation */
-    if (tabs.count() > 1) {
+    if (browserSession.tabs.count() > 1) {
       requestAnimationFrame(function () {
         var item = document.querySelector(`.tab-item[data-tab="${tabId}"]`)
         var originCoordinates = item.getBoundingClientRect()

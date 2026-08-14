@@ -1,4 +1,4 @@
-/* global db Dexie */
+/* global calculateHistoryScore db Dexie historyInMemoryCache nonLetterRegex */
 
 const stemmer = require('stemmer')
 
@@ -199,12 +199,12 @@ function fullTextQuery (tokens) {
   })
 }
 
-function fullTextPlacesSearch (searchText, callback) {
+function fullTextPlacesSearch (searchText, respond) {
   const searchWords = tokenize(searchText)
   const sl = searchWords.length
 
   if (searchWords.length === 0) {
-    callback([])
+    respond([])
     return
   }
 
@@ -359,7 +359,10 @@ function fullTextPlacesSearch (searchText, callback) {
       delete doc.searchIndex
     }
 
-    callback(docs)
+    respond(docs)
   })
     .catch(e => console.error(e))
 }
+
+window.fullTextPlacesSearch = fullTextPlacesSearch
+window.tokenize = tokenize

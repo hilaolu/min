@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var urlParser = require('util/urlParser.js')
 var settings = require('util/settings/settings.js')
 
@@ -19,7 +20,7 @@ var previewImageManager = {
 
   // Get preview image, return null if not available (truly lazy)
   get: function (tabId) {
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
     if (!tab || tab.private) {
       return null
     }
@@ -62,9 +63,9 @@ var previewImageManager = {
       this.status[tabId].valid = false
     }
     // Also clear the actual image data to prevent stale content
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
     if (tab) {
-      tabs.update(tabId, { previewImage: null })
+      browserSession.updateTab(tabId, { previewImage: null })
     }
   },
 
@@ -72,9 +73,9 @@ var previewImageManager = {
   clear: function (tabId) {
     delete this.status[tabId]
     // Also clear the actual image data
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
     if (tab) {
-      tabs.update(tabId, { previewImage: null })
+      browserSession.updateTab(tabId, { previewImage: null })
     }
   }
 }
@@ -82,12 +83,12 @@ var previewImageManager = {
 // called whenever a new page starts loading, or an in-page navigation occurs
 function onPageURLChange (tab, url) {
   if (url.indexOf('https://') === 0 || url.indexOf('about:') === 0 || url.indexOf('chrome:') === 0 || url.indexOf('file://') === 0 || url.indexOf('min://') === 0) {
-    tabs.update(tab, {
+    browserSession.updateTab(tab, {
       secure: true,
       url: url
     })
   } else {
-    tabs.update(tab, {
+    browserSession.updateTab(tab, {
       secure: false,
       url: url
     })
@@ -167,7 +168,7 @@ const webviews = {
   events: [],
   IPCEvents: [],
   hasViewForTab: function (tabId) {
-    return tabId && tasks.getTaskContainingTab(tabId) && tasks.getTaskContainingTab(tabId).tabs.get(tabId).hasWebContents
+    return tabId && browserSession.tasks.getTaskContainingTab(tabId) && browserSession.tasks.getTaskContainingTab(tabId).tabs.get(tabId).hasWebContents
   },
   bindEvent: function (event, fn) {
     webviews.events.push({
@@ -236,7 +237,7 @@ const webviews = {
     }
   },
   add: function (tabId, existingViewId) {
-    var tabData = tabs.get(tabId)
+    var tabData = browserSession.tabs.get(tabId)
 
     // needs to be called before the view is created to that its listeners can be registered
     if (tabData.scrollPosition) {
@@ -272,7 +273,7 @@ const webviews = {
       }
     }
 
-    tasks.getTaskContainingTab(tabId).tabs.update(tabId, {
+    browserSession.updateTab(tabId, {
       hasWebContents: true
     })
   },
@@ -306,7 +307,7 @@ const webviews = {
     webviews.emitEvent('view-hidden', id)
 
     if (webviews.hasViewForTab(id)) {
-      tasks.getTaskContainingTab(id).tabs.update(id, {
+      browserSession.updateTab(id, {
         hasWebContents: false
       })
     }
@@ -326,7 +327,7 @@ const webviews = {
     if (webviews.placeholderRequests.length >= 1) {
       // create a new placeholder
 
-      var associatedTab = tasks.getTaskContainingTab(webviews.selectedId).tabs.get(webviews.selectedId)
+      var associatedTab = browserSession.tasks.getTaskContainingTab(webviews.selectedId).tabs.get(webviews.selectedId)
       var img = previewImageManager.get(webviews.selectedId)
       if (img) {
         placeholderImg.src = img
@@ -514,7 +515,7 @@ webviews.bindEvent('zoom-changed', function (tabId, zoomDirection) {
 })
 
 webviews.bindEvent('page-title-updated', function (tabId, title, explicitSet) {
-  tabs.update(tabId, {
+  browserSession.updateTab(tabId, {
     title: title
   })
 })
@@ -526,9 +527,9 @@ webviews.bindEvent('did-fail-load', function (tabId, errorCode, errorDesc, valid
 })
 
 webviews.bindEvent('crashed', function (tabId, isKilled) {
-  var url = tabs.get(tabId).url
+  var url = browserSession.tabs.get(tabId).url
 
-  tabs.update(tabId, {
+  browserSession.updateTab(tabId, {
     url: webviews.internalPages.error + '?ec=crash&url=' + encodeURIComponent(url)
   })
 
@@ -545,20 +546,20 @@ webviews.bindEvent('crashed', function (tabId, isKilled) {
 })
 
 webviews.bindIPC('getSettingsData', function (tabId, args) {
-  if (!urlParser.isInternalURL(tabs.get(tabId).url)) {
+  if (!urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
     throw new Error()
   }
   webviews.callAsync(tabId, 'send', ['receiveSettingsData', settings.list])
 })
 webviews.bindIPC('setSetting', function (tabId, args) {
-  if (!urlParser.isInternalURL(tabs.get(tabId).url)) {
+  if (!urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
     throw new Error()
   }
   settings.set(args[0].key, args[0].value)
 })
 
 settings.listen(function () {
-  tasks.forEach(function (task) {
+  browserSession.tasks.forEach(function (task) {
     task.tabs.forEach(function (tab) {
       if (tab.url.startsWith('min://')) {
         try {
@@ -572,13 +573,13 @@ settings.listen(function () {
 })
 
 webviews.bindIPC('scroll-position-change', function (tabId, args) {
-  tabs.update(tabId, {
+  browserSession.updateTab(tabId, {
     scrollPosition: args[0]
   })
 })
 
 webviews.bindIPC('downloadFile', function (tabId, args) {
-  if (tabs.get(tabId).url.startsWith('min://')) {
+  if (browserSession.tabs.get(tabId).url.startsWith('min://')) {
     webviews.callAsync(tabId, 'downloadURL', [args[0]])
   }
 })
@@ -605,7 +606,7 @@ ipc.on('view-ipc', function (e, args) {
 })
 
 ipc.on('captureData', function (e, data) {
-  tabs.update(data.id, { previewImage: data.url })
+  browserSession.updateTab(data.id, { previewImage: data.url })
   previewImageManager.markCaptured(data.id)
   if (data.id === webviews.selectedId && webviews.placeholderRequests.length > 0) {
     placeholderImg.src = data.url

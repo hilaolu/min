@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
 var searchbarUtils = require('searchbar/searchbarUtils.js')
 var urlParser = require('util/urlParser.js')
@@ -6,10 +7,10 @@ var places = require('places/places.js')
 
 async function showPlaceSuggestions (text, input, inputFlags) {
   // use the current tab's url for history suggestions, or the previous tab if the current tab is empty
-  var url = tabs.get(tabs.getSelected()).url
+  var url = browserSession.tabs.get(browserSession.tabs.getSelected()).url
 
   if (!url) {
-    var previousTab = tabs.getAtIndex(tabs.getIndex(tabs.getSelected()) - 1)
+    var previousTab = browserSession.tabs.getAtIndex(browserSession.tabs.getIndex(browserSession.tabs.getSelected()) - 1)
     if (previousTab) {
       url = previousTab.url
     }
@@ -19,7 +20,7 @@ async function showPlaceSuggestions (text, input, inputFlags) {
 
   searchbarPlugins.reset('placeSuggestions')
 
-  var tabList = tabs.get().map(function (tab) {
+  var tabList = browserSession.tabs.get().map(function (tab) {
     return tab.url
   })
 

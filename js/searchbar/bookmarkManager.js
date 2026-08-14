@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbar = require('searchbar/searchbar.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
 var searchbarUtils = require('searchbar/searchbarUtils.js')
@@ -95,7 +96,7 @@ const bookmarkManager = {
 
     parsedText.tags.forEach(function (tag) {
       tagBar.appendChild(bookmarkEditor.getTagElement(tag, true, function () {
-        tabEditor.show(tabs.getSelected(), '!bookmarks ' + text.replace('#' + tag, '').trim())
+        tabEditor.show(browserSession.tabs.getSelected(), '!bookmarks ' + text.replace('#' + tag, '').trim())
       }, {
         autoRemove: false,
         onModify: () => bookmarkManager.showBookmarks(text, input, event)
@@ -106,7 +107,7 @@ const bookmarkManager = {
       suggestedTags.forEach(function (suggestion, index) {
         var el = bookmarkEditor.getTagElement(suggestion, false, function () {
           var needsSpace = text.slice(-1) !== ' ' && text.slice(-1) !== ''
-          tabEditor.show(tabs.getSelected(), '!bookmarks ' + text + (needsSpace ? ' #' : '#') + suggestion + ' ')
+          tabEditor.show(browserSession.tabs.getSelected(), '!bookmarks ' + text + (needsSpace ? ' #' : '#') + suggestion + ' ')
         }, {
           onModify: () => bookmarkManager.showBookmarks(text, input, event)
         })

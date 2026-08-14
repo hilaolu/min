@@ -1,3 +1,5 @@
+/* global electron ipc */
+
 var scriptsToRun = []
 
 /* a collection of various hacks to unbreak sites, mainly due to missing window.open() support */

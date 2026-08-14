@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var tabEditor = require('navbar/tabEditor.js')
 var settings = require('util/settings/settings.js')
 
@@ -140,7 +141,7 @@ function getBangSearchResults (text, input, inputFlags) {
   var resultsPromise
 
   // get results from DuckDuckGo if it is a search engine, and the current tab is not a private tab
-  if (searchEngine.getCurrent().name === 'DuckDuckGo' && !tabs.get(tabs.getSelected()).private) {
+  if (searchEngine.getCurrent().name === 'DuckDuckGo' && !browserSession.tabs.get(browserSession.tabs.getSelected()).private) {
     resultsPromise = fetch('https://ac.duckduckgo.com/ac/?t=min&q=' + encodeURIComponent(text), {
       cache: 'force-cache'
     })
@@ -200,7 +201,7 @@ function initialize () {
 
       if ((!bang || !bang.isAction) && url.split(' ').length === 1 && !url.endsWith(' ')) {
         // the bang is non-custom or a custom bang that requires search text, so add a space after it
-        tabEditor.show(tabs.getSelected(), url + ' ')
+        tabEditor.show(browserSession.tabs.getSelected(), url + ' ')
         return true
       } else if (bang) {
         // there is a custom bang that is an action or has search text, so it can be run

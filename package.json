@@ -8,8 +8,6 @@
   "main": "main.build.js",
   "standard": {
     "globals": [
-      "tabs",
-      "tasks",
       "globalArgs",
       "platformType",
       "throttle",

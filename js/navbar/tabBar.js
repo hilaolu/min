@@ -1,4 +1,6 @@
+const browserSession = require('tabState.js')
 const EventEmitter = require('events')
+const electron = require('electron')
 
 const webviews = require('webviews.js')
 const focusMode = require('focusMode.js')
@@ -94,7 +96,7 @@ const tabBar = {
 
     // click to enter edit mode or switch to a tab
     tabEl.addEventListener('click', function (e) {
-      if (tabs.getSelected() !== data.id) { // else switch to tab if it isn't focused
+      if (browserSession.tabs.getSelected() !== data.id) { // else switch to tab if it isn't focused
         tabBar.events.emit('tab-selected', data.id)
       } else { // the tab is focused, edit tab instead
         tabEditor.show(data.id)
@@ -134,7 +136,7 @@ const tabBar = {
     return tabEl
   },
   updateTab: function (tabId, tabEl = tabBar.getTab(tabId)) {
-    var tabData = tabs.get(tabId)
+    var tabData = browserSession.tabs.get(tabId)
 
     // update tab title
     var tabTitle
@@ -197,20 +199,20 @@ const tabBar = {
     empty(tabBar.containerInner)
     tabBar.tabElementMap = {}
 
-    tabs.get().forEach(function (tab) {
+    browserSession.tabs.get().forEach(function (tab) {
       var el = tabBar.createTab(tab)
       tabBar.containerInner.appendChild(el)
       tabBar.tabElementMap[tab.id] = el
     })
 
-    if (tabs.getSelected()) {
-      tabBar.setActiveTab(tabs.getSelected())
+    if (browserSession.tabs.getSelected()) {
+      tabBar.setActiveTab(browserSession.tabs.getSelected())
     }
     tabBar.handleSizeChange()
   },
   addTab: function (tabId) {
-    var tab = tabs.get(tabId)
-    var index = tabs.getIndex(tabId)
+    var tab = browserSession.tabs.get(tabId)
+    var index = browserSession.tabs.getIndex(tabId)
 
     var tabEl = tabBar.createTab(tab)
     tabBar.containerInner.insertBefore(tabEl, tabBar.containerInner.childNodes[index])
@@ -246,17 +248,20 @@ const tabBar = {
         var adjacentTabId = sibling.getAttribute('data-tab')
       }
 
-      var oldTab = tabs.splice(tabs.getIndex(tabId), 1)[0]
+      const oldIndex = browserSession.tabs.getIndex(tabId)
 
       var newIdx
       if (adjacentTabId) {
-        newIdx = tabs.getIndex(adjacentTabId)
+        newIdx = browserSession.tabs.getIndex(adjacentTabId)
+        if (oldIndex < newIdx) {
+          newIdx--
+        }
       } else {
         // tab was inserted at end
-        newIdx = tabs.count()
+        newIdx = browserSession.tabs.count() - 1
       }
 
-      tabs.splice(newIdx, 0, oldTab)
+      browserSession.moveTabToIndex(tabId, newIdx)
     })
   },
   handleSizeChange: function () {
@@ -277,16 +282,16 @@ settings.listen('showDividerBetweenTabs', function (dividerPreference) {
 /* tab loading and progress bar status */
 webviews.bindEvent('did-start-loading', function (tabId) {
   progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'start')
-  tabs.update(tabId, { loaded: false })
+  browserSession.updateTab(tabId, { loaded: false })
 })
 
 webviews.bindEvent('did-stop-loading', function (tabId) {
   progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'finish')
-  tabs.update(tabId, { loaded: true })
+  browserSession.updateTab(tabId, { loaded: true })
   tabBar.updateTab(tabId)
 })
 
-tasks.on('tab-updated', function (id, key) {
+browserSession.tasks.on('tab-updated', function (id, key) {
   var updateKeys = ['title', 'secure', 'url', 'muted', 'hasAudio']
   if (updateKeys.includes(key)) {
     tabBar.updateTab(id)
@@ -294,7 +299,7 @@ tasks.on('tab-updated', function (id, key) {
 })
 
 permissionRequests.onChange(function (tabId) {
-  if (tabs.get(tabId)) {
+  if (browserSession.tabs.get(tabId)) {
     tabBar.updateTab(tabId)
   }
 })
@@ -310,14 +315,14 @@ tabBar.container.addEventListener('drop', e => {
   if (!path) {
     return
   }
-  if (tabEditor.isShown || tabs.isEmpty()) {
-    webviews.update(tabs.getSelected(), path)
+  if (tabEditor.isShown || browserSession.tabs.isEmpty()) {
+    webviews.update(browserSession.tabs.getSelected(), path)
     tabEditor.hide()
   } else {
-    require('browserUI.js').addTab(tabs.add({
+    require('browserUI.js').addTab({
       url: path,
-      private: tabs.get(tabs.getSelected()).private
-    }), { enterEditMode: false, openInBackground: !settings.get('openTabsInForeground') })
+      private: browserSession.tabs.get(browserSession.tabs.getSelected()).private
+    }, { enterEditMode: false, openInBackground: !settings.get('openTabsInForeground') })
   }
 })
 

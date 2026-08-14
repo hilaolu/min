@@ -1,3 +1,4 @@
+const browserSession = require('../../tabState.js')
 /**
  * Empty State Strategy
  *
@@ -32,13 +33,7 @@ class EmptyStrategy extends CommandStateStrategy {
    */
   async updateUI (input, data, context) {
     try {
-      // Get all tabs - ensure tabs module is available
-      if (typeof tabs === 'undefined' || !tabs.get) {
-        console.warn('Tabs module not available')
-        return []
-      }
-
-      const allTabs = tabs.get()
+      const allTabs = browserSession.tabs.get()
       const candidates = allTabs.map(tab => ({
         id: `tab-${tab.id}`,
         title: tab.title || 'New Tab',

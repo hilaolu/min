@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 const UPDATE_URL = 'https://minbrowser.org/min/updates/latestVersion.json'
 
 var settings = require('util/settings/settings.js')
@@ -63,12 +64,12 @@ function showUpdateNotification (text, input, inputFlags) {
     var updateAge = Date.now() - update.releaseTime
     /* initially, only show an update notification when no tabs are open, in order to minimize disruption */
     if (updateAge < (3 * 7 * 24 * 60 * 60 * 1000)) {
-      if (tabs.isEmpty()) {
+      if (browserSession.tabs.isEmpty()) {
         displayUpdateNotification()
       }
     } else {
       /* after 3 weeks, start showing a notification on all new tabs */
-      if (!tabs.get(tabs.getSelected()).url) {
+      if (!browserSession.tabs.get(browserSession.tabs.getSelected()).url) {
         displayUpdateNotification()
       }
     }

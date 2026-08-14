@@ -1,3 +1,5 @@
+/* global ipc */
+
 /* detects if a page is readerable, and tells the main process if it is */
 
 function pageIsReaderable () {

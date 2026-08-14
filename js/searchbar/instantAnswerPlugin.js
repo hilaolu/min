@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbar = require('searchbar/searchbar.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
 var searchbarAutocomplete = require('util/autocomplete.js')
@@ -185,7 +186,7 @@ function initialize () {
   searchbarPlugins.register('instantAnswers', {
     index: 4,
     trigger: function (text) {
-      return text.length > 3 && !urlParser.isPossibleURL(text) && !tabs.get(tabs.getSelected()).private
+      return text.length > 3 && !urlParser.isPossibleURL(text) && !browserSession.tabs.get(browserSession.tabs.getSelected()).private
     },
     showResults: debounce(showSearchbarInstantAnswers, 150)
   })

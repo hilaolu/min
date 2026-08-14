@@ -1,20 +1,70 @@
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
+const EventEmitter = require('node:events')
 const path = require('node:path')
 const test = require('node:test')
 
-const mainSource = fs.readFileSync(path.resolve(__dirname, '../main/main.js'), 'utf-8')
+const createAppRuntime = require('../main/main.js')
 
-test('command palette lifecycle IPC handlers are registered once', function () {
+function createRecordingApp () {
+  const app = new EventEmitter()
+  app.commandLine = { appendSwitch: function () {} }
+  app.getName = () => 'Min'
+  app.getPath = () => '/tmp/min-test'
+  app.getVersion = () => 'test'
+  app.quit = function () {}
+  app.requestSingleInstanceLock = () => true
+  return app
+}
+
+test('App Runtime registers command palette lifecycle IPC once through its interface', function () {
+  const app = createRecordingApp()
+  const ipc = new EventEmitter()
+  const commandPalette = {
+    destroy: function () {},
+    hide: function () {},
+    init: function () {},
+    show: function () {},
+    update: function () {}
+  }
+
+  const runtime = createAppRuntime({
+    buildAppMenu: function () {},
+    buildTouchBar: function () {},
+    commandPalette,
+    createDockMenu: function () {},
+    electron: {
+      app,
+      BaseWindow: function () {},
+      BrowserWindow: function () {},
+      crashReporter: { start: function () {} },
+      ipcMain: ipc,
+      Menu: { setApplicationMenu: function () {} },
+      session: { defaultSession: {} },
+      WebContentsView: function () {}
+    },
+    fs: {},
+    installSessionPolicies: function () {},
+    installThemePolicy: function () {},
+    overlayManager: null,
+    path,
+    registryInstaller: {},
+    rootDir: '/tmp/min-test',
+    settings: { get: function () {} },
+    windows: {
+      getAll: () => [],
+      getCurrent: function () {},
+      windowFromContents: function () {}
+    }
+  })
+
+  assert.equal(runtime.isPrimaryInstance, true)
   const channels = [
     'initCommandPaletteOverlay',
     'showCommandPaletteOverlay',
     'hideCommandPaletteOverlay',
     'destroyCommandPaletteOverlay'
   ]
-
   channels.forEach(function (channel) {
-    const registration = `ipc.on('${channel}'`
-    assert.equal(mainSource.split(registration).length - 1, 1, `${channel} should have one listener`)
+    assert.equal(ipc.listenerCount(channel), 1, `${channel} should have one listener`)
   })
 })

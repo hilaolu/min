@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var webviews = require('webviews.js')
 var keybindings = require('keybindings.js')
 var PDFViewer = require('pdfViewer.js')
@@ -15,7 +16,7 @@ var findinpage = {
 
     findinpage.input.placeholder = 'Search in Page'
 
-    findinpage.activeTab = tabs.getSelected()
+    findinpage.activeTab = browserSession.tabs.getSelected()
 
     /* special case for PDF viewer */
 
@@ -42,7 +43,7 @@ var findinpage = {
       webviews.callAsync(findinpage.activeTab, 'stopFindInPage', action)
 
       /* special case for PDF viewer */
-      if (tabs.get(findinpage.activeTab) && PDFViewer.isPDFViewer(findinpage.activeTab)) {
+      if (browserSession.tabs.get(findinpage.activeTab) && PDFViewer.isPDFViewer(findinpage.activeTab)) {
         PDFViewer.endFindInPage(findinpage.activeTab)
       }
 
@@ -101,7 +102,7 @@ webviews.bindEvent('view-hidden', function (tabId) {
   }
 })
 
-tasks.on('tab-selected', function (tabId) {
+browserSession.tasks.on('tab-selected', function (tabId) {
   if (tabId !== findinpage.activeTab) {
     findinpage.end()
   }

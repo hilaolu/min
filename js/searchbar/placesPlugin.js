@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var searchbar = require('searchbar/searchbar.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
 var searchbarUtils = require('searchbar/searchbarUtils.js')
@@ -113,25 +114,25 @@ async function showSearchbarPlaceResults (text, input, inputFlags, pluginName = 
     // click handler for switch-to-tab results
     function onSwitchClick (task) {
       // if we created a new tab but are switching away from it, destroy the current (empty) tab
-      var currentTabUrl = tabs.get(tabs.getSelected()).url
+      var currentTabUrl = browserSession.tabs.get(browserSession.tabs.getSelected()).url
       if (!currentTabUrl) {
-        browserUI.closeTab(tabs.getSelected())
+        browserUI.closeTab(browserSession.tabs.getSelected())
       }
-      if (task.id !== tasks.getSelected().id) {
+      if (task.id !== browserSession.tasks.getSelected().id) {
         browserUI.switchToTask(task.id)
       }
       browserUI.switchToTab(task.tabs.get().find(tab => urlParser.removeTextFragment(tab.url) === urlComparisonBase).id)
     }
 
     const urlComparisonBase = urlParser.removeTextFragment(url)
-    const matchingTasks = tasks.filter(task => task.tabs.get().some(tab => urlParser.removeTextFragment(tab.url) === urlComparisonBase)).sort((a, b) => {
-      return tasks.getLastActivity(b.id) - tasks.getLastActivity(a.id)
+    const matchingTasks = browserSession.tasks.filter(task => task.tabs.get().some(tab => urlParser.removeTextFragment(tab.url) === urlComparisonBase)).sort((a, b) => {
+      return browserSession.tasks.getLastActivity(b.id) - browserSession.tasks.getLastActivity(a.id)
     }).slice(0, 2)
 
-    if (matchingTasks.length > 0 && !didAutocompleteResult && urlComparisonBase !== tabs.get(tabs.getSelected()).url && url !== tabs.get(tabs.getSelected()).url) {
+    if (matchingTasks.length > 0 && !didAutocompleteResult && urlComparisonBase !== browserSession.tabs.get(browserSession.tabs.getSelected()).url && url !== browserSession.tabs.get(browserSession.tabs.getSelected()).url) {
       data.textActionButtons = []
 
-      const currentTaskMatch = matchingTasks.find(task => task.id === tasks.getSelected().id)
+      const currentTaskMatch = matchingTasks.find(task => task.id === browserSession.tasks.getSelected().id)
 
       if (currentTaskMatch) {
         data.textActionButtons.push({
@@ -151,10 +152,10 @@ async function showSearchbarPlaceResults (text, input, inputFlags, pluginName = 
       })
 
       matchingTasks.filter(task => task.id !== currentTaskMatch?.id).forEach(task => {
-        const taskName = task.name || `Task ${tasks.getIndex(task.id) + 1}`
+        const taskName = task.name || `Task ${browserSession.tasks.getIndex(task.id) + 1}`
         data.textActionButtons.push({
           icon: 'carbon:arrow-up-right',
-          text: (task.id === tasks.getSelected().id) ? 'Switch to Tab' : `Switch to "${taskName}"`,
+          text: (task.id === browserSession.tasks.getSelected().id) ? 'Switch to Tab' : `Switch to "${taskName}"`,
           fn: function (e) {
             onSwitchClick(task)
           }

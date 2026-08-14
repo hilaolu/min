@@ -1,3 +1,4 @@
+const browserSession = require('tabState.js')
 var webviews = require('webviews.js')
 var keybindings = require('keybindings.js')
 var urlParser = require('util/urlParser.js')
@@ -7,7 +8,7 @@ var readerDecision = require('readerDecision.js')
 var readerView = {
   readerURL: 'min://app/reader/index.html',
   isReader: function (tabId) {
-    return tabs.get(tabId).url.indexOf(readerView.readerURL) === 0
+    return browserSession.tabs.get(tabId).url.indexOf(readerView.readerURL) === 0
   },
   getButton: function (tabId) {
     // TODO better icon
@@ -33,7 +34,7 @@ var readerView = {
   },
   updateButton: function (tabId, button) {
     button = button || document.querySelector('.reader-button[data-tab="{id}"]'.replace('{id}', tabId))
-    var tab = tabs.get(tabId)
+    var tab = browserSession.tabs.get(tabId)
 
     if (readerView.isReader(tabId)) {
       button.classList.add('is-reader')
@@ -50,15 +51,15 @@ var readerView = {
     }
   },
   enter: function (tabId, url) {
-    var newURL = readerView.readerURL + '?url=' + encodeURIComponent(url || tabs.get(tabId).url)
-    tabs.update(tabId, { url: newURL })
+    var newURL = readerView.readerURL + '?url=' + encodeURIComponent(url || browserSession.tabs.get(tabId).url)
+    browserSession.updateTab(tabId, { url: newURL })
     webviews.update(tabId, newURL)
   },
   exit: function (tabId) {
-    var src = urlParser.getSourceURL(tabs.get(tabId).url)
+    var src = urlParser.getSourceURL(browserSession.tabs.get(tabId).url)
     // this page should not be automatically readerable in the future
     readerDecision.setURLStatus(src, false)
-    tabs.update(tabId, { url: src })
+    browserSession.updateTab(tabId, { url: src })
     webviews.update(tabId, src)
   },
   printArticle: function (tabId) {
@@ -66,7 +67,7 @@ var readerView = {
       throw new Error("attempting to print in a tab that isn't a reader page")
     }
 
-    webviews.callAsync(tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.printArticle()')
+    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.printArticle()')
   },
   initialize: function () {
     // update the reader button on page load
@@ -79,7 +80,7 @@ var readerView = {
         // if this URL has previously been marked as readerable, load reader view without waiting for the page to load
         readerView.enter(tabId, url)
       } else if (isMainFrame) {
-        tabs.update(tabId, {
+        browserSession.updateTab(tabId, {
           readerable: false // assume the new page can't be readered, we'll get another message if it can
         })
 
@@ -88,12 +89,12 @@ var readerView = {
     })
 
     webviews.bindIPC('canReader', function (tab) {
-      if (readerDecision.shouldRedirect(tabs.get(tab).url) >= 0) {
+      if (readerDecision.shouldRedirect(browserSession.tabs.get(tab).url) >= 0) {
         // if automatic reader mode has been enabled for this domain, and the page is readerable, enter reader mode
         readerView.enter(tab)
       }
 
-      tabs.update(tab, {
+      browserSession.updateTab(tab, {
         readerable: true
       })
       readerView.updateButton(tab)
@@ -102,10 +103,10 @@ var readerView = {
     // add a keyboard shortcut to enter reader mode
 
     keybindings.defineShortcut('toggleReaderView', function () {
-      if (readerView.isReader(tabs.getSelected())) {
-        readerView.exit(tabs.getSelected())
+      if (readerView.isReader(browserSession.tabs.getSelected())) {
+        readerView.exit(browserSession.tabs.getSelected())
       } else {
-        readerView.enter(tabs.getSelected())
+        readerView.enter(browserSession.tabs.getSelected())
       }
     })
   }
