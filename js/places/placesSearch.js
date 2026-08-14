@@ -1,14 +1,14 @@
-/* global calculateHistoryScore historyInMemoryCache oneDayInMS quickScore spacesRegex */
+/* global calculateHistoryScore historyInMemoryCache oneDayInMS quickScore */
 
-/* depends on placesWorker.js */
+const searchSeparatorRegex = /[+\s._/-]+/g
 
 function searchFormatTitle (text) {
-  return text.toLowerCase().replace(spacesRegex, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove diacritics
+  return text.toLowerCase().replace(searchSeparatorRegex, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove diacritics
 }
 
 function searchFormatURL (text) {
-  // the order of these transformations is important - for example, spacesRegex removes / characters, so protocols must be removed before it runs
-  return text.toLowerCase().split('?')[0].replace('http://', '').replace('https://', '').replace('www.', '').replace(spacesRegex, ' ')
+  // the order of these transformations is important - for example, searchSeparatorRegex removes / characters, so protocols must be removed before it runs
+  return text.toLowerCase().split('?')[0].replace('http://', '').replace('https://', '').replace('www.', '').replace(searchSeparatorRegex, ' ')
     // Remove diacritics
     // URLs don't normally contrain diacritics, but this processing is also applied to the user-typed text, so it needs to match the transformations
     // Applied by searchFormatTitle
