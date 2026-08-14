@@ -100,36 +100,6 @@ html {
   margin-left: 0;
 }
 
-/* Annotation settings */
-#annotation-server-section {
-  display: none;
-}
-
-#annotation-server-section .setting-option {
-  margin-bottom: 1em;
-}
-
-#annotation-server-section input[type="text"],
-#annotation-server-section input[type="password"] {
-  min-width: 300px;
-  padding: 0.5em;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-#test-annotation-connection {
-  background-color: #007cba;
-  color: white;
-  border: none;
-  padding: 0.5em 1em;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-#test-annotation-connection:hover {
-  background-color: #005a87;
-}
-
 @media all and (max-width: 800px) {
   #key-map-list {
     column-count: 1;
