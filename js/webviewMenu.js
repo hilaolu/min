@@ -5,7 +5,6 @@ const browserUI = require('browserUI.js')
 const searchEngine = require('util/searchEngine.js')
 const userscripts = require('userscripts.js')
 const settings = require('util/settings/settings.js')
-const pageTranslations = require('pageTranslations.js')
 const PasswordManagers = require('passwordManager/passwordManager.js')
 
 const remoteMenu = require('remoteMenuRenderer.js')
@@ -24,7 +23,7 @@ const webviewMenu = {
     if (extraData.hasVideo) {
       menuSections.push([
         {
-          label: l('pictureInPicture'),
+          label: 'Picture in Picture',
           click: function () {
             webviews.callAsync(tabs.getSelected(), 'send', ['enterPictureInPicture', { x: data.x, y: data.y }])
           }
@@ -48,7 +47,7 @@ const webviewMenu = {
       // "This API will not work on non-persistent (in-memory) sessions"
       if (!currentTab.private) {
         suggestionEntries.push({
-          label: l('addToDictionary'),
+          label: 'Add to Dictionary',
           click: function () {
             ipc.invoke('addWordToSpellCheckerDictionary', data.misspelledWord)
           }
@@ -84,7 +83,7 @@ const webviewMenu = {
 
       if (!currentTab.private) {
         linkActions.push({
-          label: l('openInNewTab'),
+          label: 'Open in New Tab',
           click: function () {
             browserUI.addTab(tabs.add({ url: link }), { enterEditMode: false, openInBackground: openInBackground })
           }
@@ -92,14 +91,14 @@ const webviewMenu = {
       }
 
       linkActions.push({
-        label: l('openInNewPrivateTab'),
+        label: 'Open in New Private Tab',
         click: function () {
           browserUI.addTab(tabs.add({ url: link, private: true }), { enterEditMode: false, openInBackground: openInBackground })
         }
       })
 
       linkActions.push({
-        label: l('saveLinkAs'),
+        label: 'Save Link As...',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'downloadURL', [link])
         }
@@ -113,7 +112,6 @@ const webviewMenu = {
     var mediaURL = data.srcURL
 
     if (mediaURL && data.mediaType === 'image') {
-
       var imageActions = [
         {
           label: (mediaURL.length > 60) ? mediaURL.substring(0, 60) + '...' : mediaURL,
@@ -122,7 +120,7 @@ const webviewMenu = {
       ]
 
       imageActions.push({
-        label: l('viewImage'),
+        label: 'View Image',
         click: function () {
           webviews.update(tabs.getSelected(), mediaURL)
         }
@@ -130,7 +128,7 @@ const webviewMenu = {
 
       if (!currentTab.private) {
         imageActions.push({
-          label: l('openImageInNewTab'),
+          label: 'Open Image in New Tab',
           click: function () {
             browserUI.addTab(tabs.add({ url: mediaURL }), { enterEditMode: false, openInBackground: openInBackground })
           }
@@ -138,14 +136,14 @@ const webviewMenu = {
       }
 
       imageActions.push({
-        label: l('openImageInNewPrivateTab'),
+        label: 'Open Image in New Private Tab',
         click: function () {
           browserUI.addTab(tabs.add({ url: mediaURL, private: true }), { enterEditMode: false, openInBackground: openInBackground })
         }
       })
 
       imageActions.push({
-        label: l('saveImageAs'),
+        label: 'Save Image As',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'downloadURL', [mediaURL])
         }
@@ -161,7 +159,7 @@ const webviewMenu = {
     if (selection) {
       var textActions = [
         {
-          label: l('searchWith').replace('%s', searchEngine.getCurrent().name),
+          label: `Search with ${searchEngine.getCurrent().name}`,
           click: function () {
             var newTab = tabs.add({
               url: searchEngine.getCurrent().searchURL.replace('%s', encodeURIComponent(selection)),
@@ -181,14 +179,14 @@ const webviewMenu = {
 
     if (mediaURL && data.mediaType === 'image') {
       clipboardActions.push({
-        label: l('copy'),
+        label: 'Copy',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'copyImageAt', [data.x, data.y])
         }
       })
     } else if (selection) {
       clipboardActions.push({
-        label: l('copy'),
+        label: 'Copy',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'copy')
         }
@@ -197,7 +195,7 @@ const webviewMenu = {
 
     if (data.editFlags && data.editFlags.canPaste) {
       clipboardActions.push({
-        label: l('paste'),
+        label: 'Paste',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'paste')
         }
@@ -206,7 +204,7 @@ const webviewMenu = {
 
     if (data.editFlags && data.editFlags.canPaste) {
       clipboardActions.push({
-        label: l('pasteAndMatchStyle'),
+        label: 'Paste and Match Style',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'pasteAndMatchStyle')
         }
@@ -215,10 +213,10 @@ const webviewMenu = {
 
     if (link || (mediaURL && !mediaURL.startsWith('blob:'))) {
       if (link && link.startsWith('mailto:')) {
-        var ematch = link.match(/(?<=mailto:)[^\?]+/)
+        var ematch = link.match(/(?<=mailto:)[^?]+/)
         if (ematch) {
           clipboardActions.push({
-            label: l('copyEmailAddress'),
+            label: 'Copy Email Address',
             click: function () {
               clipboard.writeText(ematch[0])
             }
@@ -226,7 +224,7 @@ const webviewMenu = {
         }
       } else {
         clipboardActions.push({
-          label: l('copyLink'),
+          label: 'Copy Link',
           click: function () {
             clipboard.writeText(link || mediaURL)
           }
@@ -241,7 +239,7 @@ const webviewMenu = {
     if (data.formControlType === 'input-password' && PasswordManagers.getActivePasswordManager()?.saveCredential) {
       menuSections.push([
         {
-          label: l('generatePassword'),
+          label: 'Generate Password',
           click: function () {
             webviews.callAsync(tabs.getSelected(), 'send', ['generate-password', { x: data.x, y: data.y }])
           }
@@ -251,7 +249,7 @@ const webviewMenu = {
 
     var navigationActions = [
       {
-        label: l('goBack'),
+        label: 'Go Back',
         click: function () {
           try {
             webviews.goBackIgnoringRedirects(tabs.getSelected())
@@ -259,7 +257,7 @@ const webviewMenu = {
         }
       },
       {
-        label: l('goForward'),
+        label: 'Go Forward',
         click: function () {
           try {
             webviews.callAsync(tabs.getSelected(), 'goForward')
@@ -273,7 +271,7 @@ const webviewMenu = {
     /* inspect element */
     menuSections.push([
       {
-        label: l('inspectElement'),
+        label: 'Inspect Element',
         click: function () {
           webviews.callAsync(tabs.getSelected(), 'inspectElement', [data.x || 0, data.y || 0])
         }
@@ -291,7 +289,7 @@ const webviewMenu = {
     if (contextMenuScripts.length > 0) {
       var scriptActions = [
         {
-          label: l('runUserscript'),
+          label: 'Run userscript',
           enabled: false
         }
       ]
@@ -305,49 +303,6 @@ const webviewMenu = {
       })
       menuSections.push(scriptActions)
     }
-
-    var translateMenu = {
-      label: l('translatePage'),
-      submenu: []
-    }
-
-    const translateLangList = pageTranslations.getLanguageList()
-
-    translateLangList[0].forEach(function (language) {
-      translateMenu.submenu.push({
-        label: language.name,
-        click: function () {
-          pageTranslations.translateInto(tabs.getSelected(), language.code)
-        }
-      })
-    })
-
-    if (translateLangList[1].length > 0) {
-      translateMenu.submenu.push({
-        type: 'separator'
-      })
-      translateLangList[1].forEach(function (language) {
-        translateMenu.submenu.push({
-          label: language.name,
-          click: function () {
-            pageTranslations.translateInto(tabs.getSelected(), language.code)
-          }
-        })
-      })
-    }
-
-    translateMenu.submenu.push({
-      type: 'separator'
-    })
-
-    translateMenu.submenu.push({
-      label: 'Send Feedback',
-      click: function () {
-        browserUI.addTab(tabs.add({ url: 'https://github.com/minbrowser/min/issues/new?title=Translation%20feedback%20for%20' + encodeURIComponent(tabs.get(tabs.getSelected()).url) }), { enterEditMode: false, openInBackground: false })
-      }
-    })
-
-    menuSections.push([translateMenu])
 
     // Electron's default menu position is sometimes wrong on Windows with a touchscreen
     // https://github.com/minbrowser/min/issues/903

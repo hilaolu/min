@@ -14,7 +14,7 @@ const passwordCapture = {
   currentDomain: null,
   barHeight: 0,
   showCaptureBar: function (username, password) {
-    passwordCapture.description.textContent = l('passwordCaptureSavePassword').replace('%s', passwordCapture.currentDomain)
+    passwordCapture.description.textContent = `Save password for ${passwordCapture.currentDomain}?`
     passwordCapture.bar.hidden = false
 
     passwordCapture.passwordInput.type = 'password'
@@ -80,8 +80,8 @@ const passwordCapture = {
     })
   },
   initialize: function () {
-    passwordCapture.usernameInput.placeholder = l('username')
-    passwordCapture.passwordInput.placeholder = l('password')
+    passwordCapture.usernameInput.placeholder = 'Username'
+    passwordCapture.passwordInput.placeholder = 'Password'
 
     webviews.bindIPC('password-form-filled', passwordCapture.handleRecieveCredentials)
 

@@ -8,8 +8,8 @@ const bookmarkStar = {
     const star = document.createElement('button')
     star.className = 'tab-editor-button bookmarks-button i carbon:star'
     star.setAttribute('aria-pressed', false)
-    star.setAttribute('title', l('addBookmark'))
-    star.setAttribute('aria-label', l('addBookmark'))
+    star.setAttribute('title', 'Add bookmark')
+    star.setAttribute('aria-label', 'Add bookmark')
 
     star.addEventListener('click', function (e) {
       bookmarkStar.onClick(star)

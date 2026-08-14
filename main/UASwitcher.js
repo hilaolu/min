@@ -64,8 +64,18 @@ function enableGoogleUASwitcher (ses) {
   })
 }
 
+function configureSession (ses) {
+  ses.setUserAgent(newUserAgent, 'en-US')
+
+  if (ses.availableSpellCheckerLanguages.includes('en-US')) {
+    ses.setSpellCheckerLanguages(['en-US'])
+  }
+
+  enableGoogleUASwitcher(ses)
+}
+
 app.once('ready', function () {
-  enableGoogleUASwitcher(session.defaultSession)
+  configureSession(session.defaultSession)
 })
 
-app.on('session-created', enableGoogleUASwitcher)
+app.on('session-created', configureSession)

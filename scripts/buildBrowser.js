@@ -10,14 +10,10 @@ const intermediateOutput = path.resolve(__dirname, '../dist/build.js')
 const outFile = path.resolve(__dirname, '../dist/bundle.js')
 
 const fileList = [
-  'dist/localization.build.js',
   'js/default.js'
 ]
 
 function buildBrowser () {
-  // build localization support first, since it is included in the browser bundle
-  require('./buildLocalization.js')()
-
   /* concatenate legacy modules */
   let output = ''
   fileList.forEach(function (script) {

@@ -4,7 +4,6 @@ const fs = require('fs')
 const outFile = path.resolve(__dirname, '../main.build.js')
 
 const modules = [
-  'dist/localization.build.js',
   'main/windowManagement.js',
   'js/util/keyMap.js',
   'main/menu.js',
@@ -30,16 +29,13 @@ const modules = [
 ]
 
 function buildMain () {
-  // build localization support first, since it is included in the bundle
-  require('./buildLocalization.js')()
-
   /* concatenate modules */
   let output = ''
-  
+
   // Load command palette overlay HTML template
   const overlayHtmlPath = path.resolve(__dirname, '../pages/commandPalette/overlay.html')
   let overlayHtml = ''
-  
+
   try {
     overlayHtml = fs.readFileSync(overlayHtmlPath, 'utf-8')
     console.log('Successfully loaded command palette overlay HTML')
@@ -47,10 +43,10 @@ function buildMain () {
     console.warn('Failed to load command palette overlay HTML:', error.message)
     overlayHtml = '<div>Command Palette Overlay</div>'
   }
-  
+
   // Add the overlay HTML as a global variable
   output += 'global.commandPaletteOverlayHTML = ' + JSON.stringify(overlayHtml) + ';\n'
-  
+
   modules.forEach(function (script) {
     output += fs.readFileSync(path.resolve(__dirname, '../', script)) + ';\n'
   })

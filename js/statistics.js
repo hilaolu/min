@@ -56,7 +56,6 @@ const statistics = {
         clientID: settings.get('clientID'),
         installTime: settings.get('installTime'),
         os: process.platform,
-        lang: navigator.language,
         appVersion: window.globalArgs['app-version'],
         appName: window.globalArgs['app-name'],
         isDev: 'development-mode' in window.globalArgs,

@@ -47,7 +47,7 @@ function showUpdateNotification (text, input, inputFlags) {
   function displayUpdateNotification () {
     searchbarPlugins.reset('updateNotifications')
     searchbarPlugins.addResult('updateNotifications', {
-      title: l('updateNotificationTitle'),
+      title: 'A new version of Min is available',
       descriptionBlock: update.releaseHeadline || 'View release notes',
       url: update.releaseNotes,
       icon: 'carbon:renew'

@@ -1,33 +1,32 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
 
-    <title data-string="sessionRestoreErrorTitle"></title>
+    <title>An error occurred</title>
     <link rel="stylesheet" href="../pagebase.css" />
   </head>
 
   <body>
     <div id="page-wrapper">
-      <h1 data-string="sessionRestoreErrorTitle"></h1>
+      <h1>An error occurred</h1>
       <h2 id="error-message">
-        <span data-string="sessionRestoreErrorExplanation"></span>
+        <span>Your saved tabs couldn't be restored correctly.</span>
         <br />
         <br />
         <span id="backup-info"></span>
         <br />
         <br />
-        <span
-          id="link-info"
-          data-string="sessionRestoreErrorLinkInfo"
-          data-allowHTML
-        ></span>
+        <span id="link-info"
+          >If this error continues to occur, please open a new issue
+          <a href="https://github.com/minbrowser/min" target="_blank">here</a
+          >.</span
+        >
       </h2>
     </div>
 
     <script src="../../js/util/settings/settingsContent.js"></script>
     <script src="../../js/util/theme.js"></script>
-    <script src="../../dist/localization.build.js"></script>
 
     <script>
       var backupLoc = new URLSearchParams(window.location.search).get(
@@ -35,10 +34,11 @@
       );
 
       var backupInfoEl = document.getElementById("backup-info");
-      backupInfoEl.textContent = l("sessionRestoreErrorBackupInfo").replace(
-        "%l",
-        backupLoc
-      );
+      backupInfoEl.textContent =
+        "We've saved a backup of your data at this location: %l.".replace(
+          "%l",
+          backupLoc
+        );
     </script>
   </body>
 </html>

@@ -2,6 +2,7 @@ var browserUI = require('browserUI.js')
 var searchbarUtils = require('searchbar/searchbarUtils.js')
 var urlParser = require('util/urlParser.js')
 var searchEngine = require('util/searchEngine.js')
+var formatEnglishDate = require('util/dateFormat.js')
 
 const faviconMinimumLuminance = 70 // minimum brightness for a "light" favicon
 
@@ -20,7 +21,7 @@ function getTaskRelativeDate (task) {
   if (time > minimumTime) {
     return null
   } else {
-    return new Intl.DateTimeFormat(navigator.language, { month: 'long', day: 'numeric', year: 'numeric' }).format(d)
+    return formatEnglishDate(d)
   }
 }
 
@@ -65,7 +66,7 @@ var TaskOverlayBuilder = {
         var input = document.createElement('input')
         input.classList.add('task-name')
 
-        var taskName = l('defaultTaskName').replace('%n', taskIndex + 1)
+        var taskName = `Task ${taskIndex + 1}`
 
         input.placeholder = taskName
         input.value = task.name || taskName
@@ -117,7 +118,7 @@ var TaskOverlayBuilder = {
         var deleteWarning = document.createElement('div')
         deleteWarning.className = 'task-delete-warning'
 
-        deleteWarning.innerHTML = l('taskDeleteWarning').unsafeHTML
+        deleteWarning.innerHTML = 'Task deleted. <a>Undo?</a>'
         deleteWarning.addEventListener('click', function (e) {
           container.classList.remove('deleting')
         })
@@ -260,7 +261,7 @@ var TaskOverlayBuilder = {
           data.title = searchQuery.search
           data.secondaryText = searchQuery.engine
         } else {
-          data.title = tab.title || l('newTabLabel')
+          data.title = tab.title || 'New Tab'
           data.secondaryText = urlParser.basicURL(source)
         }
 

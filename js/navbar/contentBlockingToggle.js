@@ -66,7 +66,7 @@ const contentBlockingToggle = {
       [
         {
           type: 'checkbox',
-          label: l('enableBlocking'),
+          label: 'Enable content blocking for this site',
           checked: contentBlockingToggle.isBlockingEnabled(url),
           click: function () {
             if (contentBlockingToggle.isBlockingEnabled(url)) {
@@ -80,7 +80,7 @@ const contentBlockingToggle = {
       ],
       [
         {
-          label: l('appMenuReportBug'),
+          label: 'Report a Bug',
           click: function () {
             var newTab = tabs.add({ url: 'https://github.com/minbrowser/min/issues/new?title=Content%20blocking%20issue%20on%20' + encodeURIComponent(url) })
             require('browserUI.js').addTab(newTab, { enterEditMode: false })

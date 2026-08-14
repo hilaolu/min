@@ -136,7 +136,7 @@ async function showSearchbarPlaceResults (text, input, inputFlags, pluginName = 
       if (currentTaskMatch) {
         data.textActionButtons.push({
           icon: 'carbon:arrow-up-right',
-          text: l('placesPluginSwitchToTab'),
+          text: 'Switch to Tab',
           fn: function (e) {
             onSwitchClick(currentTaskMatch)
           }
@@ -144,17 +144,17 @@ async function showSearchbarPlaceResults (text, input, inputFlags, pluginName = 
       }
 
       data.textActionButtons.push({
-        text: l('placesPluginOpenAgain'),
+        text: 'Open Again',
         fn: function (e) {
           searchbar.openURL(url)
         }
       })
 
       matchingTasks.filter(task => task.id !== currentTaskMatch?.id).forEach(task => {
-        const taskName = (task.name ? '"' + task.name + '"' : l('defaultTaskName').replace('%n', tasks.getIndex(task.id) + 1))
+        const taskName = task.name || `Task ${tasks.getIndex(task.id) + 1}`
         data.textActionButtons.push({
           icon: 'carbon:arrow-up-right',
-          text: (task.id === tasks.getSelected().id) ? l('placesPluginSwitchToTab') : l('placesPluginSwitchToTask').replace('%t', taskName),
+          text: (task.id === tasks.getSelected().id) ? 'Switch to Tab' : `Switch to "${taskName}"`,
           fn: function (e) {
             onSwitchClick(task)
           }

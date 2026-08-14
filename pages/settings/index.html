@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
 
@@ -13,52 +13,41 @@
   <body>
     <div class="short-hero blue-gradient-background">
       <div class="container">
-        <h2 data-string="settingsPreferencesHeading"></h2>
+        <h2>Preferences</h2>
       </div>
     </div>
 
     <div class="settings-container" id="privacy-settings-container">
-      <h3 data-string="settingsPrivacyHeading"></h3>
+      <h3>Content Blocking</h3>
 
       <div class="settings-info-subheading" id="content-blocking-statistics">
         <i class="i carbon:manage-protection"></i>
-        <span
-          data-string="settingsBlockedRequestCount"
-          data-allowHTML
-          id="content-blocking-blocked-requests"
+        <span id="content-blocking-blocked-requests"
+          >So far, Min has blocked <strong></strong> ads and trackers.</span
         >
-        </span>
       </div>
 
       <div class="setting-section" id="tracking-level-container">
         <div class="setting-option">
           <input type="radio" name="blockingLevel" id="blocking-allow-all" />
-          <label
-            for="blocking-allow-all"
-            data-string="settingsContentBlockingLevel0"
-          ></label>
+          <label for="blocking-allow-all">Allow all ads and trackers</label>
         </div>
         <div class="setting-option">
           <input type="radio" name="blockingLevel" id="blocking-third-party" />
-          <label
-            for="blocking-third-party"
-            data-string="settingsContentBlockingLevel1"
-          ></label>
+          <label for="blocking-third-party"
+            >Block third-party ads and trackers</label
+          >
         </div>
         <div class="setting-option">
           <input type="radio" name="blockingLevel" id="blocking-block-all" />
-          <label
-            for="blocking-block-all"
-            data-string="settingsContentBlockingLevel2"
-          ></label>
+          <label for="blocking-block-all">Block all ads and trackers</label>
         </div>
 
         <div id="content-blocking-information" hidden>
           <div>
-            <label
-              for="content-blocking-exceptions"
-              data-string="settingsContentBlockingExceptions"
-            ></label>
+            <label for="content-blocking-exceptions"
+              >Ads will still be allowed on these websites:</label
+            >
             <textarea
               spellcheck="false"
               id="content-blocking-exceptions"
@@ -69,8 +58,8 @@
           <a
             id="customize-filters-link"
             href="https://github.com/minbrowser/min/wiki/Content-blocking-settings"
-            data-string="settingsCustomizeFiltersLink"
-          ></a>
+            >Customize filters</a
+          >
         </div>
       </div>
 
@@ -78,140 +67,93 @@
     </div>
 
     <div class="settings-container" id="appearance-settings-container">
-      <h3 data-string="settingsAppearanceHeading"></h3>
+      <h3>Appearance</h3>
 
-      <label
-        for="dark-mode-container"
-        data-string="settingsEnableDarkMode"
-      ></label>
+      <label for="dark-mode-container">Enable dark mode:</label>
       <div class="setting-section" id="dark-mode-container">
         <div class="setting-option">
           <input type="radio" name="darkMode" id="dark-mode-never" />
-          <label
-            for="dark-mode-never"
-            data-string="settingsDarkModeNever"
-          ></label>
+          <label for="dark-mode-never">Never</label>
         </div>
         <div class="setting-option">
           <input type="radio" name="darkMode" id="dark-mode-night" />
-          <label
-            for="dark-mode-night"
-            data-string="settingsDarkModeNight"
-          ></label>
+          <label for="dark-mode-night">At night</label>
         </div>
         <div class="setting-option">
           <input type="radio" name="darkMode" id="dark-mode-always" />
-          <label
-            for="dark-mode-always"
-            data-string="settingsDarkModeAlways"
-          ></label>
+          <label for="dark-mode-always">Always</label>
         </div>
         <div class="setting-option">
           <input type="radio" name="darkMode" id="dark-mode-system" />
-          <label
-            for="dark-mode-system"
-            data-string="settingsDarkModeSystem"
-          ></label>
+          <label for="dark-mode-system">Follow system theme</label>
         </div>
       </div>
 
       <div class="setting-section">
         <input type="checkbox" id="checkbox-site-theme" />
-        <label
-          for="checkbox-site-theme"
-          data-string="settingsSiteThemeToggle"
-        ></label>
+        <label for="checkbox-site-theme">Enable site theme</label>
       </div>
 
       <div class="setting-section">
         <input type="checkbox" id="checkbox-show-divider" />
-        <label
-          for="checkbox-show-divider"
-          data-string="settingsShowDividerToggle"
-        ></label>
-      </div>
-
-      <div class="setting-section">
-        <label
-          for="setting-language-picker"
-          data-string="settingsLanguageSelection"
-        ></label>
-        <select id="setting-language-picker"></select>
+        <label for="checkbox-show-divider">Show divider between tabs</label>
       </div>
     </div>
 
     <div class="settings-container" id="additional-settings-container">
-      <h3 data-string="settingsAdditionalFeaturesHeading"></h3>
+      <h3>Additional Features</h3>
 
       <div class="setting-section">
-        <label
-          for="startupOptions"
-          data-string="settingsStartupOptions"
-        ></label>
+        <label for="startupOptions">When Min starts: </label>
         <select id="startup-options" name="startupOptions">
-          <option value="1" data-string="settingsStartupCreateTask"></option>
-          <option
-            value="2"
-            data-string="settingsStartupNewTaskandBackground"
-          ></option>
-          <option value="3" data-string="settingsStartupNewTaskOnly"></option>
+          <option value="1">Re-open previous tabs</option>
+          <option value="2">Move previous tabs to a background task</option>
+          <option value="3">Open a new blank task</option>
         </select>
       </div>
 
       <div class="setting-section">
-        <label
-          for="newWindowOptions"
-          data-string="settingsNewWindowOptions"
-        ></label>
+        <label for="newWindowOptions">In new windows: </label>
         <select id="new-window-options" name="newWindowOptions">
-          <option value="1" data-string="settingsNewWindowCreateTask"></option>
-          <option value="2" data-string="settingsNewWindowPickTask"></option>
+          <option value="1">Create a new task</option>
+          <option value="2">Show task list</option>
         </select>
       </div>
 
       <div class="setting-section">
         <input type="checkbox" id="checkbox-userscripts" />
-        <label
-          for="checkbox-userscripts"
-          data-string="settingsUserscriptsToggle"
-        ></label>
-        <div
-          class="settings-info-subheading setting-secondary-label"
-          data-string="settingsUserscriptsExplanation"
-          data-allowHTML
-        ></div>
+        <label for="checkbox-userscripts">Enable user scripts</label>
+        <div class="settings-info-subheading setting-secondary-label">
+          User scripts allow you to modify the behavior of websites -
+          <a href="https://github.com/minbrowser/min/wiki/userscripts"
+            >learn more</a
+          >.
+        </div>
         <div
           class="setting-secondary-label"
           id="userscripts-show-directory"
           hidden
           style="margin-top: -0.5em; margin-bottom: 0.5em"
         >
-          <a data-string="settingsUserscriptShowDirectory"></a>
+          <a>Show script directory</a>
         </div>
       </div>
 
       <div class="setting-section" id="section-separate-titlebar">
         <input type="checkbox" id="checkbox-separate-titlebar" />
-        <label
-          for="checkbox-separate-titlebar"
-          data-string="settingsSeparateTitlebarToggle"
-        ></label>
+        <label for="checkbox-separate-titlebar">Use separate title bar</label>
       </div>
 
       <div class="setting-section" id="section-open-tabs-in-foreground">
         <input type="checkbox" id="checkbox-open-tabs-in-foreground" />
-        <label
-          for="checkbox-open-tabs-in-foreground"
-          data-string="settingsOpenTabsInForegroundToggle"
-        ></label>
+        <label for="checkbox-open-tabs-in-foreground"
+          >Open new tabs in the foreground</label
+        >
       </div>
 
       <div class="setting-section" id="section-user-agent">
         <input type="checkbox" id="checkbox-user-agent" />
-        <label
-          for="checkbox-user-agent"
-          data-string="settingsUserAgentToggle"
-        ></label>
+        <label for="checkbox-user-agent">Use a custom user agent</label>
         <input
           type="text"
           id="input-user-agent"
@@ -227,57 +169,48 @@
 
       <div class="setting-section">
         <input type="checkbox" id="checkbox-enable-autoplay" />
-        <label
-          for="checkbox-enable-autoplay"
-          data-string="settingsAutoplayToggle"
-        ></label>
+        <label for="checkbox-enable-autoplay">Enable Autoplay</label>
       </div>
 
       <div class="setting-section">
         <input type="checkbox" id="checkbox-update-notifications" />
-        <label
-          for="checkbox-update-notifications"
-          data-string="settingsUpdateNotificationsToggle"
-        ></label>
+        <label for="checkbox-update-notifications"
+          >Automatically check for updates</label
+        >
       </div>
       <div class="setting-section">
         <input type="checkbox" id="checkbox-usage-statistics" />
-        <label
-          for="checkbox-usage-statistics"
-          data-string="settingsUsageStatisticsToggle"
-          data-allowHTML
-        ></label>
+        <label for="checkbox-usage-statistics"
+          >Send usage statistics (<a
+            href="https://github.com/minbrowser/min/blob/master/docs/statistics.md"
+            >More info</a
+          >)</label
+        >
       </div>
 
       <div class="setting-section">
         <label class="setting-toggle" for="checkbox-enable-quic">
           <input type="checkbox" id="checkbox-enable-quic" />
           <span class="toggle-body"></span>
-          <span data-string="settingsEnableQUICToggle"></span>
+          <span>Enable QUIC protocol support</span>
         </label>
-        <p
-          class="settings-info-subheading setting-secondary-label"
-          data-string="settingsEnableQUICExplanation"
-        ></p>
+        <p class="settings-info-subheading setting-secondary-label">
+          QUIC is a new protocol from Google that can make some websites load
+          faster. Disabling it may help fix connection problems.
+        </p>
       </div>
 
       <div class="setting-section">
         <input type="checkbox" id="checkbox-smooth-scrolling" />
-        <label
-          for="checkbox-smooth-scrolling"
-          data-string="settingsSmoothScrollingToggle"
-        ></label>
+        <label for="checkbox-smooth-scrolling">Enable smooth scrolling</label>
       </div>
     </div>
 
     <div class="settings-container" id="search-engine-settings-container">
-      <h3 data-string="settingsSearchEngineHeading"></h3>
+      <h3>Search Engine</h3>
 
       <div class="setting-section">
-        <label
-          for="defaultSearchEngine"
-          data-string="settingsDefaultSearchEngine"
-        ></label>
+        <label for="defaultSearchEngine">Choose a default search engine:</label>
         <select id="default-search-engine" name="defaultSearchEngine"></select>
         <input
           id="custom-search-engine"
@@ -285,22 +218,20 @@
           hidden
         />
 
-        <div
-          class="settings-info-subheading"
-          style="padding-top: 0.4em"
-          data-string="settingsDDGExplanation"
-        ></div>
+        <div class="settings-info-subheading" style="padding-top: 0.4em">
+          Set DuckDuckGo as the default search engine to see instant answers in
+          the searchbar.
+        </div>
       </div>
     </div>
 
     <div class="settings-container" id="password-autofill-container">
-      <h3 data-string="settingsPasswordAutoFillHeadline"></h3>
+      <h3>Password Auto-Fill</h3>
 
       <div class="setting-section">
-        <label
-          for="selectedPasswordManagers"
-          data-string="settingsSelectPasswordManager"
-        ></label>
+        <label for="selectedPasswordManagers"
+          >Choose one of the supported password managers:</label
+        >
         <select
           id="selected-password-manager"
           name="selectedPasswordManager"
@@ -308,27 +239,24 @@
       </div>
 
       <div class="setting-section" id="keychain-view-link" hidden>
-        <a data-string="keychainViewPasswords"></a>
+        <a>View saved passwords</a>
       </div>
     </div>
 
     <div class="settings-container" id="proxy-settings-container">
-      <h3 data-string="settingsProxyHeading"></h3>
+      <h3>Proxy</h3>
 
       <div class="setting-section" id="proxy-type-container">
         <select id="selected-proxy-type">
-          <option data-string="settingsNoProxy"></option>
-          <option data-string="settingsManualProxy"></option>
-          <option data-string="settingsAutomaticProxy"></option>
+          <option>No Proxy</option>
+          <option>Manual Configuration</option>
+          <option>Automatic Configuration</option>
         </select>
       </div>
 
       <div class="setting-section" id="manual-proxy-section">
         <div class="setting-option">
-          <label
-            for="proxy-rules-input"
-            data-string="settingsProxyRules"
-          ></label>
+          <label for="proxy-rules-input">Proxy rules:</label>
           <input
             id="proxy-rules-input"
             type="text"
@@ -338,10 +266,7 @@
         </div>
 
         <div class="setting-option">
-          <label
-            for="proxy-bypass-rules-input"
-            data-string="settingsProxyBypassRules"
-          ></label>
+          <label for="proxy-bypass-rules-input">No proxy for:</label>
           <input
             name="proxyBypassRules"
             id="proxy-bypass-rules-input"
@@ -351,10 +276,7 @@
       </div>
 
       <div class="setting-option" id="pac-option">
-        <label
-          for="pac-url-input"
-          data-string="settingsProxyConfigurationURL"
-        ></label>
+        <label for="pac-url-input">Configuration URL</label>
         <input
           type="text"
           id="pac-url-input"
@@ -364,24 +286,20 @@
     </div>
 
     <div class="settings-container" id="keymap-settings-container">
-      <h3 data-string="settingsKeyboardShortcutsHeading"></h3>
-      <div
-        class="settings-info-subheading"
-        data-string="settingsKeyboardShortcutsHelp"
-      ></div>
+      <h3>Keyboard Shortcuts</h3>
+      <div class="settings-info-subheading">
+        Use commas to separate multiple shortcuts.
+      </div>
 
       <div class="setting-section">
         <ul id="key-map-list"></ul>
       </div>
     </div>
     <div class="settings-container" id="custom-bangs-container">
-      <h3 data-string="settingsCustomBangs"></h3>
+      <h3>Custom Commands</h3>
       <div class="setting-section">
         <ul id="custom-bangs"></ul>
-        <button
-          data-string="settingsCustomBangsAdd"
-          id="add-custom-bang"
-        ></button>
+        <button id="add-custom-bang">Add new command</button>
       </div>
     </div>
 
@@ -394,7 +312,7 @@
     >
       <div class="container">
         <i class="i carbon:information"></i>
-        <span data-string="settingsRestartRequired"></span>
+        <span>You need to restart to apply these changes.</span>
       </div>
     </div>
 
@@ -403,7 +321,6 @@
     <script src="../../js/util/searchEngine.js"></script>
     <script src="../../js/util/theme.js"></script>
     <script src="../../js/util/passwordManager.js"></script>
-    <script src="../../dist/localization.build.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

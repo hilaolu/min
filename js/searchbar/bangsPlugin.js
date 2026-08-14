@@ -167,7 +167,7 @@ function getBangSearchResults (text, input, inputFlags) {
     if (text === '!') {
       showBangSearchResults(text, results, input, inputFlags)
       searchbarPlugins.addResult('bangs', {
-        title: l('showMoreBangs'),
+        title: 'Show more',
         icon: 'carbon:chevron-down',
         click: function () {
           showBangSearchResults(text, results, input, inputFlags, Infinity)

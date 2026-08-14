@@ -10,11 +10,10 @@ const modules = [
   'js/preload/siteUnbreak.js',
   'js/util/settings/settingsPreload.js',
   'js/preload/passwordFill.js',
-  'js/preload/translate.js',
-  'js/preload/vimMode.js',
+  'js/preload/vimMode.js'
 ]
 
-function buildPreload() {
+function buildPreload () {
   /* concatenate modules */
   let output = ''
   modules.forEach(function (script) {

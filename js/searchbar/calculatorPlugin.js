@@ -44,7 +44,7 @@ function doMath (text, input, inputFlags) {
   searchbarPlugins.addResult('calculatorPlugin', {
     icon: 'carbon:calculator',
     title: result,
-    descriptionBlock: l('clickToCopy')
+    descriptionBlock: 'Click to copy'
   })
 
   const container = searchbarPlugins.getContainer('calculatorPlugin')
@@ -56,7 +56,7 @@ function doMath (text, input, inputFlags) {
       const descriptionBlockEl = item.querySelector('.description-block')
 
       clipboard.writeText(titleEl.innerText)
-      descriptionBlockEl.innerText = `${l('copied')}!`
+      descriptionBlockEl.innerText = 'Copied!'
     })
   }
 }

@@ -40,10 +40,10 @@ var readerView = {
 
     if (readerView.isReader(tabId)) {
       button.classList.add('is-reader')
-      button.setAttribute('title', l('exitReaderView'))
+      button.setAttribute('title', 'Exit Reader View')
     } else {
       button.classList.remove('is-reader')
-      button.setAttribute('title', l('enterReaderView'))
+      button.setAttribute('title', 'Enter Reader View')
 
       if (tab.readerable) {
         button.classList.add('can-reader')

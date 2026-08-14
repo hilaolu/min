@@ -78,8 +78,6 @@ module.exports = function (platform, extraOptions) {
       '!dist/app',
       // this is copied during the build
       '!**/icons/icon.icns',
-      // localization files are compiled and copied to dist
-      '!localization/',
       '!scripts/',
       // These are bundled in.
       '!**/main',

@@ -8,7 +8,7 @@ function getFormattedTitle (tab) {
     var title = searchbarUtils.getRealTitle(tab.title)
     return '"' + (title.length > 45 ? title.substring(0, 45).trim() + '...' : title) + '"'
   } else {
-    return l('newTabLabel')
+    return 'New Tab'
   }
 }
 
@@ -24,13 +24,13 @@ function showRestoreTask () {
   if (recentTabs.length === 1) {
     taskDescription = getFormattedTitle(recentTabs[0])
   } else if (recentTabs.length === 2) {
-    taskDescription = l('taskDescriptionTwo').replace('%t', getFormattedTitle(recentTabs[0])).replace('%t', getFormattedTitle(recentTabs[1]))
+    taskDescription = `${getFormattedTitle(recentTabs[0])} and ${getFormattedTitle(recentTabs[1])}`
   } else {
-    taskDescription = l('taskDescriptionThree').replace('%t', getFormattedTitle(recentTabs[0])).replace('%t', getFormattedTitle(recentTabs[1])).replace('%n', (lastTask.tabs.count() - 2))
+    taskDescription = `${getFormattedTitle(recentTabs[0])}, ${getFormattedTitle(recentTabs[1])}, and ${lastTask.tabs.count() - 2} more`
   }
 
   searchbarPlugins.addResult('restoreTask', {
-    title: l('returnToTask'),
+    title: 'Return to your previous task',
     descriptionBlock: taskDescription,
     icon: 'carbon:redo',
     click: function (e) {

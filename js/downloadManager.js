@@ -125,7 +125,7 @@ const downloadManager = {
       var template = [
         [
           {
-            label: l('downloadCancel'),
+            label: 'Cancel',
             click: function () {
               ipc.send('cancelDownload', downloadItem.path)
               downloadManager.removeItem(downloadItem.path)
@@ -155,16 +155,16 @@ const downloadManager = {
       elements.progress.hidden = true
       elements.dropdown.hidden = true
       elements.openFolder.hidden = false
-      elements.infoBox.textContent = l('downloadStateCompleted')
-      elements.detailedInfoBox.textContent = l('downloadStateCompleted')
+      elements.infoBox.textContent = 'Completed'
+      elements.detailedInfoBox.textContent = 'Completed'
     } else if (downloadItem.status === 'interrupted') {
       elements.container.classList.remove('loading')
       elements.container.classList.remove('completed')
       elements.progress.hidden = true
       elements.dropdown.hidden = true
       elements.openFolder.hidden = true
-      elements.infoBox.textContent = l('downloadStateFailed')
-      elements.detailedInfoBox.textContent = l('downloadStateFailed')
+      elements.infoBox.textContent = 'Failed'
+      elements.detailedInfoBox.textContent = 'Failed'
     } else {
       elements.container.classList.add('loading')
       elements.container.classList.remove('completed')

@@ -225,17 +225,17 @@ class OnePassword {
 
     // show credentials dialog
     var signInFields = [
-      { placeholder: l('email'), id: 'email', type: 'text' },
-      { placeholder: l('password'), id: 'password', type: 'password' },
-      { placeholder: l('secretKey'), id: 'secretKey', type: 'password' }
+      { placeholder: 'Email', id: 'email', type: 'text' },
+      { placeholder: 'Password', id: 'password', type: 'password' },
+      { placeholder: 'Secret key', id: 'secretKey', type: 'password' }
     ]
 
     // Verify the tool by trying to use it to unlock the password store.
     const credentials = ipcRenderer.sendSync('prompt', {
-      text: l('passwordManagerSetupSignIn'),
+      text: 'Sign in to your password manager to start using autofill. Your credentials won\'t be stored anywhere inside Min.',
       values: signInFields,
-      ok: l('dialogConfirmButton'),
-      cancel: l('dialogSkipButton'),
+      ok: 'Confirm',
+      cancel: 'Cancel',
       width: 500,
       height: 250
     })

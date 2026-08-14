@@ -160,13 +160,13 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
       return
     }
     event.preventDefault()
-    var title = l('loginPromptTitle').replace('%h', authInfo.host)
+    var title = `Sign in to ${authInfo.host}`
     createPrompt({
       text: title,
-      values: [{ placeholder: l('username'), id: 'username', type: 'text' },
-        { placeholder: l('password'), id: 'password', type: 'password' }],
-      ok: l('dialogConfirmButton'),
-      cancel: l('dialogSkipButton'),
+      values: [{ placeholder: 'Username', id: 'username', type: 'text' },
+        { placeholder: 'Password', id: 'password', type: 'password' }],
+      ok: 'Confirm',
+      cancel: 'Cancel',
       width: 400,
       height: 200
     }, function (result) {
@@ -191,7 +191,7 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
           var result = electron.dialog.showMessageBoxSync({
             type: 'question',
             buttons: ['OK', 'Cancel'],
-            message: l('openExternalApp').replace('%s', sanitizedName).replace(/\\/g, ''),
+            message: `Open in "${sanitizedName}"?`,
             detail: url.length > 160 ? url.substring(0, 160) + '...' : url
           })
 

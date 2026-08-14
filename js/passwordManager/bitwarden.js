@@ -169,10 +169,10 @@ class Bitwarden {
     ]
 
     const credentials = ipcRenderer.sendSync('prompt', {
-      text: l('passwordManagerBitwardenSignIn'),
+      text: 'To connect your Bitwarden account, go to vault.bitwarden.com/#/settings/account, scroll to the bottom, and choose "View API Key". Then paste the values into the fields below.',
       values: signInFields,
-      ok: l('dialogConfirmButton'),
-      cancel: l('dialogSkipButton'),
+      ok: 'Confirm',
+      cancel: 'Cancel',
       width: 500,
       height: 260
     })

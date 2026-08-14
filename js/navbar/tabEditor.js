@@ -83,7 +83,7 @@ const tabEditor = {
     webviews.hidePlaceholder('editMode')
   },
   initialize: function () {
-    tabEditor.input.setAttribute('placeholder', l('searchbarPlaceholder'))
+    tabEditor.input.setAttribute('placeholder', 'Search or enter address')
 
     tabEditor.star = bookmarkStar.create()
     tabEditor.container.appendChild(tabEditor.star)

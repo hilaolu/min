@@ -1,4 +1,4 @@
-document.title = l('settingsPreferencesHeading') + ' | Min'
+document.title = 'Preferences | Min'
 
 var contentTypeBlockingContainer = document.getElementById('content-type-blocking')
 var banner = document.getElementById('restart-required-banner')
@@ -29,16 +29,15 @@ var trackingLevelOptions = Array.from(trackingLevelContainer.querySelectorAll('i
 var blockingExceptionsContainer = document.getElementById('content-blocking-information')
 var blockingExceptionsInput = document.getElementById('content-blocking-exceptions')
 var blockedRequestCount = document.querySelector('#content-blocking-blocked-requests strong')
+const integerFormatter = new Intl.NumberFormat('en-US')
+const compactCountFormatter = new Intl.NumberFormat('en-US', {
+  notation: 'compact',
+  maximumSignificantDigits: 4
+})
 
 settings.listen('filteringBlockedCount', function (value) {
   var count = value || 0
-  var valueStr
-  if (count > 50000) {
-    valueStr = new Intl.NumberFormat(navigator.locale, { notation: 'compact', maximumSignificantDigits: 4 }).format(count)
-  } else {
-    valueStr = new Intl.NumberFormat().format(count)
-  }
-  blockedRequestCount.textContent = valueStr
+  blockedRequestCount.textContent = (count > 50000 ? compactCountFormatter : integerFormatter).format(count)
 })
 
 function updateBlockingLevelUI (level) {
@@ -121,15 +120,8 @@ blockingExceptionsInput.addEventListener('input', function () {
 /* content type settings */
 
 var contentTypes = {
-  // humanReadableName: contentType
-  scripts: 'script',
-  images: 'image'
-}
-
-// used for showing localized strings
-var contentTypeSettingNames = {
-  scripts: 'settingsBlockScriptsToggle',
-  images: 'settingsBlockImagesToggle'
+  scripts: { filterValue: 'script', label: 'Block scripts' },
+  images: { filterValue: 'image', label: 'Block images' }
 }
 
 for (var contentType in contentTypes) {
@@ -140,19 +132,20 @@ for (var contentType in contentTypes) {
       var section = document.createElement('div')
       section.classList.add('setting-section')
 
-      var id = 'checkbox-block-' + contentTypes[contentType]
+      var contentTypeDefinition = contentTypes[contentType]
+      var id = 'checkbox-block-' + contentTypeDefinition.filterValue
 
       var checkbox = document.createElement('input')
       checkbox.type = 'checkbox'
       checkbox.id = id
 
       if (value && value.contentTypes) {
-        checkbox.checked = value.contentTypes.indexOf(contentTypes[contentType]) != -1
+        checkbox.checked = value.contentTypes.indexOf(contentTypeDefinition.filterValue) !== -1
       }
 
       var label = document.createElement('label')
       label.setAttribute('for', id)
-      label.textContent = l(contentTypeSettingNames[contentType])
+      label.textContent = contentTypeDefinition.label
 
       section.appendChild(checkbox)
       section.appendChild(label)
@@ -169,9 +162,9 @@ for (var contentType in contentTypes) {
           }
 
           if (e.target.checked) { // add the item to the array
-            value.contentTypes.push(contentTypes[contentType])
+            value.contentTypes.push(contentTypeDefinition.filterValue)
           } else { // remove the item from the array
-            var idx = value.contentTypes.indexOf(contentTypes[contentType])
+            var idx = value.contentTypes.indexOf(contentTypeDefinition.filterValue)
             value.contentTypes.splice(idx, 1)
           }
 
@@ -283,24 +276,6 @@ settings.get('showDividerBetweenTabs', function (value) {
 
 showDividerCheckbox.addEventListener('change', function (e) {
   settings.set('showDividerBetweenTabs', this.checked)
-})
-
-/* language setting*/
-
-var languagePicker = document.getElementById('setting-language-picker')
-
-for (var language in languages) { //from localization.build.js
-  var item = document.createElement('option')
-  item.textContent = languages[language].name
-  item.value = languages[language].identifier
-  languagePicker.appendChild(item)
-}
-
-languagePicker.value = getCurrentLanguage()
-
-languagePicker.addEventListener('change', function () {
-  settings.set('userSelectedLanguage', this.value)
-  showRestartRequiredBanner()
 })
 
 /* separate titlebar setting */
@@ -433,7 +408,7 @@ smoothScrollingCheckbox.addEventListener('change', function (e) {
 var searchEngineDropdown = document.getElementById('default-search-engine')
 var searchEngineInput = document.getElementById('custom-search-engine')
 
-searchEngineInput.setAttribute('placeholder', l('customSearchEngineDescription'))
+searchEngineInput.setAttribute('placeholder', 'Replace the search term with %s')
 
 settings.onLoad(function () {
   if (currentSearchEngine.custom) {
@@ -667,9 +642,9 @@ function createBang (bang, snippet, redirect) {
   redirectInput.value = redirect ?? ''
   xButton.className = 'i carbon:close custom-bang-delete-button'
 
-  bangInput.placeholder = l('settingsCustomBangsPhrase')
-  snippetInput.placeholder = l('settingsCustomBangsSnippet')
-  redirectInput.placeholder = l('settingsCustomBangsRedirect')
+  bangInput.placeholder = 'Phrase (Required)'
+  snippetInput.placeholder = 'Description (Optional)'
+  redirectInput.placeholder = 'Redirect URL (Required)'
   xButton.addEventListener('click', function () {
     li.remove()
     settings.get('customBangs', (d) => {

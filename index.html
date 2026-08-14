@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="script-src 'self'" />
@@ -113,26 +113,29 @@
       class="theme-background-color theme-text-color windowDragHandle"
       tabindex="-1"
     >
-    <div id="mac-window-drag-area"></div>
+      <div id="mac-window-drag-area"></div>
       <button
         id="menu-button"
         class="navbar-action-button i carbon:overflow-menu-vertical"
-        data-label="openMenu"
+        title="Open menu"
+        aria-label="Open menu"
         tabindex="-1"
       ></button>
       <div id="toolbar-navigation-buttons" hidden>
-          <button
+        <button
           id="back-button"
           class="navbar-action-button i carbon:chevron-left"
-          data-label="goBack"
+          title="Go Back"
+          aria-label="Go Back"
           tabindex="-1"
         ></button>
         <button
-        id="forward-button"
-        class="navbar-action-button i carbon:chevron-right"
-        data-label="goForward"
-        tabindex="-1"
-      ></button>
+          id="forward-button"
+          class="navbar-action-button i carbon:chevron-right"
+          title="Go Forward"
+          aria-label="Go Forward"
+          tabindex="-1"
+        ></button>
       </div>
       <div id="tabs">
         <div id="tab-editor" hidden>
@@ -144,7 +147,8 @@
         <button
           id="add-tab-button"
           class="navbar-action-button i carbon:add"
-          data-label="newTabAction"
+          title="New Tab"
+          aria-label="New Tab"
           tabindex="-1"
         ></button>
       </div>
@@ -153,7 +157,8 @@
     <button
       id="switch-task-button"
       class="navbar-action-button theme-text-color windowDragHandle i"
-      data-label="viewTasks"
+      title="View Tasks"
+      aria-label="View Tasks"
       tabindex="-1"
     >
       <svg
@@ -201,11 +206,13 @@
       </div>
       <img id="webview-placeholder" hidden aria-hidden="true" />
       <div id="ntp-content">
-          <img id="ntp-background" hidden>
-          <div id="ntp-background-controls">
-            <button id="ntp-image-remove"><i class="i carbon:trash-can"></i></button>
-            <button id="ntp-image-picker"><i class="i carbon:camera"></i></button>
-          </div>
+        <img id="ntp-background" hidden />
+        <div id="ntp-background-controls">
+          <button id="ntp-image-remove">
+            <i class="i carbon:trash-can"></i>
+          </button>
+          <button id="ntp-image-picker"><i class="i carbon:camera"></i></button>
+        </div>
       </div>
     </div>
 
@@ -232,15 +239,12 @@
     </div>
 
     <div id="task-overlay" class="" hidden tabindex="-1">
-      <div
-        class="simulated-navbar windowDragHandle"
-        id="task-overlay-navbar"
-      >
-      <div class="task-search-input-container">
-        <i class="i carbon:search"></i>
-        <input type="search" id="task-search-input"/>
+      <div class="simulated-navbar windowDragHandle" id="task-overlay-navbar">
+        <div class="task-search-input-container">
+          <i class="i carbon:search"></i>
+          <input type="search" id="task-search-input" />
+        </div>
       </div>
-    </div>
       <div id="task-area"></div>
       <button id="add-task">
         <i class="i carbon:new-tab"></i>
@@ -249,8 +253,18 @@
     </div>
 
     <!-- Command palette input (UI handled by overlay window) -->
-    <input type="text" id="command-palette-input" placeholder="Search tabs or type >w, >r..." 
-           style="position: absolute; top: -9999px; left: -9999px; opacity: 0; pointer-events: none;" />
+    <input
+      type="text"
+      id="command-palette-input"
+      placeholder="Search tabs or type >w, >r..."
+      style="
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+        opacity: 0;
+        pointer-events: none;
+      "
+    />
 
     <div id="download-bar" hidden>
       <div id="download-container" role="list" class="has-thin-scrollbar"></div>
@@ -265,34 +279,26 @@
       ></button>
 
       <div id="manager-setup-instructions-primary">
-        <div
-          class="light-fade"
-          data-string="passwordManagerSetupStep1"
-          data-allowHTML
-        ></div>
+        <div class="light-fade">
+          First, <a id="password-manager-setup-link"></a> and extract it for
+          your system.
+        </div>
         <div class="spacer"></div>
-        <div
-          class="light-fade"
-          data-string="passwordManagerSetupStep2"
-          data-allowHTML
-        ></div>
+        <div class="light-fade">Then drag the tool into the box below:</div>
       </div>
 
       <div id="manager-setup-instructions-secondary">
-        <div
-          class="light-fade"
-          data-string="passwordManagerInstallerSetup"
-          data-allowHTML
-        ></div>
+        <div class="light-fade">
+          Download <a id="password-manager-setup-link-installer"></a> and drag
+          the file into the box below:
+        </div>
       </div>
 
       <div class="spacer"></div>
 
-      <div
-        id="manager-setup-drop-box"
-        class="drag-and-drop-box"
-        data-string="passwordManagerSetupDragBox"
-      ></div>
+      <div id="manager-setup-drop-box" class="drag-and-drop-box">
+        Drag the tool here
+      </div>
 
       <div class="spacer"></div>
       <div class="spacer"></div>
@@ -301,7 +307,7 @@
         <input
           type="button"
           id="manager-setup-disable"
-          data-value="disableAutofill"
+          value="Disable Autofill"
         />
       </div>
     </div>
@@ -317,34 +323,26 @@
         ></button>
       </span>
       <span class="password-capture-section">
-        <button
-          id="password-capture-save"
-          data-string="passwordCaptureSave"
-        ></button>
-        <button
-          id="password-capture-ignore"
-          data-string="passwordCaptureDontSave"
-        ></button>
+        <button id="password-capture-save">Save</button>
+        <button id="password-capture-ignore">Don't save</button>
       </span>
-      <button
-      id="password-capture-never-save"
-      data-string="passwordCaptureNeverSave"
-      ></button>
+      <button id="password-capture-never-save">Never save</button>
     </div>
 
     <div id="password-viewer" class="modal" hidden>
-      <h2 class="modal-title" data-string="savedPasswordsHeading"></h2>
+      <h2 class="modal-title">Saved passwords</h2>
       <button class="modal-close-button i carbon:close"></button>
-      <div
-        id="password-viewer-empty"
-        data-string="savedPasswordsEmpty"
-        hidden
-      ></div>
+      <div id="password-viewer-empty" hidden>No saved passwords.</div>
       <div id="password-viewer-list"></div>
       <div id="password-viewer-import-container">
-        <button id="password-viewer-import"><span class="i carbon:document-import"></span><span data-string="importCredentials"></span></button>
-        <button id="password-viewer-export"><span class="i carbon:export"></span><span data-string="exportCredentials"></span></button>
-</div>
+        <button id="password-viewer-import">
+          <span class="i carbon:document-import"></span
+          ><span>Import credentials</span>
+        </button>
+        <button id="password-viewer-export">
+          <span class="i carbon:export"></span><span>Export credentials</span>
+        </button>
+      </div>
     </div>
 
     <!-- add scripts in Gruntfile.js -->

@@ -14,18 +14,18 @@ ipc.handle('startFileDrag', function (e, path) {
 function showFocusModeDialog1 () {
   dialog.showMessageBox({
     type: 'info',
-    buttons: [l('closeDialog')],
-    message: l('isFocusMode'),
-    detail: l('focusModeExplanation1') + ' ' + l('focusModeExplanation2')
+    buttons: ['OK'],
+    message: 'You\'re in Focus Mode.',
+    detail: 'In focus mode, you can\'t create new tabs or switch tasks. You can leave focus mode by unchecking "focus mode" in the view menu.'
   })
 }
 
 function showFocusModeDialog2 () {
   dialog.showMessageBox({
     type: 'info',
-    buttons: [l('closeDialog')],
-    message: l('isFocusMode'),
-    detail: l('focusModeExplanation2')
+    buttons: ['OK'],
+    message: 'You\'re in Focus Mode.',
+    detail: 'You can leave focus mode by unchecking "focus mode" in the view menu.'
   })
 }
 

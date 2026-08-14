@@ -5,7 +5,7 @@ var searchbarAutocomplete = require('util/autocomplete.js')
 var urlParser = require('util/urlParser.js')
 var searchEngine = require('util/searchEngine.js')
 
-var ddgAttribution = l('resultsFromDDG')
+var ddgAttribution = 'Results from DuckDuckGo'
 
 function removeTags (text) {
   return text.replace(/<.*?>/g, '')
@@ -48,7 +48,7 @@ var instantAnswers = {
     if (answer.data) {
       descriptionBlock = answer.data.title
     } else {
-      descriptionBlock = l('DDGAnswerSubtitle')
+      descriptionBlock = 'Answer'
     }
 
     return {
@@ -88,7 +88,7 @@ function showSearchbarInstantAnswers (text, input, inputFlags) {
     } else if (res.Abstract || (res.Answer && typeof res.Answer === 'string')) {
       data = {
         title: (typeof res.Answer === 'string' && removeTags(res.Answer)) || removeTags(res.Heading),
-        descriptionBlock: res.Abstract || l('DDGAnswerSubtitle'),
+        descriptionBlock: res.Abstract || 'Answer',
         attribution: ddgAttribution,
         url: res.AbstractURL || text
       }
@@ -171,7 +171,7 @@ function showSearchbarInstantAnswers (text, input, inputFlags) {
       searchbarPlugins.addResult('instantAnswers', {
         icon: 'carbon:search',
         title: res.Heading,
-        secondaryText: l('searchWith').replace('%s', 'OpenStreetMap'),
+        secondaryText: 'Search with OpenStreetMap',
         classList: ['ddg-answer'],
         url: 'https://www.openstreetmap.org/search?query=' + encodeURIComponent(res.Heading)
       })

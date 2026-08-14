@@ -8,7 +8,6 @@
   "main": "main.build.js",
   "standard": {
     "globals": [
-      "l",
       "tabs",
       "tasks",
       "globalArgs",
@@ -29,7 +28,6 @@
     ]
   },
   "dependencies": {
-    "@browsermt/bergamot-translator": "^0.4.9",
     "@electron/fuses": "^1.8.0",
     "chokidar": "^3.6.0",
     "dexie": "^3.0.3",
@@ -49,7 +47,6 @@
     "archiver": "^4.0.1",
     "browserify": "^16.5.1",
     "concurrently": "^5.2.0",
-    "decomment": "^0.9.0",
     "electron": "41.2.0",
     "electron-builder": "^24.13.3",
     "electron-installer-windows": "^3.0.0",

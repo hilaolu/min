@@ -156,7 +156,7 @@ const bookmarkManager = {
 
     if (text === '' && results.length < 3) {
       container.appendChild(searchbarUtils.createItem({
-        title: l('importBookmarks'),
+        title: 'Import bookmarks from HTML file',
         icon: 'carbon:upload',
         click: function () {
           searchbar.openURL('!importbookmarks', null)
@@ -171,7 +171,7 @@ const bookmarkManager = {
       if (suggestedResults.length === 0) {
         return
       }
-      searchbarPlugins.addHeading('bangs', { text: l('bookmarksSimilarItems') })
+      searchbarPlugins.addHeading('bangs', { text: 'Similar items' })
       suggestedResults.forEach(function (result, index) {
         var item = searchbarUtils.createItem(getBookmarkListItemData(result, false))
         container.appendChild(item)
@@ -181,7 +181,7 @@ const bookmarkManager = {
   initialize: function () {
     bangsPlugin.registerCustomBang({
       phrase: '!bookmarks',
-      snippet: l('searchBookmarks'),
+      snippet: 'Search bookmarks',
       isAction: false,
       showSuggestions: bookmarkManager.showBookmarks,
       fn: function (text) {

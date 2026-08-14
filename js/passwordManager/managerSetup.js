@@ -22,11 +22,11 @@ const setupDialog = {
     setupDialog.manager = manager
     setupDialog.setupMode = manager.getSetupMode()
 
-    document.getElementById('manager-setup-heading').textContent = l('passwordManagerSetupHeading').replace('%p', manager.name)
-    document.getElementById('password-manager-setup-link').textContent = l('passwordManagerSetupLink').replace('%p', manager.name)
-    document.getElementById('password-manager-setup-link-installer').textContent = l('passwordManagerSetupLinkInstaller').replace('%p', manager.name)
+    document.getElementById('manager-setup-heading').textContent = `Finish setting up ${manager.name} to use Autofill`
+    document.getElementById('password-manager-setup-link').textContent = `download the ${manager.name} CLI tool`
+    document.getElementById('password-manager-setup-link-installer').textContent = `the ${manager.name} CLI installer`
 
-    dragBox.textContent = l('passwordManagerSetupDragBox')
+    dragBox.textContent = 'Drag the tool here'
 
     if (setupDialog.setupMode === 'installer') {
       primaryInstructions.hidden = true
@@ -100,13 +100,13 @@ const setupDialog = {
         return
       }
 
-      dragBox.innerHTML = l('passwordManagerSetupInstalling')
+      dragBox.textContent = 'Installing...'
 
       const filePath = electron.webUtils.getPathForFile(e.dataTransfer.files[0])
 
       // try to filter out anything that isn't an executable (note: not 100% accurate)
       if (e.dataTransfer.files[0].type !== '' && !e.dataTransfer.files[0].name.endsWith('.exe')) {
-        dragBox.innerHTML = l('passwordManagerSetupRetry')
+        dragBox.textContent = 'Make sure you\'re using the right file and entering a correct password. You can retry by dragging the tool here again.'
         return
       }
 
@@ -181,7 +181,7 @@ function afterInstall (toolPath) {
         }
 
         const message = (e.error || '').replace(/\n$/gm, '')
-        dragBox.innerHTML = l('passwordManagerSetupUnlockError') + message + ' ' + l('passwordManagerSetupRetry')
+        dragBox.textContent = `Failed to unlock the password store: ${message} Make sure you're using the right file and entering a correct password. You can retry by dragging the tool here again.`
       }
     })
 }

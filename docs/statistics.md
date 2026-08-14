@@ -2,7 +2,7 @@
 
 By default, Min sends some statistics about how it's used. Currently, these include:
 
-* Your operating system and computer language
+* Your operating system
 * When you installed Min
 * The version of Min that you're using
 * How often you use certain features in Min

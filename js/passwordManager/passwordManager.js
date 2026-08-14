@@ -49,10 +49,10 @@ const PasswordManagers = {
   promptForMasterPassword: async function (manager) {
     return new Promise((resolve, reject) => {
       const { password } = ipcRenderer.sendSync('prompt', {
-        text: l('passwordManagerUnlock').replace('%p', manager.name),
-        values: [{ placeholder: l('password'), id: 'password', type: 'password' }],
-        ok: l('dialogConfirmButton'),
-        cancel: l('dialogSkipButton'),
+        text: `Enter your ${manager.name} master password to unlock the password store:`,
+        values: [{ placeholder: 'Password', id: 'password', type: 'password' }],
+        ok: 'Confirm',
+        cancel: 'Cancel',
         height: 175
       })
       if (password === null || password === '') {

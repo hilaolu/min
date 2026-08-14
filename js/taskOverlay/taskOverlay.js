@@ -290,7 +290,7 @@ var taskOverlay = {
     var container = document.querySelector('.task-search-input-container')
     var input = document.getElementById('task-search-input')
 
-    input.placeholder = l('tasksSearchTabs') + ' (T)'
+    input.placeholder = 'Search tabs' + ' (T)'
 
     container.addEventListener('click', e => { e.stopPropagation(); input.focus() })
 
@@ -400,8 +400,8 @@ var taskOverlay = {
     keybindings.defineShortcut('addTask', addTaskFromMenu)
     ipcRenderer.on('addTask', addTaskFromMenu) // for menu item
 
-    taskSwitcherButton.title = l('viewTasks')
-    addTaskLabel.textContent = l('newTask')
+    taskSwitcherButton.title = 'View Tasks'
+    addTaskLabel.textContent = 'New Task'
 
     taskSwitcherButton.addEventListener('click', function () {
       taskOverlay.toggle()

@@ -10,7 +10,7 @@ module.exports = {
   initialize: function () {
     bangsPlugin.registerCustomBang({
       phrase: '!history',
-      snippet: l('searchHistory'),
+      snippet: 'Search history',
       icon: 'carbon:recently-viewed',
       isAction: false,
       showSuggestions: async function (text, input, event) {
@@ -25,11 +25,11 @@ module.exports = {
         if (text === '' && results.length > 0) {
           var clearButton = document.createElement('button')
           clearButton.className = 'searchbar-floating-button'
-          clearButton.textContent = l('clearHistory')
+          clearButton.textContent = 'Clear All History'
           container.appendChild(clearButton)
 
           clearButton.addEventListener('click', function () {
-            if (confirm(l('clearHistoryConfirmation'))) {
+            if (confirm('Clear all history and browsing data?')) {
               places.deleteAllHistory()
               ipc.invoke('clearStorageData')
 

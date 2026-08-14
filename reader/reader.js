@@ -3,6 +3,11 @@
 var backbutton = document.getElementById('backtoarticle-link')
 var articleURL = new URLSearchParams(window.location.search).get('url')
 var articleLocation = new URL(articleURL)
+const readerDateFormatter = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+})
 
 backbutton.addEventListener('click', function (e) {
   // there's likely a problem with reader view on this page, so don't auto-redirect to it in the future
@@ -175,7 +180,7 @@ function extractDate (doc) {
         // for washington post
         d = Date.parse(dateItem.textContent)
       }
-      date = new Intl.DateTimeFormat(navigator.language, { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(d))
+      date = readerDateFormatter.format(new Date(d))
     } catch (e) {
       console.warn(e)
     }
@@ -188,7 +193,7 @@ function extractDate (doc) {
         d2.setYear(parseInt(urlmatch[1]))
         d2.setMonth(parseInt(urlmatch[2]) - 1)
         d2.setDate(parseInt(urlmatch[3]))
-        date = new Intl.DateTimeFormat(navigator.language, { year: 'numeric', month: 'long', day: 'numeric' }).format(d2)
+        date = readerDateFormatter.format(d2)
       }
     } catch (e) {
       console.warn(e)
@@ -222,7 +227,7 @@ function startReaderView (article, date) {
 
     if (article.publishedTime) {
       try {
-        date = new Intl.DateTimeFormat(navigator.language, { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(article.publishedTime))
+        date = readerDateFormatter.format(new Date(article.publishedTime))
       } catch (e) {
         console.warn(e)
       }

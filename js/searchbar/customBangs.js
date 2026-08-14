@@ -83,7 +83,7 @@ function searchAndSortTasks (text) {
 
     taskResults = taskResults.filter(function (t) {
       const task = t.task
-      const taskName = (task.name ? task.name : l('defaultTaskName').replace('%n', tasks.getIndex(task.id) + 1)).toLowerCase()
+      const taskName = (task.name || `Task ${tasks.getIndex(task.id) + 1}`).toLowerCase()
       const exactMatch = taskName.indexOf(searchText) !== -1
       const fuzzyTitleScore = quickScore(taskName, searchText)
 
@@ -97,7 +97,7 @@ function searchAndSortTasks (text) {
 function initialize () {
   bangsPlugin.registerCustomBang({
     phrase: '!settings',
-    snippet: l('viewSettings'),
+    snippet: 'View Settings',
     icon: 'carbon:settings',
     isAction: true,
     fn: function (text) {
@@ -107,7 +107,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!back',
-    snippet: l('goBack'),
+    snippet: 'Go Back',
     isAction: true,
     fn: function (text) {
       webviews.callAsync(tabs.getSelected(), 'goBack')
@@ -116,7 +116,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!forward',
-    snippet: l('goForward'),
+    snippet: 'Go Forward',
     isAction: true,
     fn: function (text) {
       webviews.callAsync(tabs.getSelected(), 'goForward')
@@ -125,7 +125,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!screenshot',
-    snippet: l('takeScreenshot'),
+    snippet: 'Take a Screenshot',
     icon: 'carbon:image',
     isAction: true,
     fn: function (text) {
@@ -137,11 +137,11 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!clearhistory',
-    snippet: l('clearHistory'),
+    snippet: 'Clear All History',
     icon: 'carbon:trash-can',
     isAction: true,
     fn: function (text) {
-      if (confirm(l('clearHistoryConfirmation'))) {
+      if (confirm('Clear all history and browsing data?')) {
         places.deleteAllHistory()
         ipc.invoke('clearStorageData')
       }
@@ -150,7 +150,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!enableblocking',
-    snippet: l('enableBlocking'),
+    snippet: 'Enable content blocking for this site',
     isAction: true,
     fn: function (text) {
       contentBlockingToggle.enableBlocking(tabs.get(tabs.getSelected()).url)
@@ -159,7 +159,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!disableblocking',
-    snippet: l('disableBlocking'),
+    snippet: 'Disable content blocking for this site',
     isAction: true,
     fn: function (text) {
       contentBlockingToggle.disableBlocking(tabs.get(tabs.getSelected()).url)
@@ -168,7 +168,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!movetotask',
-    snippet: l('moveToTask'),
+    snippet: 'Move this tab to a task',
     icon: 'carbon:folder-move-to',
     isAction: false,
     showSuggestions: function (text, input, event) {
@@ -180,7 +180,7 @@ function initialize () {
         const task = t.task
         const lastActivity = t.lastActivity
 
-        const taskName = (task.name ? task.name : l('defaultTaskName').replace('%n', tasks.getIndex(task.id) + 1))
+        const taskName = task.name || `Task ${tasks.getIndex(task.id) + 1}`
 
         const data = {
           title: taskName,
@@ -226,7 +226,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!task',
-    snippet: l('switchToTask'),
+    snippet: 'Switch to Task',
     icon: 'carbon:folder',
     isAction: false,
     showSuggestions: function (text, input, event) {
@@ -238,7 +238,7 @@ function initialize () {
         const task = t.task
         const lastActivity = t.lastActivity
 
-        const taskName = (task.name ? task.name : l('defaultTaskName').replace('%n', tasks.getIndex(task.id) + 1))
+        const taskName = task.name || `Task ${tasks.getIndex(task.id) + 1}`
 
         const data = {
           title: taskName,
@@ -265,7 +265,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!newtask',
-    snippet: l('createTask'),
+    snippet: 'Create a Task',
     icon: 'carbon:folder-add',
     isAction: true,
     fn: function (text) {
@@ -288,7 +288,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!closetask',
-    snippet: l('closeTask'),
+    snippet: 'Close a Task',
     icon: 'carbon:folder-off',
     isAction: false,
     fn: function (text) {
@@ -315,7 +315,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!nametask',
-    snippet: l('nameTask'),
+    snippet: 'Name this task',
     isAction: false,
     fn: function (text) {
       tasks.update(tasks.getSelected().id, { name: text })
@@ -324,7 +324,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!importbookmarks',
-    snippet: l('importBookmarks'),
+    snippet: 'Import bookmarks from HTML file',
     icon: 'carbon:upload',
     isAction: true,
     fn: async function () {
@@ -349,7 +349,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!exportbookmarks',
-    snippet: l('exportBookmarks'),
+    snippet: 'Export bookmarks',
     icon: 'carbon:download',
     isAction: true,
     fn: async function () {
@@ -362,7 +362,7 @@ function initialize () {
 
   bangsPlugin.registerCustomBang({
     phrase: '!addbookmark',
-    snippet: l('addBookmark'),
+    snippet: 'Add bookmark',
     icon: 'carbon:star',
     fn: function (text) {
       const url = tabs.get(tabs.getSelected()).url

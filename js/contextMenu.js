@@ -10,31 +10,31 @@ module.exports = {
       var inputMenu = [
         [
           {
-            label: l('undo'),
+            label: 'Undo',
             role: 'undo'
           },
           {
-            label: l('redo'),
+            label: 'Redo',
             role: 'redo'
           }
         ],
         [
           {
-            label: l('cut'),
+            label: 'Cut',
             role: 'cut'
           },
           {
-            label: l('copy'),
+            label: 'Copy',
             role: 'copy'
           },
           {
-            label: l('paste'),
+            label: 'Paste',
             role: 'paste'
           }
         ],
         [
           {
-            label: l('selectAll'),
+            label: 'Select All',
             role: 'selectall'
           }
         ]
@@ -46,7 +46,7 @@ module.exports = {
         if (node.nodeName.match(/^(input|textarea)$/i) || node.isContentEditable) {
           if (node.id === 'tab-editor-input') {
             inputMenu[1].push({
-              label: l('pasteAndGo'),
+              label: 'Paste and Go',
               click: function () {
                 searchbar.openURL(electron.clipboard.readText())
               }

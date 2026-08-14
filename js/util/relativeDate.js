@@ -1,5 +1,4 @@
-// creating formatters is slow, so we we reuse the same one for every call
-const formatterInstance = new Intl.DateTimeFormat(navigator.language, { year: 'numeric', month: 'long' })
+const formatEnglishDate = require('util/dateFormat.js')
 
 function formatRelativeDate (date) {
   var currentTime = Date.now()
@@ -11,13 +10,13 @@ function formatRelativeDate (date) {
   var msPerDay = (24 * 60 * 60 * 1000)
 
   var relativeDateRanges = [
-    [0, 60000, l('timeRangeJustNow')],
-    [60000, 300000, l('timeRangeMinutes')],
-    [300000, 3600000, l('timeRangeHour')],
-    [3600000, timeElapsedToday, l('timeRangeToday')],
-    [timeElapsedToday, timeElapsedToday + msPerDay, l('timeRangeYesterday')],
-    [timeElapsedToday + msPerDay, 604800000, l('timeRangeWeek')],
-    [604800000, 2592000000, l('timeRangeMonth')]
+    [0, 60000, 'Just now'],
+    [60000, 300000, 'A few minutes ago'],
+    [300000, 3600000, 'In the past hour'],
+    [3600000, timeElapsedToday, 'Today'],
+    [timeElapsedToday, timeElapsedToday + msPerDay, 'Yesterday'],
+    [timeElapsedToday + msPerDay, 604800000, 'In the past week'],
+    [604800000, 2592000000, 'In the past month']
   ]
 
   var diff = Date.now() - date
@@ -26,7 +25,7 @@ function formatRelativeDate (date) {
       return relativeDateRanges[i][2]
     }
   }
-  return formatterInstance.format(new Date(date))
+  return formatEnglishDate(new Date(date), { includeDay: false })
 }
 
 module.exports = formatRelativeDate

@@ -17,28 +17,28 @@ function retry () {
 }
 
 var websiteNotFound = {
-  name: l('serverNotFoundTitle'),
-  message: l('serverNotFoundSubtitle'),
+  name: 'Server not found',
+  message: 'Min couldn\'t find this website.',
   secondaryAction: {
-    title: l('archiveSearchAction'),
+    title: 'Search on archive.org',
     url: 'https://web.archive.org/web/*/' + url
   },
   retryOnReconnect: true
 }
 
 var sslError = {
-  name: l('sslErrorTitle'),
-  message: l('sslErrorMessage')
+  name: 'This website is not available',
+  message: 'Min couldn\'t connect securely to this website.'
 }
 
 var dnsError = {
-  name: l('dnsErrorTitle'),
-  messge: l('dnsErrorMessage')
+  name: 'Website not found',
+  messge: 'A DNS error occurred.'
 }
 
 var offlineError = {
-  name: l('offlineErrorTitle'),
-  message: l('offlineErrorMessage'),
+  name: 'You are offline',
+  message: 'Reconnect to the internet and try again.',
   retryOnReconnect: true
 }
 
@@ -260,12 +260,12 @@ const errorCodes = {
 // list: https://source.chromium.org/chromium/chromium/src/+/master:net/base/net_error_list.h
 const erorDescriptions = {
   crash: {
-    name: l('crashErrorTitle'),
-    message: l('crashErrorSubtitle')
+    name: 'Something went wrong.',
+    message: 'A problem has occurred while displaying this page.'
   },
   '-21': offlineError, // network changed
   '-104': {
-    message: l('genericConnectionFail')
+    message: 'Min couldn\'t connect to the website.'
   },
   '-105': websiteNotFound,
   '-106': offlineError,
@@ -278,8 +278,8 @@ const erorDescriptions = {
   '-117': sslError,
   '-200': sslError,
   '-201': {
-    name: l('sslErrorTitle'),
-    message: l('sslTimeErrorMessage')
+    name: 'This website is not available',
+    message: 'Min couldn\'t connect securely to this website. Please make sure your computer\'s clock is set correctly.'
   },
   '-202': sslError,
   '-203': sslError,
@@ -293,7 +293,7 @@ const erorDescriptions = {
   '-212': sslError,
   '-213': sslError,
   '-300': {
-    name: l('addressInvalidTitle')
+    name: 'This address is invalid.'
   },
   '-501': sslError,
   '-800': dnsError,
@@ -321,7 +321,7 @@ if (errDesc) {
   title = errDesc.name || ''
   subtitle = errDesc.message || ''
 } else {
-  title = l('genericError')
+  title = 'An error occurred'
   subtitle = (errorCodes[ec] || '') + ' (' + ec + ')'
 }
 

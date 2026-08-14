@@ -30,13 +30,13 @@ const bookmarkEditor = {
         remoteMenu.open([
           [
             {
-              label: l('bookmarksRenameTag'),
+              label: 'Rename Tag',
               click: async function () {
                 const res = ipcRenderer.sendSync('prompt', {
                   text: '',
-                  values: [{ placeholder: l('bookmarksRenameTag'), id: 'name', type: 'text' }],
-                  ok: l('dialogConfirmButton'),
-                  cancel: l('dialogSkipButton'),
+                  values: [{ placeholder: 'Rename Tag', id: 'name', type: 'text' }],
+                  ok: 'Confirm',
+                  cancel: 'Cancel',
                   width: 500,
                   height: 140
                 })
@@ -62,7 +62,7 @@ const bookmarkEditor = {
               }
             },
             {
-              label: l('bookmarksDeleteTag'),
+              label: 'Delete Tag',
               click: async function () {
                 const items = await places.getAllItems()
                 items.forEach(function (item) {
@@ -77,7 +77,7 @@ const bookmarkEditor = {
               }
             },
             {
-              label: l('deleteBookmarksWithTag'),
+              label: 'Delete Bookmarks with Tag',
               click: async function () {
                 const items = await places.getAllItems()
                 items.forEach(function (item) {
@@ -176,7 +176,7 @@ const bookmarkEditor = {
       // add option for new tag
       var newTagInput = document.createElement('input')
       newTagInput.className = 'tag-input'
-      newTagInput.placeholder = l('bookmarksAddTag')
+      newTagInput.placeholder = 'Add tag...'
       newTagInput.spellcheck = false
       tagArea.appendChild(newTagInput)
 

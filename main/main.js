@@ -62,14 +62,11 @@ if (isDevelopmentMode) {
 
 // workaround for flicker when focusing app (https://github.com/electron/electron/issues/17942)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
+app.commandLine.appendSwitch('lang', 'en-US')
 
 var userDataPath = app.getPath('userData')
 
 settings.initialize(userDataPath)
-
-if (settings.get('userSelectedLanguage')) {
-  app.commandLine.appendSwitch('lang', settings.get('userSelectedLanguage'))
-}
 
 // Disable QUIC if setting is disabled
 if (settings.get('enableQUIC') === false) {
@@ -543,33 +540,6 @@ ipc.on('places-connect', function (e) {
 function getWindowWebContents (win) {
   return win.getContentView().children[0].webContents
 }
-
-/* translate service */
-
-const translatePage = 'min://app/pages/translateService/index.html'
-const translatePreload = __dirname + '/pages/translateService/translateServicePreload.js'
-
-app.on('ready', function() {
-  ipc.on('page-translation-session-create', function(e) {
-    let translateWindow = new BrowserWindow({
-      width: 300,
-      height: 300,
-      show: false,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        preload: translatePreload
-      }
-    })
-  
-    translateWindow.loadURL(translatePage)
-    // translateWindow.webContents.openDevTools({mode: 'detach'})
-
-    translateWindow.webContents.once('did-finish-load', function() {
-      translateWindow.webContents.postMessage('page-translation-session-create', null, e.ports)
-    })
-  })
-})
 
 /* command palette overlay */
 

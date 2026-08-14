@@ -144,21 +144,21 @@ const tabBar = {
 
     const isNewTab = tabData.url === '' || tabData.url === urlParser.parse('min://newtab')
     if (isNewTab) {
-      tabTitle = l('newTabLabel')
+      tabTitle = 'New Tab'
     } else if (tabData.title) {
       tabTitle = tabData.title
     } else if (tabData.loaded) {
       tabTitle = tabData.url
     }
 
-    tabTitle = (tabTitle || l('newTabLabel')).substring(0, 500)
+    tabTitle = (tabTitle || 'New Tab').substring(0, 500)
 
     var titleEl = tabEl.querySelector('.title')
     titleEl.textContent = tabTitle
 
     tabEl.title = tabTitle
     if (tabData.private) {
-      tabEl.title += ' (' + l('privateTab') + ')'
+      tabEl.title += ' (Private tab)'
     }
 
     var tabUrl = urlParser.getDomain(tabData.url)
@@ -192,7 +192,7 @@ const tabBar = {
     } else if (tabData.secure === false && !insecureIcon) {
       var insecureIcon = document.createElement('i')
       insecureIcon.className = 'icon-tab-not-secure tab-icon tab-info-icon i carbon:unlocked'
-      insecureIcon.title = l('connectionNotSecure')
+      insecureIcon.title = 'Your connection to this website is not secure.'
       iconArea.appendChild(insecureIcon)
     }
   },

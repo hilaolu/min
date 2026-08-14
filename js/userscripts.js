@@ -35,10 +35,6 @@ function parseTampermonkeyFeatures (content) {
       var featureValue = feature.replace(featureName + ' ', '').trim()
       featureName = featureName.replace('@', '')
 
-      // special case: find the localized name for the current locale
-      if (featureName.startsWith('name:') && featureName.split(':')[1].substring(0, 2) === navigator.language.substring(0, 2)) {
-        featureName = 'name:local'
-      }
       if (parsedFeatures[featureName]) {
         parsedFeatures[featureName].push(featureValue)
       } else {
@@ -113,7 +109,7 @@ const userscripts = {
 
             var tampermonkeyFeatures = parseTampermonkeyFeatures(file)
             if (tampermonkeyFeatures) {
-              var scriptName = tampermonkeyFeatures['name:local'] || tampermonkeyFeatures.name
+              var scriptName = tampermonkeyFeatures.name
               if (scriptName) {
                 scriptName = scriptName[0]
               } else {
@@ -219,7 +215,7 @@ const userscripts = {
 
     bangsPlugin.registerCustomBang({
       phrase: '!run',
-      snippet: l('runUserscript'),
+      snippet: 'Run userscript',
       isAction: false,
       showSuggestions: function (text, input, event) {
         searchbarPlugins.reset('bangs')

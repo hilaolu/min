@@ -9,7 +9,7 @@ const tabContextMenu = {
     const tabMenu = [
       [
         {
-          label: l('appMenuDuplicateTab'),
+          label: 'Duplicate Tab',
           click: function () {
             const sourceTab = tabs.get(tabId)
             // strip tab id so that a new one is generated
@@ -19,7 +19,7 @@ const tabContextMenu = {
           }
         },
         {
-          label: l('tabMenuNewWindow'),
+          label: 'Move Tab to New Window',
           click: function () {
             // insert after current task
             let index
@@ -44,14 +44,14 @@ const tabContextMenu = {
     if (tabs.get(tabId).url && (readerView.isReader(tabId) || !urlParser.isInternalURL(tabs.get(tabId).url))) {
       if (!readerView.isReader(tabId)) {
         tabMenu[0].push({
-          label: l('enterReaderView'),
+          label: 'Enter Reader View',
           click: function () {
             readerView.enter(tabId, tabs.get(tabId).url)
           }
         })
       } else {
         tabMenu[0].push({
-          label: l('exitReaderView'),
+          label: 'Exit Reader View',
           click: function () {
             readerView.exit(tabId)
           }
@@ -60,7 +60,7 @@ const tabContextMenu = {
     }
 
     tabMenu[0].push({
-      label: l('tabMenuReload'),
+      label: 'Reload',
       click: function () {
         if (tabs.get(tabId).url.startsWith(webviews.internalPages.error)) {
           // reload the original page rather than show the error page again

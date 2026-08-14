@@ -27,7 +27,7 @@ db.open().then(function () {
   console.log('database opened ', performance.now())
 }).catch(function (error) {
   if (error.message.indexOf(dbErrorMessage) !== -1 && !dbErrorAlertShown) {
-    window && window.alert && window.alert(l('multipleInstancesErrorMessage'))
+    window && window.alert && window.alert('An error occurred. Please close any other open instances and restart Min.')
     ipc.send('quit')
 
     dbErrorAlertShown = true

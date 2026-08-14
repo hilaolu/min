@@ -13,7 +13,7 @@ var findinpage = {
   start: function (options) {
     webviews.releaseFocus()
 
-    findinpage.input.placeholder = l('searchInPage')
+    findinpage.input.placeholder = 'Search in Page'
 
     findinpage.activeTab = tabs.getSelected()
 
@@ -115,14 +115,8 @@ webviews.bindEvent('did-start-navigation', function (tabId, url, isInPlace, isMa
 
 webviews.bindEvent('found-in-page', function (tabId, data) {
   if (data.matches !== undefined) {
-    var text
-    if (data.matches === 1) {
-      text = l('findMatchesSingular')
-    } else {
-      text = l('findMatchesPlural')
-    }
-
-    findinpage.counter.textContent = text.replace('%i', data.activeMatchOrdinal).replace('%t', data.matches)
+    var matchLabel = data.matches === 1 ? 'match' : 'matches'
+    findinpage.counter.textContent = `${data.activeMatchOrdinal} of ${data.matches} ${matchLabel}`
   }
 })
 

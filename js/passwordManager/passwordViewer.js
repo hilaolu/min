@@ -51,7 +51,7 @@ const passwordViewer = {
     container.appendChild(deleteButton)
 
     deleteButton.addEventListener('click', function () {
-      if (confirm(l('deletePassword').replace('%s', credential.domain))) {
+      if (confirm(`Delete password for ${credential.domain}?`)) {
         PasswordManagers.getConfiguredPasswordManager().then(function (manager) {
           manager.deleteCredential(credential.domain, credential.username)
           container.remove()
@@ -72,7 +72,7 @@ const passwordViewer = {
 
     var descriptionEl = document.createElement('span')
     descriptionEl.className = 'description'
-    descriptionEl.textContent = l('savedPasswordsNeverSavedLabel')
+    descriptionEl.textContent = 'Never saved'
     container.appendChild(descriptionEl)
 
     var deleteButton = document.createElement('button')
@@ -135,9 +135,9 @@ const passwordViewer = {
 
       if (shouldShowConsent) {
         const securityConsent = ipcRenderer.sendSync('prompt', {
-          text: l('importCredentialsConfirmation'),
-          ok: l('dialogConfirmButton'),
-          cancel: l('dialogCancelButton'),
+          text: 'Importing passwords will overwrite any existing passwords for the same sites. Are you sure you want to continue?',
+          ok: 'Confirm',
+          cancel: 'Cancel',
           width: 400,
           height: 200
         })
@@ -168,9 +168,9 @@ const passwordViewer = {
       }
 
       const securityConsent = ipcRenderer.sendSync('prompt', {
-        text: l('exportCredentialsConfirmation'),
-        ok: l('dialogConfirmButton'),
-        cancel: l('dialogCancelButton'),
+        text: 'Your exported credentials will be saved in a file in plain text. When you\'re done using this file, you should delete it. Are you sure you want to continue?',
+        ok: 'Confirm',
+        cancel: 'Cancel',
         width: 400,
         height: 200
       })
