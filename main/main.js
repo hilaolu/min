@@ -216,7 +216,6 @@ function createWindowWithBounds (bounds, customArgs) {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      nodeIntegrationInWorker: true, // used by ProcessSpawner
       additionalArguments: [
         '--user-data-path=' + userDataPath,
         '--app-version=' + app.getVersion(),

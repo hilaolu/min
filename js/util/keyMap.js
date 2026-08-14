@@ -31,7 +31,6 @@ var defaultKeyMap = {
   reloadIgnoringCache: 'mod+f5',
   showMenu: 'ctrl+m',
   followLink: 'mod+enter',
-  fillPassword: 'mod+\\',
   toggleTabAudio: 'shift+mod+m',
   showHistory: 'shift+mod+h',
   showCommandPalette: 'ctrl+period',

@@ -35,10 +35,6 @@ function createPrompt (options, callback) {
   promptWindow.once('ready-to-show', () => { promptWindow.show() })
 }
 
-ipc.on('show-prompt', function (options, callback) {
-  createPrompt(options, callback)
-})
-
 ipc.on('open-prompt', function (event) {
   event.returnValue = JSON.stringify({
     label: promptOptions.text,

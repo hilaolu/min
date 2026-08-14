@@ -23,7 +23,6 @@ const modules = [
   'main/prompt.js',
   'main/remoteMenu.js',
   'main/remoteActions.js',
-  'main/keychainService.js',
   'js/util/proxy.js',
   'main/themeMain.js'
 ]

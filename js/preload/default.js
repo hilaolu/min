@@ -50,10 +50,6 @@ window.addEventListener('message', function (e) {
     return
   }
 
-  if (e.data?.message === 'showCredentialList') {
-    ipc.send('showCredentialList')
-  }
-
   if (e.data?.message === 'showUserscriptDirectory') {
     ipc.send('showUserscriptDirectory')
   }

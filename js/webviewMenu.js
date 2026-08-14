@@ -5,7 +5,6 @@ const browserUI = require('browserUI.js')
 const searchEngine = require('util/searchEngine.js')
 const userscripts = require('userscripts.js')
 const settings = require('util/settings/settings.js')
-const PasswordManagers = require('passwordManager/passwordManager.js')
 
 const remoteMenu = require('remoteMenuRenderer.js')
 
@@ -234,17 +233,6 @@ const webviewMenu = {
 
     if (clipboardActions.length !== 0) {
       menuSections.push(clipboardActions)
-    }
-
-    if (data.formControlType === 'input-password' && PasswordManagers.getActivePasswordManager()?.saveCredential) {
-      menuSections.push([
-        {
-          label: 'Generate Password',
-          click: function () {
-            webviews.callAsync(tabs.getSelected(), 'send', ['generate-password', { x: data.x, y: data.y }])
-          }
-        }
-      ])
     }
 
     var navigationActions = [

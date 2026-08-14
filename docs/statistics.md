@@ -12,6 +12,6 @@ Collecting this data allows us to prioritize which devices and operating systems
 
 Min does not send:
 * Anything that can be used to personally identify you
-* Any browsing history, passwords, or other data stored locally in Min
+* Any browsing history or other data stored locally in Min
 
 If you want to opt-out of statistics collection, you can do so by going to the preferences page within Min and de-selecting "send usage statistics".
