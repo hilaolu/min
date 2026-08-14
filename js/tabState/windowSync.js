@@ -50,14 +50,10 @@ const windowSync = {
             tasks.get(event[4]).tabs.add(event[2], event[3], false)
             break
           case 'tab-updated':
-            var obj = {}
-            obj[event[2]] = event[3]
-            tasks.get(event[4]).tabs.update(event[1], obj, false)
+            tasks.get(event[4]).tabs.update(event[1], { [event[2]]: event[3] }, false)
             break
           case 'task-updated':
-            var obj = {}
-            obj[event[2]] = event[3]
-            tasks.update(event[1], obj, false)
+            tasks.update(event[1], { [event[2]]: event[3] }, false)
             break
           case 'tab-selected':
             tasks.get(event[2]).tabs.setSelected(event[1], false)

@@ -144,7 +144,7 @@ class NormalStrategy extends VimStateStrategy {
     }
     // Link hints
     if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !isCurrentlyInInput()) {
-      // Set global action used by onTextTyped
+      // Set the action for the selected link hint
       linkAction = (e.key === 'F') ? 'openInNewTab' : 'open'
       showLinkKeys()
       try { blockKeybindings.select() } catch (e) {}
@@ -523,30 +523,6 @@ function navigateMatch (backwards = false) {
   selectMatchAt(lastSearchIndex)
 }
 
-// Visual mode helpers
-function enterVisualMode () {
-  try { document.body.focus() } catch (e) {}
-  // Ensure there is a selection; if none, try to select current match or start of body
-  const sel = window.getSelection()
-  if (!sel.rangeCount) {
-    if (lastSearchMatches.length > 0 && lastSearchIndex >= 0) {
-      selectMatchAt(lastSearchIndex)
-    } else {
-      const range = document.createRange()
-      const root = document.body.firstChild
-      if (root) {
-        try { range.setStart(root, 0); range.setEnd(root, 0); sel.removeAllRanges(); sel.addRange(range) } catch (e) {}
-      }
-    }
-  }
-  updateVisualIndicator()
-}
-
-function exitVisualMode () {
-  // After leaving visual, show last search briefly if available
-  updateSearchIndicator()
-}
-
 function updateVisualIndicator () {
   const sel = window.getSelection()
   let len = 0
@@ -684,12 +660,6 @@ function hideLinkKeys () {
   currentLinkItems = []
 }
 
-// Handle typed text for link hints
-function onTextTyped (key) {
-  bufferAppend(key)
-  processLinkHintBuffer()
-}
-
 // Apply current buffer to filter hints and act when matched
 function processLinkHintBuffer () {
   var viableElementRemaining = false
@@ -699,9 +669,7 @@ function processLinkHintBuffer () {
     if (link.key === typed) {
       viableElementRemaining = true
       if (link.link.tagName === 'A') {
-        if (linkAction === 'copyToClipboard') {
-          copyToClipboard(link.link.href)
-        } else if (linkAction === 'openInNewTab') {
+        if (linkAction === 'openInNewTab') {
           window.open(link.link.href)
         } else {
           window.open(link.link.href, '_top')

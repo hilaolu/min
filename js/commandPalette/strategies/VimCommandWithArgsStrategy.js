@@ -1,13 +1,13 @@
 /**
  * Vim Command With Args Strategy
- * 
+ *
  * Unified strategy for handling all vim commands with arguments:
  * - >o [url] - Open URL with candidates from history/bookmarks
  * - >r [url] - Reload current tab or load URL in current tab
  * - >w - Close current tab
  * - >goo [query] - Google search
  * - Other vim commands from commandPaletteCommands.js
- * 
+ *
  * @author Command Palette Strategy System
  * @version 2.0.0
  */
@@ -19,41 +19,15 @@ const { CommandStateStrategy } = require('../CommandStateStrategy.js')
  */
 const COMMAND_HANDLERS = {
   o: 'handleOpenCommand',
-  r: 'handleReloadCommand', 
+  r: 'handleReloadCommand',
   w: 'handleCloseCommand',
   goo: 'handleGoogleSearchCommand'
 }
 
-/**
- * Command configuration for UI and behavior
- */
-const COMMAND_CONFIG = {
-  o: {
-    placeholder: (args) => args ? `Open URL: ${args}...` : 'Enter URL to open in new tab...',
-    emptyMessage: (args) => args ? 'No matching URLs found' : 'Enter URL to open',
-    icon: 'carbon:launch'
-  },
-  r: {
-    placeholder: (args) => args ? `Reload with: ${args}...` : 'Reload current tab or enter URL...',
-    emptyMessage: (args) => args ? 'No matching URLs found' : 'No page to reload',
-    icon: 'carbon:renew'
-  },
-  w: {
-    placeholder: () => 'Close current tab',
-    emptyMessage: () => 'Tab will be closed',
-    icon: 'carbon:close'
-  },
-  goo: {
-    placeholder: (args) => args ? `Google Search: ${args}...` : 'Enter Google search query...',
-    emptyMessage: () => 'Enter search query',
-    icon: 'carbon:search'
-  }
-}
-
 class VimCommandWithArgsStrategy extends CommandStateStrategy {
-  constructor() {
+  constructor () {
     super('VIM_COMMAND_WITH_ARGS', 80) // High priority for specific commands
-    
+
     // Cache for places module to avoid repeated requires
     this._places = null
     this._urlParser = null
@@ -65,7 +39,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
   /**
    * Lazy load commonly used modules
    */
-  _getModules() {
+  _getModules () {
     if (!this._places) {
       try {
         this._places = require('../../places/places.js')
@@ -91,37 +65,29 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} input - Current input value
    * @returns {{matches: boolean, data?: Object, priority?: number}}
    */
-  matches(input) {
+  matches (input) {
     const trimmed = input.trim()
-    
+
     // Quick exit for invalid inputs
     if (!trimmed.startsWith('>') || trimmed === '>') {
       return { matches: false }
     }
-    
+
     // Matches ">command" with optional arguments
     const match = trimmed.match(/^>(\w+)(\s+(.*))?$/i)
-    
+
     if (match) {
       const command = match[1].toLowerCase()
       const args = (match[3] || '').trim()
-      
+
       return {
         matches: true,
         data: { command, args },
         priority: this.priority
       }
     }
-    
-    return { matches: false }
-  }
 
-  /**
-   * Get regex pattern for this strategy
-   * @returns {RegExp}
-   */
-  getPattern() {
-    return /^>(\w+)(\s+.*)?$/i
+    return { matches: false }
   }
 
   /**
@@ -131,7 +97,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {Object} context - Command palette context
    * @returns {Promise<Array>} Array of candidates
    */
-  async updateUI(input, data, context) {
+  async updateUI (input, data, context) {
     try {
       const { command, args } = data
       const candidates = await this.generateCandidates(command, args)
@@ -150,9 +116,9 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} args - Command arguments
    * @returns {Promise<Array>} Array of candidates
    */
-  async generateCandidates(command, args) {
+  async generateCandidates (command, args) {
     const handlerName = COMMAND_HANDLERS[command]
-    
+
     if (handlerName && typeof this[handlerName] === 'function') {
       try {
         return await this[handlerName](args)
@@ -161,7 +127,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
         return []
       }
     }
-    
+
     // Fallback to generic command handling
     return this.handleGenericCommand(command, args)
   }
@@ -171,14 +137,14 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} args - URL or search query
    * @returns {Promise<Array>} Array of candidates
    */
-  async handleOpenCommand(args) {
+  async handleOpenCommand (args) {
     const modules = this._getModules()
     if (!modules.places || !modules.urlParser) {
       return []
     }
 
     const candidates = []
-    
+
     // Add typed URL as first candidate if provided
     if (args) {
       const urlCandidate = this.createURLCandidate(args, 'new-tab')
@@ -190,7 +156,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
     // Add history and bookmark results
     try {
       const results = await modules.places.searchPlaces(args, { limit: 20 })
-      const historyCandidates = results.map(result => 
+      const historyCandidates = results.map(result =>
         this.createHistoryCandidate(result, 'new-tab')
       )
       candidates.push(...historyCandidates)
@@ -206,9 +172,9 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} args - URL or search query
    * @returns {Promise<Array>} Array of candidates
    */
-  async handleReloadCommand(args) {
+  async handleReloadCommand (args) {
     const candidates = []
-    
+
     if (!args) {
       // No arguments - show current page reload option
       const currentTab = tabs.get(tabs.getSelected())
@@ -229,7 +195,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
       if (modules.places) {
         try {
           const results = await modules.places.searchPlaces(args, { limit: 20 })
-          const historyCandidates = results.map(result => 
+          const historyCandidates = results.map(result =>
             this.createReloadHistoryCandidate(result)
           )
           candidates.push(...historyCandidates)
@@ -244,10 +210,9 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
 
   /**
    * Handle >w command - Close current tab
-   * @param {string} args - Not used for close command
    * @returns {Array} Array with close tab candidate
    */
-  handleCloseCommand(args) {
+  handleCloseCommand () {
     return [{
       id: 'close-tab',
       title: 'Close Tab',
@@ -267,7 +232,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} args - Search query
    * @returns {Array} Array with Google search candidate
    */
-  handleGoogleSearchCommand(args) {
+  handleGoogleSearchCommand (args) {
     return [{
       id: 'google-search',
       title: `Google Search${args ? `: ${args}` : ''}`,
@@ -278,10 +243,10 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
           const modules = this._getModules()
           if (modules.searchbar && modules.webviews) {
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args)}`
-            modules.searchbar.events.emit('url-selected', { 
-              url: searchUrl, 
-              background: true, 
-              openInForeground: true 
+            modules.searchbar.events.emit('url-selected', {
+              url: searchUrl,
+              background: true,
+              openInForeground: true
             })
             modules.webviews.focus()
           }
@@ -296,13 +261,13 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} args - Command arguments
    * @returns {Array} Array of candidates
    */
-  handleGenericCommand(command, args) {
+  handleGenericCommand (command, args) {
     try {
       const availableCommands = require('../../commandPaletteCommands.js')
-      const matchedCommands = availableCommands.filter(cmd => 
+      const matchedCommands = availableCommands.filter(cmd =>
         cmd.id.toLowerCase() === command
       )
-      
+
       return matchedCommands.map(cmd => ({
         id: cmd.id,
         title: cmd.title,
@@ -323,16 +288,16 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} mode - 'new-tab' or 'current-tab'
    * @returns {Object|null} Candidate object
    */
-  createURLCandidate(url, mode = 'new-tab') {
+  createURLCandidate (url, mode = 'new-tab') {
     if (!url?.trim()) return null
-    
+
     const modules = this._getModules()
     if (!modules.urlParser) return null
-    
-    const description = mode === 'new-tab' ? 
-      `Open ${url} in a new tab` : 
-      `Load ${url} in current tab`
-    
+
+    const description = mode === 'new-tab'
+      ? `Open ${url} in a new tab`
+      : `Load ${url} in current tab`
+
     return {
       id: `open-url-${mode}`,
       title: `Open URL: ${url}`,
@@ -347,18 +312,18 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} url - URL to open
    * @param {string} mode - 'new-tab' or 'current-tab'
    */
-  executeURLAction(url, mode) {
+  executeURLAction (url, mode) {
     const modules = this._getModules()
     if (!modules.urlParser || !modules.webviews) return
-    
+
     try {
       const parsedUrl = modules.urlParser.parse(url)
-      
+
       if (mode === 'new-tab' && modules.searchbar) {
-        modules.searchbar.events.emit('url-selected', { 
-          url: parsedUrl, 
-          background: true, 
-          openInForeground: true 
+        modules.searchbar.events.emit('url-selected', {
+          url: parsedUrl,
+          background: true,
+          openInForeground: true
         })
       } else {
         modules.webviews.update(tabs.getSelected(), parsedUrl)
@@ -375,10 +340,10 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} mode - 'new-tab' or 'current-tab'
    * @returns {Object} Candidate object
    */
-  createHistoryCandidate(result, mode = 'new-tab') {
+  createHistoryCandidate (result, mode = 'new-tab') {
     const modules = this._getModules()
     if (!modules.urlParser) return null
-    
+
     return {
       id: `candidate-${mode}-${result.url}`,
       title: result.title || modules.urlParser.prettyURL(modules.urlParser.getSourceURL(result.url)),
@@ -393,16 +358,16 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} url - URL to open
    * @param {string} mode - 'new-tab' or 'current-tab'
    */
-  executeHistoryAction(url, mode) {
+  executeHistoryAction (url, mode) {
     const modules = this._getModules()
     if (!modules.webviews) return
-    
+
     try {
       if (mode === 'new-tab' && modules.searchbar) {
-        modules.searchbar.events.emit('url-selected', { 
-          url: url, 
-          background: true, 
-          openInForeground: true 
+        modules.searchbar.events.emit('url-selected', {
+          url: url,
+          background: true,
+          openInForeground: true
         })
       } else {
         modules.webviews.update(tabs.getSelected(), url)
@@ -419,12 +384,12 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {string} description - Description for the candidate
    * @returns {Object|null} Candidate object
    */
-  createReloadCandidate(url, description) {
+  createReloadCandidate (url, description) {
     if (!url?.trim()) return null
-    
+
     const modules = this._getModules()
     if (!modules.urlParser) return null
-    
+
     return {
       id: 'reload-url',
       title: `${description}: ${modules.urlParser.prettyURL(modules.urlParser.getSourceURL(url))}`,
@@ -439,10 +404,10 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @param {Object} result - Places result object
    * @returns {Object} Candidate object
    */
-  createReloadHistoryCandidate(result) {
+  createReloadHistoryCandidate (result) {
     const modules = this._getModules()
     if (!modules.urlParser) return null
-    
+
     return {
       id: `reload-candidate-${result.url}`,
       title: result.title || modules.urlParser.prettyURL(modules.urlParser.getSourceURL(result.url)),
@@ -456,10 +421,10 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * Execute reload action
    * @param {string} url - URL to reload with
    */
-  executeReloadAction(url) {
+  executeReloadAction (url) {
     const modules = this._getModules()
     if (!modules.urlParser || !modules.webviews) return
-    
+
     try {
       const parsedUrl = modules.urlParser.parse(url)
       modules.webviews.update(tabs.getSelected(), parsedUrl)
@@ -468,36 +433,6 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
       console.error('Error executing reload action:', error)
     }
   }
-
-  /**
-   * Get placeholder text for this command
-   * @param {Object} data - Current state data
-   * @returns {string}
-   */
-  getPlaceholder(data = {}) {
-    const { command = '', args = '' } = data
-    const config = COMMAND_CONFIG[command]
-    
-    if (config?.placeholder) {
-      return config.placeholder(args)
-    }
-    
-    return `${command} command${args ? ` ${args}` : ''}...`
-  }
-
-  /**
-   * Get CSS classes for input styling
-   * @returns {string[]}
-   */
-  getInputClasses() {
-    return ['vim-command-with-args-mode']
-  }
-
-  // No-op DOM methods for overlay-only architecture
-  renderCandidates() { return }
-  createSuggestionElement() { return null }
-  disableMouseInteractions() { return }
-  highlightSearchTerm(text) { return text || '' }
 }
 
-module.exports = VimCommandWithArgsStrategy 
+module.exports = VimCommandWithArgsStrategy

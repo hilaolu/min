@@ -1,6 +1,4 @@
-const EventEmitter = require('events')
 var keybindings = require('keybindings.js')
-var modalMode = require('modalMode.js')
 
 // Import strategy components
 const StrategyManager = require('./commandPalette/StrategyManager.js')
@@ -13,7 +11,6 @@ const ReplStrategy = require('./commandPalette/strategies/ReplStrategy.js')
 // Constants for overlay communication
 const OVERLAY_CONSTANTS = {
   DEFAULT_ICON: 'carbon:search',
-  MAX_DESCRIPTION_LENGTH: 60,
   UPDATE_DEBOUNCE_MS: 50, // Debounce rapid updates
   IPC_CHANNELS: {
     SHOW: 'showCommandPaletteOverlay',
@@ -26,18 +23,15 @@ const OVERLAY_CONSTANTS = {
 const commandPalette = {
   // Core DOM elements
   input: null,
-  
+
   // State management
   isVisible: false,
   selectedIndex: 0,
   currentCandidates: [],
-  
+
   // Strategy management
   strategyManager: null,
-  
-  // Event system
-  events: null,
-  
+
   // Overlay update debouncing
   overlayUpdateTimeout: null,
 
@@ -54,21 +48,18 @@ const commandPalette = {
       return
     }
 
-    // Initialize event emitter
-    commandPalette.events = new EventEmitter()
-
     // Initialize strategy manager
     commandPalette.strategyManager = new StrategyManager()
-    
+
     // Register all strategies
     commandPalette.registerStrategies()
-    
+
     // Set up event listeners
     commandPalette.setupEventListeners()
-    
+
     // Initialize overlay for command palette
     commandPalette.initializeOverlay()
-    
+
     console.log('Command palette initialized with overlay-only mode')
   },
 
@@ -120,8 +111,6 @@ const commandPalette = {
     // Strategy manager event listeners
     commandPalette.strategyManager.on('state-changed', commandPalette.handleStateChange)
     commandPalette.strategyManager.on('candidates-updated', commandPalette.handleCandidatesUpdate)
-    commandPalette.strategyManager.on('action-executed', commandPalette.handleActionExecuted)
-    commandPalette.strategyManager.on('action-error', commandPalette.handleActionError)
   },
 
   /**
@@ -130,10 +119,10 @@ const commandPalette = {
   handleInput: async function () {
     const inputValue = commandPalette.input.value
     const context = commandPalette.getContext()
-    
+
     // Update the overlay input content with debouncing for better performance
     commandPalette.updateOverlayUIDebounced({ input: inputValue })
-    
+
     try {
       const stateChanged = await commandPalette.strategyManager.processInput(inputValue, context)
       if (!stateChanged) {
@@ -156,7 +145,7 @@ const commandPalette = {
    */
   handleKeydown: function (e) {
     const context = commandPalette.getContext()
-    
+
     // Let strategy handle state-specific keyboard events first
     if (commandPalette.strategyManager.handleKeydown(e, context)) {
       return
@@ -226,9 +215,9 @@ const commandPalette = {
    */
   executeAction: async function (candidate) {
     if (!candidate) return
-    
+
     const context = commandPalette.getContext()
-    
+
     try {
       await commandPalette.strategyManager.executeAction(candidate, context)
       commandPalette.hide()
@@ -262,7 +251,7 @@ const commandPalette = {
     // Reset state
     commandPalette.selectedIndex = 0
     commandPalette.input.value = ''
-    
+
     // Initialize with empty strategy
     const context = commandPalette.getContext()
     commandPalette.strategyManager.resetToFallback(context)
@@ -287,14 +276,14 @@ const commandPalette = {
     // Set input value and process it
     commandPalette.selectedIndex = 0
     commandPalette.input.value = prefix
-    
+
     // Process the input to determine initial state
     commandPalette.handleInput()
-    
+
     // Show the overlay and update its input with the prefix
     commandPalette.showOverlay()
     commandPalette.updateOverlayInput(prefix)
-    
+
     setTimeout(() => {
       try {
         commandPalette.input.focus()
@@ -317,11 +306,11 @@ const commandPalette = {
 
     commandPalette.isVisible = false
     commandPalette.input.blur()
-    
+
     // Reset state
     commandPalette.selectedIndex = 0
     commandPalette.currentCandidates = []
-    
+
     // Hide the overlay and clear its input and suggestions
     commandPalette.hideOverlay()
     commandPalette.updateOverlayInput('')
@@ -340,22 +329,6 @@ const commandPalette = {
    */
   updateOverlayInput: function (inputValue) {
     commandPalette.updateOverlayUI({ input: inputValue })
-  },
-
-  /**
-   * Update suggestions in the overlay
-   * @param {Array} candidates - Array of candidate objects
-   */
-  updateOverlaySuggestions: function (candidates) {
-    commandPalette.updateOverlayUI({ candidates: candidates })
-  },
-
-  /**
-   * Update selection in the overlay
-   * @param {number} index - Index of the selected item
-   */
-  updateOverlaySelection: function (index) {
-    commandPalette.updateOverlayUI({ selectedIndex: index })
   },
 
   /**
@@ -379,7 +352,7 @@ const commandPalette = {
           selectedIndex: state.selectedIndex ?? commandPalette.selectedIndex ?? 0,
           isVisible: state.isVisible ?? commandPalette.isVisible ?? false
         }
-        
+
         // Serialize candidates to only include display data for security
         if (overlayState.candidates.length > 0) {
           overlayState.candidates = overlayState.candidates.map(candidate => ({
@@ -390,7 +363,7 @@ const commandPalette = {
             displayData: candidate.displayData ?? {}
           }))
         }
-        
+
         window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.UPDATE_UI, overlayState)
       } catch (error) {
         // Silent fail for production - overlay will continue to work
@@ -407,7 +380,7 @@ const commandPalette = {
     if (commandPalette.overlayUpdateTimeout) {
       clearTimeout(commandPalette.overlayUpdateTimeout)
     }
-    
+
     // Set new timeout for debounced update
     commandPalette.overlayUpdateTimeout = setTimeout(() => {
       commandPalette.updateOverlayUI(state)
@@ -440,7 +413,7 @@ const commandPalette = {
           clearTimeout(commandPalette.overlayUpdateTimeout)
           commandPalette.overlayUpdateTimeout = null
         }
-        
+
         window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.HIDE)
       } catch (error) {
         // Silent fail for production - overlay will continue to work
@@ -454,10 +427,7 @@ const commandPalette = {
    */
   getContext: function () {
     return {
-      input: commandPalette.input,
-      selectedIndex: commandPalette.selectedIndex,
-      isVisible: commandPalette.isVisible,
-      events: commandPalette.events
+      input: commandPalette.input
     }
   },
 
@@ -469,18 +439,11 @@ const commandPalette = {
     commandPalette.selectedIndex = 0
     commandPalette.currentCandidates = event.candidates || []
     commandPalette.updateSelection()
-    
+
     // Update overlay UI with new state
     commandPalette.updateOverlayUI({
       candidates: commandPalette.currentCandidates,
       selectedIndex: commandPalette.selectedIndex
-    })
-    
-    // Emit event for external listeners
-    commandPalette.events.emit('state-changed', {
-      previousStrategy: event.previousStrategy,
-      currentStrategy: event.currentStrategy,
-      data: event.data
     })
   },
 
@@ -491,29 +454,12 @@ const commandPalette = {
   handleCandidatesUpdate: function (event) {
     commandPalette.currentCandidates = event.candidates || []
     commandPalette.updateSelection()
-    
+
     // Update overlay UI with new candidates
     commandPalette.updateOverlayUI({
       candidates: commandPalette.currentCandidates,
       selectedIndex: commandPalette.selectedIndex
     })
-  },
-
-  /**
-   * Handle action execution events
-   * @param {Object} event - Action execution event data
-   */
-  handleActionExecuted: function (event) {
-    commandPalette.events.emit('command-executed', event.candidate)
-  },
-
-  /**
-   * Handle action error events
-   * @param {Object} event - Action error event data
-   */
-  handleActionError: function (event) {
-    console.error('Action execution error:', event.error)
-    commandPalette.events.emit('command-error', event)
   },
 
   /**
@@ -524,29 +470,6 @@ const commandPalette = {
     commandPalette.updateOverlayUI({
       selectedIndex: commandPalette.selectedIndex
     })
-  },
-
-  /**
-   * Get current state information
-   * @returns {Object} Current state information
-   */
-  getState: function () {
-    return {
-      isVisible: commandPalette.isVisible,
-      selectedIndex: commandPalette.selectedIndex,
-      candidatesCount: commandPalette.currentCandidates.length,
-      currentStrategy: commandPalette.strategyManager?.getCurrentState()?.strategy || null
-    }
-  },
-
-  /**
-   * Register a new strategy (for external use)
-   * @param {CommandStateStrategy} strategy - Strategy to register
-   */
-  registerStrategy: function (strategy) {
-    if (commandPalette.strategyManager) {
-      commandPalette.strategyManager.registerStrategy(strategy)
-    }
   }
 }
 

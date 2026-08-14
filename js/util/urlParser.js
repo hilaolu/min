@@ -1,5 +1,4 @@
 const punycode = require('punycode')
-const path = require('path')
 
 const searchEngine = require('util/searchEngine.js')
 const hosts = require('./hosts.js')
@@ -126,22 +125,6 @@ var urlParser = {
       }
     }
     return url
-  },
-  getFileURL: function (path) {
-    if (window.platformType === 'windows') {
-      // convert backslash to forward slash
-      path = path.replace(/\\/g, '/')
-      // https://blogs.msdn.microsoft.com/ie/2006/12/06/file-uris-in-windows/
-
-      // UNC path?
-      if (path.startsWith('//')) {
-        return encodeURI('file:' + path)
-      } else {
-        return encodeURI('file:///' + path)
-      }
-    } else {
-      return encodeURI('file://' + path)
-    }
   },
   getDomain: function (url) {
     url = urlParser.removeProtocol(url)

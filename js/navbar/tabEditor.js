@@ -1,6 +1,5 @@
 var searchbar = require('searchbar/searchbar.js')
 var webviews = require('webviews.js')
-var modalMode = require('modalMode.js')
 var urlParser = require('util/urlParser.js')
 var keyboardNavigationHelper = require('util/keyboardNavigationHelper.js')
 var bookmarkStar = require('navbar/bookmarkStar.js')
@@ -12,11 +11,6 @@ const tabEditor = {
   star: null,
   isShown: false,
   show: function (tabId, editingValue, showSearchbar) {
-    /* Edit mode is not available in modal mode. */
-    if (modalMode.enabled()) {
-      return
-    }
-
     tabEditor.container.hidden = false
     tabEditor.isShown = true
 

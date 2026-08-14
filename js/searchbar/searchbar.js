@@ -29,10 +29,6 @@ var searchbar = {
 
     searchbarPlugins.clearAll()
   },
-  getValue: function () {
-    var text = searchbar.associatedInput.value
-    return text.replace(text.substring(searchbar.associatedInput.selectionStart, searchbar.associatedInput.selectionEnd), '')
-  },
   showResults: function (text, inputFlags = {}) {
     searchbarPlugins.run(text, searchbar.associatedInput, inputFlags)
   },

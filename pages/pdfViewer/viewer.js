@@ -195,20 +195,18 @@ const updateCachedPages = throttle(function () {
     redrawPageCanvas(currentPage)
   }
 
-  for (var i = 0; i < pageViews.length; i++) {
-    (function (i) {
-      if (i === currentPage) {
-        // already checked above
-        return
-      }
-      if (Math.abs(i - currentPage) > pageBuffer && pageViews[i].canvas) {
-        pageViews[i].canvas.remove()
-        pageViews[i].canvas = null
-      }
-      if (Math.abs(i - currentPage) < pageBuffer && !pageViews[i].canvas) {
-        redrawPageCanvas(i)
-      }
-    })(i)
+  for (let i = 0; i < pageViews.length; i++) {
+    if (i === currentPage) {
+      // already checked above
+      continue
+    }
+    if (Math.abs(i - currentPage) > pageBuffer && pageViews[i].canvas) {
+      pageViews[i].canvas.remove()
+      pageViews[i].canvas = null
+    }
+    if (Math.abs(i - currentPage) < pageBuffer && !pageViews[i].canvas) {
+      redrawPageCanvas(i)
+    }
   }
 }, 500)
 
@@ -290,7 +288,7 @@ pdfjsLib.getDocument({ url: url, withCredentials: true }).promise.then(async fun
         scale: scale,
         defaultViewport: viewport,
         eventBus: eventBus,
-        textLayerFactory: new DefaultTextLayerFactory(),
+        textLayerFactory: new DefaultTextLayerFactory()
         // annotationLayerFactory: new pdfjsViewer.DefaultAnnotationLayerFactory()
       })
       pdfPageView.setPdfPage(page)
@@ -347,16 +345,14 @@ function updateVisiblePages () {
 
   var pageRects = new Array(pageViews.length)
 
-  for (var i = 0; i < pageViews.length; i++) {
+  for (let i = 0; i < pageViews.length; i++) {
     pageRects[i] = pageViews[i].div.getBoundingClientRect()
   }
 
   var ih = window.innerHeight + 80
   var innerHeight = window.innerHeight
 
-  var visiblePages = []
-
-  for (var i = 0; i < pageViews.length; i++) {
+  for (let i = 0; i < pageViews.length; i++) {
     var rect = pageRects[i]
     var textLayer = pageViews[i].textLayer
 
@@ -429,16 +425,16 @@ function redrawAllPages () {
     }
   }
 
-  var visiblePageList = []
-  var invisiblePageList = []
+  const visiblePageList = []
+  const invisiblePageList = []
 
   // redraw the currently visible pages first
 
-  for (var i = 0; i < pageViews.length; i++) {
+  for (let i = 0; i < pageViews.length; i++) {
     if (!pageViews[i].canvas) {
       continue
     }
-    var rect = pageViews[i].div.getBoundingClientRect()
+    const rect = pageViews[i].div.getBoundingClientRect()
     // if the page is visible, add it to the beginning of the redraw list
     if (rect.top < window.innerHeight && rect.bottom > 0) {
       visiblePageList.push(pageViews[i])
@@ -447,14 +443,12 @@ function redrawAllPages () {
     }
   }
 
-  var redrawList = visiblePageList.concat(invisiblePageList)
+  const redrawList = visiblePageList.concat(invisiblePageList)
 
-  for (var i = 0; i < redrawList.length; i++) {
-    (function (i) {
-      requestIdleCallback(function () {
-        redrawPageCanvas(redrawList[i].id - 1, pageCompleteCallback)
-      })
-    })(i)
+  for (let i = 0; i < redrawList.length; i++) {
+    requestIdleCallback(function () {
+      redrawPageCanvas(redrawList[i].id - 1, pageCompleteCallback)
+    })
   }
 }
 
@@ -521,7 +515,7 @@ var printPreviousScaleList = []
 function afterPrintComplete () {
   for (var i = 0; i < pageViews.length; i++) {
     pageViews[i].viewport = pageViews[i].viewport.clone({ scale: printPreviousScaleList[i] * (4 / 3) })
-    pageViews[i].cssTransform({target: pageViews[i].canvas})
+    pageViews[i].cssTransform({ target: pageViews[i].canvas })
   }
   printPreviousScaleList = []
   isPrinting = false
@@ -569,7 +563,7 @@ function printPDF () {
           begunCount++
           redrawPageCanvas(i, function () {
             if (needsScaleChange) {
-              pageViews[i].cssTransform({target: pageViews[i].canvas})
+              pageViews[i].cssTransform({ target: pageViews[i].canvas })
             }
             onPageRenderComplete()
           })

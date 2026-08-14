@@ -290,7 +290,7 @@ function buildAppMenu (options = {}) {
         {
           label: 'Full Screen',
           accelerator: (function () {
-            if (process.platform == 'darwin') { return 'Ctrl+Command+F' } else { return 'F11' }
+            if (process.platform === 'darwin') { return 'Ctrl+Command+F' } else { return 'F11' }
           })(),
           role: 'togglefullscreen'
         }
@@ -302,7 +302,7 @@ function buildAppMenu (options = {}) {
         {
           label: 'Inspect Page',
           accelerator: (function () {
-            if (process.platform == 'darwin') { return 'Cmd+Alt+I' } else { return 'Ctrl+Shift+I' }
+            if (process.platform === 'darwin') { return 'Cmd+Alt+I' } else { return 'Ctrl+Shift+I' }
           })(),
           click: function (item, window) {
             sendIPCToWindow(window, 'inspectPage')

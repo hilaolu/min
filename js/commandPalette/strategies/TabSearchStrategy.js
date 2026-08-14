@@ -1,13 +1,13 @@
 /**
  * Tab Search State Strategy
- * 
+ *
  * Handles searching tabs by title or URL
  */
 
 const { CommandStateStrategy } = require('../CommandStateStrategy.js')
 
 class TabSearchStrategy extends CommandStateStrategy {
-  constructor() {
+  constructor () {
     super('TAB_SEARCH', 50) // Medium priority
   }
 
@@ -15,11 +15,11 @@ class TabSearchStrategy extends CommandStateStrategy {
    * @param {string} input - Current input value
    * @returns {{matches: boolean, data?: Object, priority?: number}}
    */
-  matches(input) {
+  matches (input) {
     const trimmed = input.trim()
     // Matches any non-empty text that doesn't start with > or >>>
     const matches = trimmed !== '' && !trimmed.startsWith('>')
-    
+
     return {
       matches,
       data: { query: trimmed },
@@ -28,29 +28,22 @@ class TabSearchStrategy extends CommandStateStrategy {
   }
 
   /**
-   * @returns {RegExp}
-   */
-  getPattern() {
-    return /^(?!>).+/
-  }
-
-  /**
    * @param {string} input - Current input value
    * @param {Object} data - Extracted data from input matching
    * @param {Object} context - Command palette context
    * @returns {Promise<Array>} Array of candidates
    */
-  async updateUI(input, data, context) {
+  async updateUI (input, data, context) {
     try {
       // Ensure tabs module is available
       if (typeof tabs === 'undefined' || !tabs.get) {
         console.warn('Tabs module not available')
         return []
       }
-      
+
       const allTabs = tabs.get()
       const searchQuery = (data.query || '').toLowerCase()
-      
+
       // Filter tabs by search query
       const matchedTabs = allTabs.filter(tab => {
         const title = (tab.title || '').toLowerCase()
@@ -80,26 +73,6 @@ class TabSearchStrategy extends CommandStateStrategy {
       return []
     }
   }
-
-  /**
-   * @param {Object} data - Current state data
-   * @returns {string}
-   */
-  getPlaceholder(data = {}) {
-    return 'Search tabs...'
-  }
-
-  /**
-   * @returns {string[]}
-   */
-  getInputClasses() {
-    return ['tab-search-mode']
-  }
-
-  // No-op DOM methods for overlay-only architecture
-  renderCandidates() { return }
-  createSuggestionElement() { return null }
-  highlightSearchTerm(text) { return text || '' }
 }
 
-module.exports = TabSearchStrategy 
+module.exports = TabSearchStrategy

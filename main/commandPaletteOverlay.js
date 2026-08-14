@@ -17,7 +17,7 @@
 const OVERLAY_CONFIG = {
   SIZE: { width: 600, height: 450 },
   POSITION: 'center',
-  DEFAULT_ICON: 'carbon:search'
+  FALLBACK_HTML: '<div>Command Palette Overlay</div>'
 }
 
 // Use the global overlayManager that's available in the concatenated build
@@ -51,14 +51,11 @@ function initCommandPaletteOverlay () {
     return
   }
 
-  // Use the template module to get the HTML content
-  const overlayHTML = global.getCommandPaletteOverlayTemplate ? global.getCommandPaletteOverlayTemplate() : '<div>Command Palette Overlay</div>'
-
   // Initialize the overlay with the HTML content
   commandPaletteOverlayManager.init({
     size: OVERLAY_CONFIG.SIZE,
     position: OVERLAY_CONFIG.POSITION,
-    html: overlayHTML
+    html: global.commandPaletteOverlayHTML || OVERLAY_CONFIG.FALLBACK_HTML
   })
 }
 
@@ -77,15 +74,11 @@ function showCommandPaletteOverlay () {
   commandPaletteOverlayManager.show()
 
   // Show the overlay via RPC
-  try {
-    safeRpcEval(`
-      if (window.showOverlay) {
-        window.showOverlay();
-      }
-    `)
-  } catch (error) {
-    // Silent fail for production - overlay will continue to work
-  }
+  safeRpcEval(`
+    if (window.showOverlay) {
+      window.showOverlay();
+    }
+  `)
 
   // After showing, ensure bounds are recalculated to center within current window size
   try {
@@ -105,15 +98,11 @@ function hideCommandPaletteOverlay () {
 
   if (commandPaletteOverlayManager.isVisible()) {
     // Hide the overlay via RPC
-    try {
-      safeRpcEval(`
-        if (window.hideOverlay) {
-          window.hideOverlay();
-        }
-      `)
-    } catch (error) {
-      // Silent fail for production - overlay will continue to work
-    }
+    safeRpcEval(`
+      if (window.hideOverlay) {
+        window.hideOverlay();
+      }
+    `)
 
     commandPaletteOverlayManager.hide()
   }
@@ -156,21 +145,9 @@ function updateOverlayUI (overlayState) {
 
     // Update selection if provided
     if (overlayState.selectedIndex !== undefined) {
-      const selectionData = {
-        index: overlayState.selectedIndex,
-        total: overlayState.candidates?.length ?? 0,
-        candidate: overlayState.candidates && overlayState.selectedIndex < overlayState.candidates.length ? {
-          title: overlayState.candidates[overlayState.selectedIndex].title ?? '',
-          description: overlayState.candidates[overlayState.selectedIndex].description ?? '',
-          icon: overlayState.candidates[overlayState.selectedIndex].icon ?? OVERLAY_CONFIG.DEFAULT_ICON,
-          shortcut: overlayState.candidates[overlayState.selectedIndex].shortcut ?? '',
-          displayData: overlayState.candidates[overlayState.selectedIndex].displayData ?? {}
-        } : null
-      }
-
       safeRpcEval(`
         if (window.updateSelection) {
-          window.updateSelection(${JSON.stringify(selectionData)});
+          window.updateSelection(${JSON.stringify({ index: overlayState.selectedIndex })});
         }
       `)
     }
@@ -189,19 +166,3 @@ function destroyCommandPaletteOverlay () {
 
   commandPaletteOverlayManager.destroy()
 }
-
-// Export functions for use in main process
-module.exports = {
-  initCommandPaletteOverlay,
-  showCommandPaletteOverlay,
-  hideCommandPaletteOverlay,
-  updateOverlayUI,
-  destroyCommandPaletteOverlay
-}
-
-// Make functions available globally for other modules in the concatenated build
-global.initCommandPaletteOverlay = initCommandPaletteOverlay
-global.showCommandPaletteOverlay = showCommandPaletteOverlay
-global.hideCommandPaletteOverlay = hideCommandPaletteOverlay
-global.updateOverlayUI = updateOverlayUI
-global.destroyCommandPaletteOverlay = destroyCommandPaletteOverlay

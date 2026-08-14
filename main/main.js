@@ -39,6 +39,15 @@ function clamp (n, min, max) {
   return Math.max(Math.min(n, max), min)
 }
 
+function recenterOverlay (win) {
+  try {
+    const manager = global.overlayManager
+    if (manager && typeof manager.recenter === 'function' && manager.isVisible()) {
+      manager.recenter(win)
+    }
+  } catch (e) {}
+}
+
 if (process.platform === 'win32') {
   (async function () {
     var squirrelCommand = process.argv[1]
@@ -255,11 +264,7 @@ function createWindowWithBounds (bounds, customArgs) {
     setTimeout(function () {
       const winBounds = newWin.getContentBounds()
       mainView.setBounds({x: 0, y: 0, width: winBounds.width, height: winBounds.height})
-      try {
-        if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
-          global.overlayManager.recenter(newWin)
-        }
-      } catch (e) {}
+      recenterOverlay(newWin)
     }, 0)
   })
 
@@ -291,20 +296,12 @@ function createWindowWithBounds (bounds, customArgs) {
 
   newWin.on('maximize', function () {
     sendIPCToWindow(newWin, 'maximize')
-    try {
-      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
-        global.overlayManager.recenter(newWin)
-      }
-    } catch (e) {}
+    recenterOverlay(newWin)
   })
 
   newWin.on('unmaximize', function () {
     sendIPCToWindow(newWin, 'unmaximize')
-    try {
-      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
-        global.overlayManager.recenter(newWin)
-      }
-    } catch (e) {}
+    recenterOverlay(newWin)
   })
   
   newWin.on('focus', function () {
@@ -320,22 +317,14 @@ function createWindowWithBounds (bounds, customArgs) {
 
   newWin.on('enter-full-screen', function () {
     sendIPCToWindow(newWin, 'enter-full-screen')
-    try {
-      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
-        global.overlayManager.recenter(newWin)
-      }
-    } catch (e) {}
+    recenterOverlay(newWin)
   })
 
   newWin.on('leave-full-screen', function () {
     sendIPCToWindow(newWin, 'leave-full-screen')
     // https://github.com/minbrowser/min/issues/1093
     newWin.setMenuBarVisibility(false)
-    try {
-      if (global.overlayManager && typeof global.overlayManager.recenter === 'function' && global.overlayManager.isVisible()) {
-        global.overlayManager.recenter(newWin)
-      }
-    } catch (e) {}
+    recenterOverlay(newWin)
   })
 
   newWin.on('enter-html-full-screen', function () {
@@ -572,35 +561,8 @@ ipc.on('updateCommandPaletteOverlayUI', function (e, overlayState) {
   }
 })
 
-// Keep essential handlers for overlay lifecycle management
-ipc.on('initCommandPaletteOverlay', function (e) {
-  if (typeof initCommandPaletteOverlay === 'function') {
-    initCommandPaletteOverlay()
-  }
-})
-
-ipc.on('showCommandPaletteOverlay', function (e) {
-  if (typeof showCommandPaletteOverlay === 'function') {
-    showCommandPaletteOverlay()
-  }
-})
-
-ipc.on('hideCommandPaletteOverlay', function (e) {
-  if (typeof hideCommandPaletteOverlay === 'function') {
-    hideCommandPaletteOverlay()
-  }
-})
-
 ipc.on('destroyCommandPaletteOverlay', function (e) {
   if (typeof destroyCommandPaletteOverlay === 'function') {
     destroyCommandPaletteOverlay()
   }
 })
-
-// Remove old individual UI update handlers - replaced by unified updateOverlayUI
-// ipc.on('updateCommandPaletteOverlayInput', ...)
-// ipc.on('clearCommandPaletteOverlayInput', ...)
-// ipc.on('focusCommandPaletteOverlayInput', ...)
-// ipc.on('updateCommandPaletteOverlaySuggestions', ...)
-// ipc.on('updateCommandPaletteOverlaySelection', ...)
-// ipc.on('clearCommandPaletteOverlaySuggestions', ...)

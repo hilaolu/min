@@ -17,7 +17,7 @@ function getDefaultViewWebPreferences () {
       scrollBounce: true,
       safeDialogs: true,
       safeDialogsMessage: 'Prevent this page from creating additional dialogs',
-      preload: __dirname + '/dist/preload.js',
+      preload: path.join(__dirname, 'dist/preload.js'),
       contextIsolation: true,
       sandbox: true,
       enableRemoteModule: false,
@@ -225,7 +225,7 @@ function createView (existingViewId, id, webPreferences, boundsString, events) {
           view.webContents.stop()
           const currentWindow = getWindowFromViewContents(view)
           destroyView(id)
-          const newView = createView(existingViewId, id, Object.assign({}, webPreferences, { javascript: shouldHaveJS }), boundsString, events)
+          createView(existingViewId, id, Object.assign({}, webPreferences, { javascript: shouldHaveJS }), boundsString, events)
           loadURLInView(id, event.url, currentWindow)
 
           if (currentWindow) {
@@ -341,10 +341,6 @@ ipc.on('createView', function (e, args) {
 
 ipc.on('destroyView', function (e, id) {
   destroyView(id)
-})
-
-ipc.on('destroyAllViews', function () {
-  destroyAllViews()
 })
 
 ipc.on('setView', function (e, args) {
@@ -466,6 +462,7 @@ ipc.on('saveViewCapture', function (e, data) {
   var view = viewMap[data.id]
   if (!view) {
     // view could have been destroyed
+    return
   }
 
   view.webContents.capturePage().then(function (image) {
@@ -474,4 +471,3 @@ ipc.on('saveViewCapture', function (e, data) {
 })
 
 global.getView = getView
-global.overlayManager = overlayManager

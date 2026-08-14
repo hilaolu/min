@@ -8,7 +8,6 @@ There are three possible ways that keybindings can be handled.
 const keyMapModule = require('util/keyMap.js')
 
 var webviews = require('webviews.js')
-var modalMode = require('modalMode.js')
 var settings = require('util/settings/settings.js')
 
 var keyMap = keyMapModule.userKeyMap(settings.get('keyMap'))
@@ -60,10 +59,11 @@ function checkShortcutCanRun (combo, cb) {
 }
 
 function defineShortcut (keysOrKeyMapName, fn, options = {}) {
+  let binding
   if (keysOrKeyMapName.keys) {
-    var binding = keysOrKeyMapName.keys
+    binding = keysOrKeyMapName.keys
   } else {
-    var binding = keyMap[keysOrKeyMapName]
+    binding = keyMap[keysOrKeyMapName]
   }
 
   if (typeof binding === 'string') {
@@ -71,11 +71,6 @@ function defineShortcut (keysOrKeyMapName, fn, options = {}) {
   }
 
   var shortcutCallback = function (e, combo) {
-    // Disable shortcuts for modal mode, unless this is the combo to close the modal
-    if (modalMode.enabled() && combo !== 'esc') {
-      return
-    }
-
     if (options.contexts && !options.contexts.includes(document.body.getAttribute('data-context') || 'default')) {
       return
     }

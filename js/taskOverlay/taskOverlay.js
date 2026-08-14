@@ -6,7 +6,6 @@ var browserUI = require('browserUI.js')
 var tabBar = require('navbar/tabBar.js')
 var tabEditor = require('navbar/tabEditor.js')
 var focusMode = require('focusMode.js')
-var modalMode = require('modalMode.js')
 var keyboardNavigationHelper = require('util/keyboardNavigationHelper.js')
 var Sortable = require('sortablejs')
 
@@ -19,12 +18,7 @@ var addTaskLabel = addTaskButton.querySelector('span')
 var taskOverlayNavbar = document.getElementById('task-overlay-navbar')
 
 function addTaskFromMenu () {
-  /* new tasks can't be created in modal mode */
-  if (modalMode.enabled()) {
-    return
-  }
-
-  /* new tasks can't be created in focus mode or modal mode */
+  /* new tasks can't be created in focus mode */
   if (focusMode.enabled()) {
     focusMode.warn()
     return

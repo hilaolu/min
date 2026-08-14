@@ -48,14 +48,6 @@ class CommandStateStrategy {
   }
 
   /**
-   * Get the regex pattern for this strategy
-   * @returns {RegExp} Regular expression pattern
-   */
-  getPattern () {
-    throw new Error('getPattern() must be implemented by subclass')
-  }
-
-  /**
    * Update UI for this state
    * @param {string} input - Current input value
    * @param {Object} data - Extracted data from input matching
@@ -94,15 +86,6 @@ class CommandStateStrategy {
   }
 
   /**
-   * Get placeholder text for this state
-   * @param {Object} data - Current state data
-   * @returns {string} Placeholder text
-   */
-  getPlaceholder (data = {}) {
-    return 'Enter command...'
-  }
-
-  /**
    * Activate this strategy
    */
   activate () {
@@ -114,14 +97,6 @@ class CommandStateStrategy {
    */
   deactivate () {
     this.isActive = false
-  }
-
-  /**
-   * Get CSS classes to apply to input element
-   * @returns {string[]} Array of CSS class names
-   */
-  getInputClasses () {
-    return []
   }
 
   /**

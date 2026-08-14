@@ -309,13 +309,6 @@ var overlayManager = {
   },
 
   /**
-   * Destroy all overlays (same as destroy since only one overlay exists)
-   */
-  destroyAll: function () {
-    this.destroy()
-  },
-
-  /**
    * Check if there is a current overlay
    * @returns {boolean} - True if there is a current overlay
    */
@@ -371,11 +364,6 @@ var overlayManager = {
       })
     } catch (e) {}
   }
-}
-
-// Export the overlay manager
-module.exports = {
-  overlayManager
 }
 
 // Make overlayManager available globally for other modules in the concatenated build

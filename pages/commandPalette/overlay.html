@@ -594,18 +594,6 @@
         lastReplSignature = "";
       }
 
-      // Utility functions
-      /**
-       * Safely update DOM element content
-       * @param {HTMLElement} element - Element to update
-       * @param {string} content - Content to set
-       */
-      function safeUpdateElement(element, content) {
-        if (element && typeof content === "string") {
-          element.innerHTML = content;
-        }
-      }
-
       /**
        * Validate candidate object structure
        * @param {Object} candidate - Candidate object to validate
@@ -626,22 +614,6 @@
       }
 
       /**
-       * Clear the overlay input content
-       */
-      function clearOverlayInput() {
-        updateOverlayInput("");
-      }
-
-      /**
-       * Focus the overlay input (for visual feedback)
-       */
-      function focusOverlayInput() {
-        if (input) {
-          input.focus();
-        }
-      }
-
-      /**
        * Update suggestions in the overlay (called via RPC)
        * @param {Array} candidates - Array of serialized candidate objects
        */
@@ -652,7 +624,7 @@
 
       /**
        * Update selection highlighting (called via RPC)
-       * @param {Object} selectionData - Selection data including index and candidate info
+       * @param {Object} selectionData - Selection data including the selected index
        */
       function updateSelection(selectionData) {
         if (!selectionData) return;
@@ -698,11 +670,8 @@
 
       // Make functions available globally for RPC calls
       window.updateOverlayInput = updateOverlayInput;
-      window.clearOverlayInput = clearOverlayInput;
-      window.focusOverlayInput = focusOverlayInput;
       window.updateSuggestions = updateSuggestions;
       window.updateSelection = updateSelection;
-      window.clearSuggestions = clearSuggestions;
       window.showOverlay = showOverlay;
       window.hideOverlay = hideOverlay;
 

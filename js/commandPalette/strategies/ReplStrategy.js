@@ -1,13 +1,13 @@
 /**
  * REPL State Strategy
- * 
+ *
  * Handles ">>>" prefix - JavaScript REPL mode
  */
 
 const { CommandStateStrategy } = require('../CommandStateStrategy.js')
 
 class ReplStrategy extends CommandStateStrategy {
-  constructor() {
+  constructor () {
     super('REPL', 90) // Highest priority for exact matches
     this.replHistory = []
     this.replInputHistory = []
@@ -18,11 +18,11 @@ class ReplStrategy extends CommandStateStrategy {
    * @param {string} input - Current input value
    * @returns {{matches: boolean, data?: Object, priority?: number}}
    */
-  matches(input) {
+  matches (input) {
     const trimmed = input.trim()
     // Matches ">>>" exactly or ">>> " with code
     const matches = trimmed === '>>>' || input.startsWith('>>> ')
-    
+
     return {
       matches,
       data: { code: input.startsWith('>>> ') ? input.substring(4) : '' },
@@ -31,16 +31,9 @@ class ReplStrategy extends CommandStateStrategy {
   }
 
   /**
-   * @returns {RegExp}
-   */
-  getPattern() {
-    return /^>>>(\s.*)?$/
-  }
-
-  /**
    * Build a serialized history array for overlay rendering
    */
-  getSerializedHistory() {
+  getSerializedHistory () {
     return this.replHistory.map(entry => ({
       id: entry.id,
       input: String(entry.input ?? ''),
@@ -56,7 +49,7 @@ class ReplStrategy extends CommandStateStrategy {
    * @param {Object} context - Command palette context
    * @returns {Promise<Array>} Array of candidates (special REPL payload)
    */
-  async updateUI(input, data, context) {
+  async updateUI (input, data, context) {
     // Provide a single sentinel candidate that carries REPL history for the overlay
     const historyPayload = this.getSerializedHistory()
 
@@ -74,25 +67,10 @@ class ReplStrategy extends CommandStateStrategy {
   }
 
   /**
-   * @param {Object} data - Current state data
-   * @returns {string}
-   */
-  getPlaceholder(data = {}) {
-    return 'Enter JavaScript code...'
-  }
-
-  /**
-   * @returns {string[]}
-   */
-  getInputClasses() {
-    return ['repl-mode']
-  }
-
-  /**
    * @param {Object} context - Command palette context
    * @param {Object} data - State data
    */
-  onEnter(context, data) {
+  onEnter (context, data) {
     // Ensure input starts with ">>> "
     if (!context.input.value.startsWith('>>> ')) {
       context.input.value = '>>> '
@@ -103,7 +81,7 @@ class ReplStrategy extends CommandStateStrategy {
   /**
    * @param {Object} context - Command palette context
    */
-  onExit(context) {
+  onExit (context) {
     // Reset REPL history when exiting
     this.replHistory = []
     this.replInputHistory = []
@@ -117,9 +95,9 @@ class ReplStrategy extends CommandStateStrategy {
    * @param {Object} context - Command palette context
    * @returns {boolean} True if event was handled
    */
-  handleKeydown(event, context) {
+  handleKeydown (event, context) {
     switch (event.key) {
-      case 'Enter':
+      case 'Enter': {
         event.preventDefault()
         const input = context.input.value
         if (input.startsWith('>>> ')) {
@@ -135,6 +113,7 @@ class ReplStrategy extends CommandStateStrategy {
           }
         }
         return true
+      }
 
       case 'ArrowUp':
         event.preventDefault()
@@ -146,16 +125,17 @@ class ReplStrategy extends CommandStateStrategy {
         this.navigateHistory('down', context)
         return true
 
-      case 'Tab':
+      case 'Tab': {
         event.preventDefault()
         // Insert tab character for code indentation
         const start = context.input.selectionStart
         const end = context.input.selectionEnd
         const value = context.input.value
-        
+
         context.input.value = value.substring(0, start) + '  ' + value.substring(end)
         context.input.setSelectionRange(start + 2, start + 2)
         return true
+      }
 
       default:
         return false
@@ -167,7 +147,7 @@ class ReplStrategy extends CommandStateStrategy {
    * @param {string} direction - 'up' or 'down'
    * @param {Object} context - Command palette context
    */
-  navigateHistory(direction, context) {
+  navigateHistory (direction, context) {
     if (this.replInputHistory.length === 0) return
 
     if (direction === 'up') {
@@ -202,14 +182,14 @@ class ReplStrategy extends CommandStateStrategy {
    * @param {string} code - JavaScript code to execute
    * @param {Object} context - Command palette context
    */
-  executeReplCode(code, context) {
+  executeReplCode (code, context) {
     const webviews = require('../../webviews.js')
-    
+
     // Validate input
     if (!code || !code.trim()) {
       return
     }
-    
+
     // Safely access current tab from global tabs if available
     let currentTab = null
     try {
@@ -219,7 +199,7 @@ class ReplStrategy extends CommandStateStrategy {
     } catch (e) {
       // ignore
     }
-    
+
     if (!currentTab) {
       const historyEntry = {
         id: this.replHistory.length + 1,
@@ -235,11 +215,11 @@ class ReplStrategy extends CommandStateStrategy {
       context.input.dispatchEvent(new Event('input', { bubbles: true }))
       return
     }
-    
+
     // Add to input history
     this.replInputHistory.push(code)
     this.replInputHistoryIndex = this.replInputHistory.length
-    
+
     // Execute code in the current tab
     try {
       webviews.callAsync(currentTab, 'executeJavaScript', code, (err, result) => {
@@ -248,7 +228,7 @@ class ReplStrategy extends CommandStateStrategy {
           input: code,
           timestamp: new Date()
         }
-        
+
         if (err) {
           historyEntry.output = `Error: ${err.message || err}`
           historyEntry.isError = true
@@ -256,9 +236,9 @@ class ReplStrategy extends CommandStateStrategy {
           historyEntry.output = result
           historyEntry.isError = false
         }
-        
+
         this.replHistory.push(historyEntry)
-        
+
         // Reset prompt and refresh overlay
         context.input.value = '>>> '
         context.input.setSelectionRange(4, 4)
@@ -280,4 +260,4 @@ class ReplStrategy extends CommandStateStrategy {
   }
 }
 
-module.exports = ReplStrategy 
+module.exports = ReplStrategy

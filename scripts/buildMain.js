@@ -11,7 +11,6 @@ const modules = [
   'main/registryConfig.js',
   'js/util/settings/settingsMain.js',
   'main/overlayManager.js',
-  'main/commandPaletteOverlayTemplate.js',
   'main/commandPaletteOverlay.js',
   'main/main.js',
   'main/minInternalProtocol.js',

@@ -17,7 +17,6 @@ const modules = [
   'css/bookmarkManager.css',
   'css/findinpage.css',
   'css/downloadManager.css',
-  'css/commandPalette.css',
   'node_modules/dragula/dist/dragula.min.css'
 ]
 

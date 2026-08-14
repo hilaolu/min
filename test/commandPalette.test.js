@@ -9,9 +9,6 @@ function loadCommandPalette () {
     if (request === 'keybindings.js') {
       return { defineShortcut: function () {} }
     }
-    if (request === 'modalMode.js') {
-      return {}
-    }
     return originalLoad.call(this, request, parent, isMain)
   }
 

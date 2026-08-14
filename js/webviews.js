@@ -13,41 +13,41 @@ var windowIsFullscreen = false
 var previewImageManager = {
   // Track screenshot status per tab: { timestamp, valid }
   status: {},
-  
+
   // Maximum age for a screenshot to be considered valid (30 seconds)
   maxAge: 30000,
-  
+
   // Get preview image, return null if not available (truly lazy)
   get: function (tabId) {
     var tab = tabs.get(tabId)
     if (!tab || tab.private) {
       return null
     }
-    
+
     var status = this.status[tabId]
     if (!status || !status.valid || !tab.previewImage) {
       return null
     }
-    
+
     // Check if screenshot is still fresh
     if ((Date.now() - status.timestamp) < this.maxAge) {
       return tab.previewImage
     }
-    
+
     // Screenshot is too old
     return null
   },
-  
+
   // Capture screenshot for tab (asynchronous)
   capture: function (tabId) {
     if (tabId === webviews.selectedId) {
       ipc.send('getCapture', {
         id: tabId,
-        scaleFactor: 0.1  // Capture at 1/10th scale regardless of DPI
+        scaleFactor: 0.1 // Capture at 1/10th scale regardless of DPI
       })
     }
   },
-  
+
   // Mark screenshot as captured (called when captureData arrives)
   markCaptured: function (tabId) {
     this.status[tabId] = {
@@ -55,7 +55,7 @@ var previewImageManager = {
       valid: true
     }
   },
-  
+
   // Invalidate screenshot (clear both status and image data)
   invalidate: function (tabId) {
     if (this.status[tabId]) {
@@ -67,7 +67,7 @@ var previewImageManager = {
       tabs.update(tabId, { previewImage: null })
     }
   },
-  
+
   // Clear status for tab (used when tab is destroyed)
   clear: function (tabId) {
     delete this.status[tabId]
@@ -78,22 +78,6 @@ var previewImageManager = {
     }
   }
 }
-
-function captureCurrentTab (options) {
-  if (tabs.get(tabs.getSelected()).private) {
-    // don't capture placeholders for private tabs
-    return
-  }
-
-  if (webviews.placeholderRequests.length > 0 && !(options && options.forceCapture === true)) {
-    // capturePage doesn't work while the view is hidden
-    return
-  }
-
-  previewImageManager.capture(webviews.selectedId)
-}
-
-
 
 // called whenever a new page starts loading, or an in-page navigation occurs
 function onPageURLChange (tab, url) {
@@ -127,6 +111,8 @@ function onPageLoad (tabId) {
 
 // called when navigation starts (including reloads)
 function onNavigationStart (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
+  delete webviews.downloadNavigationViews[tabId]
+
   if (isMainFrame) {
     // Invalidate screenshot when navigation starts
     previewImageManager.invalidate(tabId)
@@ -180,7 +166,7 @@ const webviews = {
   },
   events: [],
   IPCEvents: [],
-  hasViewForTab: function(tabId) {
+  hasViewForTab: function (tabId) {
     return tabId && tasks.getTaskContainingTab(tabId) && tasks.getTaskContainingTab(tabId).tabs.get(tabId).hasWebContents
   },
   bindEvent: function (event, fn) {
@@ -230,15 +216,16 @@ const webviews = {
         height: window.innerHeight
       }
     } else {
-      if (!hasSeparateTitlebar && (window.platformType === 'linux' || window.platformType === 'windows') && !windowIsMaximized && !windowIsFullscreen) {
-        var navbarHeight = 48
-      } else {
-        var navbarHeight = 36
-      }
+      const navbarHeight = !hasSeparateTitlebar &&
+        (window.platformType === 'linux' || window.platformType === 'windows') &&
+        !windowIsMaximized &&
+        !windowIsFullscreen
+        ? 48
+        : 36
 
       const viewMargins = webviews.viewMargins
 
-      let position = {
+      const position = {
         x: 0 + Math.round(viewMargins[3]),
         y: 0 + Math.round(viewMargins[0]) + navbarHeight,
         width: window.innerWidth - Math.round(viewMargins[1] + viewMargins[3]),
@@ -323,7 +310,7 @@ const webviews = {
         hasWebContents: false
       })
     }
-    //we may be destroying a view for which the tab object no longer exists, so this message should be sent unconditionally
+    // we may be destroying a view for which the tab object no longer exists, so this message should be sent unconditionally
     ipc.send('destroyView', id)
 
     delete webviews.viewFullscreenMap[id]
@@ -448,15 +435,13 @@ const webviews = {
   }
 }
 
-
-
 window.addEventListener('resize', throttle(function () {
   if (webviews.placeholderRequests.length > 0) {
     // can't set view bounds if the view is hidden
     return
   }
   webviews.resize()
-  
+
   // Invalidate screenshot on resize since dimensions changed
   if (webviews.selectedId) {
     previewImageManager.invalidate(webviews.selectedId)
@@ -471,6 +456,9 @@ ipc.on('leave-full-screen', function () {
       webviews.callAsync(view, 'executeJavaScript', 'document.exitFullscreen()')
     }
   }
+
+  windowIsFullscreen = false
+  webviews.resize()
 })
 
 webviews.bindEvent('enter-html-full-screen', function (tabId) {
@@ -498,15 +486,7 @@ ipc.on('enter-full-screen', function () {
   webviews.resize()
 })
 
-ipc.on('leave-full-screen', function () {
-  windowIsFullscreen = false
-  webviews.resize()
-})
-
 webviews.bindEvent('did-start-navigation', onNavigationStart)
-webviews.bindEvent('did-start-navigation', function (tabId) {
-  delete webviews.downloadNavigationViews[tabId]
-})
 webviews.bindEvent('will-redirect', onNavigate)
 webviews.bindEvent('did-navigate', function (tabId, url, httpResponseCode, httpStatusText) {
   onPageURLChange(tabId, url)

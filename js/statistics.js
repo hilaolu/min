@@ -6,13 +6,7 @@ const statistics = {
     statistics.envGetters.push({ key, fn })
   },
   usageDataCache: {},
-  getValue: function (key) {
-    return statistics.usageDataCache[key]
-  },
-  setValue: function (key, value) {
-    statistics.usageDataCache[key] = value
-  },
-  incrementValue: function (key, value) {
+  incrementValue: function (key) {
     if (statistics.usageDataCache[key]) {
       statistics.usageDataCache[key]++
     } else {
@@ -24,7 +18,7 @@ const statistics = {
       return
     }
 
-    //avoid duplicate uploads when multiple windows are open
+    // avoid duplicate uploads when multiple windows are open
     if (!document.body.classList.contains('focused')) {
       return
     }

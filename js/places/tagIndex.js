@@ -136,8 +136,8 @@ var tagIndex = {
     var contributingDocs = {}
     var contributingTerms = {}
 
-    for (var term of tokens) {
-      for (var tag in tagIndex.termTags[term]) {
+    for (const term of tokens) {
+      for (const tag in tagIndex.termTags[term]) {
         if (!scores[tag]) {
           scores[tag] = 0
         }
@@ -160,7 +160,7 @@ var tagIndex = {
 
     var scoresArr = []
 
-    for (var tag in scores) {
+    for (const tag in scores) {
       if (tokens.includes(tokenize(tag)[0])) {
         scores[tag] *= 1.5
       }

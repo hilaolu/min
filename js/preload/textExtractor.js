@@ -34,7 +34,7 @@ function extractPageText (doc, win) {
     var childNodes = node.childNodes
     var cnl = childNodes.length
 
-    for (var i = cnl - 1; i >= 0; i--) {
+    for (let i = cnl - 1; i >= 0; i--) {
       var childNode = childNodes[i]
       maybeNodes.unshift(childNode)
     }
@@ -45,7 +45,7 @@ function extractPageText (doc, win) {
   var tnl = textNodes.length
 
   // combine the text of all of the accepted text nodes together
-  for (var i = 0; i < tnl; i++) {
+  for (let i = 0; i < tnl; i++) {
     text += textNodes[i].textContent + ' '
   }
 

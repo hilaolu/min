@@ -24,9 +24,6 @@ const tabBar = {
   getTab: function (tabId) {
     return tabBar.tabElementMap[tabId]
   },
-  getTabInput: function (tabId) {
-    return tabBar.getTab(tabId).querySelector('.tab-input')
-  },
   setActiveTab: function (tabId) {
     var activeTab = document.querySelector('.tab-item.active')
 
@@ -184,16 +181,16 @@ const tabBar = {
       tabEl.insertBefore(button, tabEl.children[0])
     })
 
-    var iconArea = tabEl.getElementsByClassName('tab-icon-area')[0]
+    const iconArea = tabEl.getElementsByClassName('tab-icon-area')[0]
 
-    var insecureIcon = tabEl.getElementsByClassName('icon-tab-not-secure')[0]
+    const insecureIcon = tabEl.getElementsByClassName('icon-tab-not-secure')[0]
     if (tabData.secure === true && insecureIcon) {
       insecureIcon.remove()
     } else if (tabData.secure === false && !insecureIcon) {
-      var insecureIcon = document.createElement('i')
-      insecureIcon.className = 'icon-tab-not-secure tab-icon tab-info-icon i carbon:unlocked'
-      insecureIcon.title = 'Your connection to this website is not secure.'
-      iconArea.appendChild(insecureIcon)
+      const newInsecureIcon = document.createElement('i')
+      newInsecureIcon.className = 'icon-tab-not-secure tab-icon tab-info-icon i carbon:unlocked'
+      newInsecureIcon.title = 'Your connection to this website is not secure.'
+      iconArea.appendChild(newInsecureIcon)
     }
   },
   updateAll: function () {

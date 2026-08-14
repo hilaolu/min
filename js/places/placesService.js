@@ -1,8 +1,6 @@
-/* global db performance searchPlaces fullTextPlacesSearch */
+/* global db searchPlaces fullTextPlacesSearch */
 
 const { ipcRenderer } = require('electron')
-
-const spacesRegex = /[+\s._/-]+/g // things that could be considered spaces
 
 function calculateHistoryScore (item) { // item.boost - how much the score should be multiplied by. Example - 0.05
   let fs = item.lastVisit * (1 + 0.036 * Math.sqrt(item.visitCount))

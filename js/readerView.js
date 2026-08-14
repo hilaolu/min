@@ -6,9 +6,6 @@ var readerDecision = require('readerDecision.js')
 
 var readerView = {
   readerURL: 'min://app/reader/index.html',
-  getReaderURL: function (url) {
-    return readerView.readerURL + '?url=' + url
-  },
   isReader: function (tabId) {
     return tabs.get(tabId).url.indexOf(readerView.readerURL) === 0
   },
@@ -35,7 +32,7 @@ var readerView = {
     return button
   },
   updateButton: function (tabId, button) {
-    var button = button || document.querySelector('.reader-button[data-tab="{id}"]'.replace('{id}', tabId))
+    button = button || document.querySelector('.reader-button[data-tab="{id}"]'.replace('{id}', tabId))
     var tab = tabs.get(tabId)
 
     if (readerView.isReader(tabId)) {

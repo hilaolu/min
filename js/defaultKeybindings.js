@@ -2,13 +2,8 @@ const keybindings = require('keybindings.js')
 var webviews = require('webviews.js')
 var browserUI = require('browserUI.js')
 var focusMode = require('focusMode.js')
-var modalMode = require('modalMode.js')
 var tabEditor = require('navbar/tabEditor.js')
 var urlParser = require('util/urlParser.js')
-var keyMapModule = require('util/keyMap.js')
-var settings = require('util/settings/settings.js')
-
-var keyMap = keyMapModule.userKeyMap(settings.get('keyMap'))
 
 const defaultKeybindings = {
   initialize: function () {
@@ -17,11 +12,6 @@ const defaultKeybindings = {
     })
 
     keybindings.defineShortcut('addTab', function () {
-      /* new tabs can't be created in modal mode */
-      if (modalMode.enabled()) {
-        return
-      }
-
       /* new tabs can't be created in focus mode */
       if (focusMode.enabled()) {
         focusMode.warn()
@@ -32,11 +22,6 @@ const defaultKeybindings = {
     })
 
     keybindings.defineShortcut('addPrivateTab', function () {
-      /* new tabs can't be created in modal mode */
-      if (modalMode.enabled()) {
-        return
-      }
-
       /* new tabs can't be created in focus mode */
       if (focusMode.enabled()) {
         focusMode.warn()
@@ -49,10 +34,6 @@ const defaultKeybindings = {
     })
 
     keybindings.defineShortcut('duplicateTab', function () {
-      if (modalMode.enabled()) {
-        return
-      }
-
       if (focusMode.enabled()) {
         focusMode.warn()
         return
@@ -130,11 +111,6 @@ const defaultKeybindings = {
 
       tabEditor.hide()
 
-      if (modalMode.enabled() && modalMode.onDismiss) {
-        modalMode.onDismiss()
-        modalMode.onDismiss = null
-      }
-
       // exit full screen mode
       webviews.callAsync(tabs.getSelected(), 'executeJavaScript', 'if(document.webkitIsFullScreen){document.webkitExitFullscreen()}')
 
@@ -194,9 +170,8 @@ const defaultKeybindings = {
       const taskSwitchList = tasks.filter(t => !tasks.isCollapsed(t.id))
 
       const currentTaskIdx = taskSwitchList.findIndex(t => t.id === tasks.getSelected().id)
-      taskCount = taskSwitchList.length
 
-      const previousTask = taskSwitchList[currentTaskIdx - 1] || taskSwitchList[taskCount - 1]
+      const previousTask = taskSwitchList[currentTaskIdx - 1] || taskSwitchList[taskSwitchList.length - 1]
       browserUI.switchToTask(previousTask.id)
     })
 
@@ -232,7 +207,7 @@ const defaultKeybindings = {
       browserUI.addTab() // create a new, blank tab
     })
 
-    keybindings.defineShortcut('closeWindow', function() {
+    keybindings.defineShortcut('closeWindow', function () {
       ipc.invoke('close')
     })
 
