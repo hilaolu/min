@@ -33,7 +33,7 @@ module.exports = {
       } else if (webviews.placeholderRequests.length === 0) {
         // work around #1281 - calling print() when the view is hidden crashes on Linux in Electron 12
         // TODO figure out why webContents.print() doesn't work in Electron 4
-        webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'window.print()')
+        webviews.print(browserSession.tabs.getSelected())
       }
     })
 
@@ -42,7 +42,7 @@ module.exports = {
     })
 
     ipc.on('inspectPage', function () {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'toggleDevTools')
+      webviews.toggleDeveloperTools(browserSession.tabs.getSelected())
     })
 
     ipc.on('openEditor', function () {
@@ -86,7 +86,7 @@ module.exports = {
       }
 
       if (browserSession.tabs.get(browserSession.tabs.getSelected()).isFileView) {
-        webviews.callAsync(browserSession.tabs.getSelected(), 'downloadURL', [browserSession.tabs.get(browserSession.tabs.getSelected()).url])
+        webviews.download(browserSession.tabs.getSelected(), browserSession.tabs.get(browserSession.tabs.getSelected()).url)
       } else {
         var savePath = await ipc.invoke('showSaveDialog', {
           defaultPath: currentTab.title.replace(/[/\\]/g, '_')
@@ -97,7 +97,7 @@ module.exports = {
           if (!savePath.endsWith('.html')) {
             savePath = savePath + '.html'
           }
-          webviews.callAsync(browserSession.tabs.getSelected(), 'savePage', [savePath, 'HTMLComplete'])
+          webviews.savePage(browserSession.tabs.getSelected(), savePath)
         }
       }
     })
@@ -119,11 +119,11 @@ module.exports = {
     })
 
     ipc.on('goBack', function () {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goBack')
+      webviews.goBack(browserSession.tabs.getSelected())
     })
 
     ipc.on('goForward', function () {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
+      webviews.goForward(browserSession.tabs.getSelected())
     })
   }
 }

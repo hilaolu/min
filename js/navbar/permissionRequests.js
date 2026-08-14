@@ -49,7 +49,7 @@ const permissionRequests = {
           e.stopPropagation()
           if (request.granted) {
             ipcRenderer.send('revokePermission', request.permissionId)
-            webviews.callAsync(tabId, 'reload')
+            webviews.reload(tabId)
           } else {
             permissionRequests.grantPermission(request.permissionId)
             button.classList.add('active')

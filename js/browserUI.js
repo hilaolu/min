@@ -200,21 +200,21 @@ browserSession.tasks.on('tab-updated', function (id, key) {
   }
 })
 
-webviews.bindEvent('did-create-popup', function (tabId, popupId, initialURL) {
+webviews.bindEvent('popup-created', function (tabId, event) {
   addTab({
     // in most cases, initialURL will be overwritten once the popup loads, but if the URL is a downloaded file, it will remain the same
-    url: initialURL,
+    url: event.initialURL,
     private: browserSession.tabs.get(tabId).private
-  }, { enterEditMode: false, existingViewId: popupId })
+  }, { enterEditMode: false, existingViewId: event.popupId })
 })
 
-webviews.bindEvent('new-tab', function (tabId, url, openInForeground) {
+webviews.bindEvent('new-tab-requested', function (tabId, event) {
   addTab({
-    url: url,
+    url: event.url,
     private: browserSession.tabs.get(tabId).private // inherit private status from the current tab
   }, {
     enterEditMode: false,
-    openInBackground: !settings.get('openTabsInForeground') && !openInForeground
+    openInBackground: !settings.get('openTabsInForeground') && !event.openInForeground
   })
 })
 

@@ -21,7 +21,7 @@ single-letter shortcuts and shortcuts used for text editing can't run when an in
 */
 function checkShortcutCanRun (combo, cb) {
   if (/^(shift)?\+?\w$/.test(combo) || combo === 'mod+left' || combo === 'mod+right') {
-    webviews.callAsync(browserSession.tabs.getSelected(), 'isFocused', function (err, isFocused) {
+    webviews.isFocused(browserSession.tabs.getSelected(), function (err, isFocused) {
       if (err || !browserSession.tabs.get(browserSession.tabs.getSelected()).url || !isFocused) {
       // check whether an input is focused in the browser UI
         if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
@@ -31,21 +31,7 @@ function checkShortcutCanRun (combo, cb) {
         }
       } else {
       // check whether an input is focused in the webview
-        webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', `
-          document.activeElement.tagName === "INPUT"
-          || document.activeElement.tagName === "TEXTAREA"
-          || document.activeElement.tagName === "IFRAME"
-          || (function () {
-            var n = document.activeElement;
-            while (n) {
-              if (n.getAttribute && n.getAttribute("contenteditable")) {
-                return true;
-              }
-              n = n.parentElement;
-            }
-            return false;
-          })()
-      `, function (err, isInputFocused) {
+        webviews.isInputFocused(browserSession.tabs.getSelected(), function (err, isInputFocused) {
           if (err) {
             console.warn(err)
             return
@@ -155,7 +141,8 @@ function beforeInputEventHandler (input) {
 }
 
 function initialize () {
-  webviews.bindEvent('before-input-event', function (tabId, input) {
+  webviews.bindEvent('input-received', function (tabId, event) {
+    const input = event.input
     beforeInputEventHandler(input)
   })
 

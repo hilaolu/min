@@ -1,8 +1,32 @@
-function createViewManager ({ app, BrowserWindow, createPrompt, electron, filterPopups, getOverlayManager, getWindowWebContents, ipc, path, rootDir, settings, WebContentsView, windows }) {
+function createViewManager ({ app, BrowserWindow, createPrompt, electron, filterPopups, getWindowWebContents, ipc, path, rootDir, settings, WebContentsView, windows }) {
   var viewMap = {} // id: view
   var viewStateMap = {} // id: view state
 
   var temporaryPopupViews = {} // id: view
+
+  const eventDefinitions = [
+    ['before-input-event', 'input-received', args => ({ input: args[0] })],
+    ['context-menu', 'context-menu-requested', args => ({ data: args[0] })],
+    ['crashed', 'content-crashed', args => ({ killed: args[0] })],
+    ['did-change-theme-color', 'theme-color-changed', args => ({ color: args[0] })],
+    ['did-fail-load', 'load-failed', args => ({ errorCode: args[0], errorDescription: args[1], url: args[2], isMainFrame: args[3] })],
+    ['did-finish-load', 'load-finished', () => ({})],
+    ['did-navigate', 'navigation-committed', args => ({ url: args[0], statusCode: args[1], statusText: args[2] })],
+    ['did-navigate-in-page', 'in-page-navigation-committed', args => ({ url: args[0], isMainFrame: args[1] })],
+    ['did-start-loading', 'loading-started', () => ({})],
+    ['did-start-navigation', 'navigation-started', args => ({ url: args[0], isInPlace: args[1], isMainFrame: args[2] })],
+    ['did-stop-loading', 'loading-stopped', () => ({})],
+    ['dom-ready', 'document-ready', () => ({})],
+    ['enter-html-full-screen', 'fullscreen-entered', () => ({})],
+    ['found-in-page', 'find-result', args => ({ result: args[0] })],
+    ['leave-html-full-screen', 'fullscreen-left', () => ({})],
+    ['media-paused', 'media-paused', () => ({})],
+    ['media-started-playing', 'media-started', () => ({})],
+    ['page-favicon-updated', 'favicon-updated', args => ({ favicons: args[0] })],
+    ['page-title-updated', 'title-updated', args => ({ title: args[0], explicitlySet: args[1] })],
+    ['will-redirect', 'navigation-redirected', args => ({ url: args[0], isInPlace: args[1], isMainFrame: args[2] })],
+    ['zoom-changed', 'zoom-changed', args => ({ direction: args[0] })]
+  ]
 
   // rate limit on "open in app" requests
   var globalLaunchRequests = 0
@@ -30,9 +54,23 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     )
   }
 
-  function createView (existingViewId, id, webPreferences, boundsString, events) {
+  function sendTabContentEvent (view, tabId, type, payload) {
+    const eventTarget = getWindowFromViewContents(view)
+    if (!eventTarget) {
+      return
+    }
+    getWindowWebContents(eventTarget).send('tab-content-event', {
+      tabId,
+      type,
+      payload
+    })
+  }
+
+  function createView (ownerContents, existingViewId, id, webPreferences, bounds) {
     if (viewStateMap[id]) {
-      console.warn('Creating duplicate view')
+      const error = new Error(`Tab Content already exists for ${id}`)
+      error.code = 'TAB_CONTENT_ALREADY_EXISTS'
+      throw error
     }
 
     const viewPrefs = Object.assign({}, getDefaultViewWebPreferences(), webPreferences)
@@ -47,6 +85,11 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       view = temporaryPopupViews[existingViewId]
       delete temporaryPopupViews[existingViewId]
 
+      if (!view) {
+        delete viewStateMap[id]
+        throw createError('TAB_CONTENT_NOT_FOUND', `Popup Tab Content not found for ${existingViewId}`)
+      }
+
       // the initial URL has already been loaded, so set the background color
       view.setBackgroundColor('#fff')
       viewStateMap[id].loadedInitialURL = true
@@ -54,22 +97,13 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       view = new WebContentsView({ webPreferences: viewPrefs })
     }
 
-    events.forEach(function (event) {
-      view.webContents.on(event, function (e) {
-        var args = Array.prototype.slice.call(arguments).slice(1)
-
-        const eventTarget = getWindowFromViewContents(view) || windows.getCurrent()
-
-        if (!eventTarget) {
-        // this can happen during shutdown - windows can be destroyed before the corresponding views, and the view can emit an event during that time
-          return
+    eventDefinitions.forEach(function ([electronEvent, semanticEvent, createPayload]) {
+      view.webContents.on(electronEvent, function () {
+        const args = Array.prototype.slice.call(arguments).slice(1)
+        if (electronEvent === 'did-navigate' || electronEvent === 'will-redirect') {
+          view.webContents.setVisualZoomLevelLimits(1, 3)
         }
-
-        getWindowWebContents(eventTarget).send('view-event', {
-          tabId: id,
-          event: event,
-          args: args
-        })
+        sendTabContentEvent(view, id, semanticEvent, createPayload(args))
       })
     })
 
@@ -93,12 +127,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       (https://github.com/minbrowser/min/issues/1835)
     */
       if (!details.features) {
-        const eventTarget = getWindowFromViewContents(view) || windows.getCurrent()
-
-        getWindowWebContents(eventTarget).send('view-event', {
-          tabId: id,
-          event: 'new-tab',
-          args: [details.url, !(details.disposition === 'background-tab')]
+        sendTabContentEvent(view, id, 'new-tab-requested', {
+          url: details.url,
+          openInForeground: details.disposition !== 'background-tab'
         })
         return {
           action: 'deny'
@@ -108,20 +139,17 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       return {
         action: 'allow',
         createWindow: function (options) {
-          const view = new WebContentsView({ webPreferences: getDefaultViewWebPreferences(), webContents: options.webContents })
+          const popupView = new WebContentsView({ webPreferences: getDefaultViewWebPreferences(), webContents: options.webContents })
 
           var popupId = Math.random().toString()
-          temporaryPopupViews[popupId] = view
+          temporaryPopupViews[popupId] = popupView
 
-          const eventTarget = getWindowFromViewContents(view) || windows.getCurrent()
-
-          getWindowWebContents(eventTarget).send('view-event', {
-            tabId: id,
-            event: 'did-create-popup',
-            args: [popupId, details.url]
+          sendTabContentEvent(view, id, 'popup-created', {
+            popupId,
+            initialURL: details.url
           })
 
-          return view.webContents
+          return popupView.webContents
         }
       }
     })
@@ -136,14 +164,14 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         return
       }
 
-      const eventTarget = getWindowFromViewContents(view) || windows.getCurrent()
+      const eventTarget = getWindowFromViewContents(view)
 
       if (!eventTarget) {
       // this can happen during shutdown - windows can be destroyed before the corresponding views, and the view can emit an event during that time
         return
       }
 
-      getWindowWebContents(eventTarget).send('view-ipc', {
+      getWindowWebContents(eventTarget).send('tab-content-message', {
         id: id,
         name: channel,
         data: data,
@@ -222,8 +250,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
           setTimeout(function () {
             view.webContents.stop()
             const currentWindow = getWindowFromViewContents(view)
+            const currentOwnerContents = currentWindow && getWindowWebContents(currentWindow)
             destroyView(id)
-            createView(existingViewId, id, Object.assign({}, webPreferences, { javascript: shouldHaveJS }), boundsString, events)
+            createView(currentOwnerContents, null, id, Object.assign({}, webPreferences, { javascript: shouldHaveJS }), bounds)
             loadURLInView(id, event.url, currentWindow)
 
             if (currentWindow) {
@@ -235,9 +264,10 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       }
     })
 
-    view.setBounds(JSON.parse(boundsString))
+    view.setBounds(bounds)
 
     viewMap[id] = view
+    windows.registerTabContent(ownerContents, id, view)
 
     return view
   }
@@ -247,13 +277,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       return
     }
 
-    windows.getAll().forEach(function (window) {
-      if (windows.getState(window).selectedView === id) {
-        window.getContentView().removeChildView(viewMap[id])
-        windows.getState(window).selectedView = null
-      }
-    })
-    viewMap[id].webContents.destroy()
+    const view = viewMap[id]
+    windows.removeTabContent(id, view)
+    view.webContents.destroy()
 
     delete viewMap[id]
     delete viewStateMap[id]
@@ -263,28 +289,10 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     for (const id in viewMap) {
       destroyView(id)
     }
-    // Also destroy the overlay view
-    const overlayManager = getOverlayManager()
-    if (overlayManager) {
-      overlayManager.destroy()
-    }
   }
 
   function setView (id, senderContents) {
-    const win = windows.windowFromContents(senderContents).win
-
-    // changing views can cause flickering, so we only want to call it if the view is actually changing
-    // see https://github.com/minbrowser/min/issues/1966
-    if (windows.getState(win).selectedView !== viewMap[id]) {
-    // remove all prior views
-      win.getContentView().children.slice(1).forEach(child => win.getContentView().removeChildView(child))
-      if (viewStateMap[id].loadedInitialURL) {
-        win.getContentView().addChildView(viewMap[id])
-      } else {
-        win.getContentView().removeChildView(viewMap[id])
-      }
-      windows.getState(win).selectedView = id
-    }
+    windows.presentTabContent(senderContents, id, viewMap[id], viewStateMap[id].loadedInitialURL)
   }
 
   function setBounds (id, bounds) {
@@ -306,19 +314,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
   }
 
   function hideCurrentView (senderContents) {
-    const win = windows.windowFromContents(senderContents).win
-    const currentId = windows.getState(win).selectedView
-    if (currentId) {
-      win.getContentView().removeChildView(viewMap[currentId])
-      windows.getState(win).selectedView = null
-      if (win.isFocused()) {
-        getWindowWebContents(win).focus()
-      }
-    }
-  }
-
-  function getView (id) {
-    return viewMap[id]
+    windows.hideSelectedTabContent(senderContents)
   }
 
   function getTabIDFromWebContents (contents) {
@@ -330,40 +326,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
   }
 
   function getWindowFromViewContents (webContents) {
-    const viewId = Object.keys(viewMap).find(id => viewMap[id].webContents === webContents)
-    return windows.getAll().find(win => windows.getState(win).selectedView === viewId)
+    const contents = webContents?.webContents || webContents
+    return windows.windowFromContents(contents)?.win || null
   }
-
-  ipc.on('createView', function (e, args) {
-    createView(args.existingViewId, args.id, args.webPreferences, args.boundsString, args.events)
-  })
-
-  ipc.on('destroyView', function (e, id) {
-    destroyView(id)
-  })
-
-  ipc.on('setView', function (e, args) {
-    setView(args.id, e.sender)
-    setBounds(args.id, args.bounds)
-    if (args.focus && BrowserWindow.fromWebContents(e.sender) && BrowserWindow.fromWebContents(e.sender).isFocused()) {
-      const couldFocus = focusView(args.id)
-      if (!couldFocus) {
-        e.sender.focus()
-      }
-    }
-  })
-
-  ipc.on('setBounds', function (e, args) {
-    setBounds(args.id, args.bounds)
-  })
-
-  ipc.on('focusView', function (e, id) {
-    focusView(id)
-  })
-
-  ipc.on('hideCurrentView', function (e) {
-    hideCurrentView(e.sender)
-  })
 
   function loadURLInView (id, url, win) {
   // wait until the first URL is loaded to set the background color so that new tabs can use a custom background
@@ -373,120 +338,279 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         viewMap[id].setBackgroundColor('#fff')
       })
       // If the view has no URL, it won't be attached yet
-      if (win && id === windows.getState(win).selectedView) {
-        win.getContentView().addChildView(viewMap[id])
-      }
+      windows.attachSelectedTabContent(id, viewMap[id])
     }
     viewMap[id].webContents.loadURL(url)
     viewStateMap[id].loadedInitialURL = true
   }
 
-  ipc.on('loadURLInView', function (e, args) {
-    const win = windows.windowFromContents(e.sender)?.win
-    loadURLInView(args.id, args.url, win)
-  })
+  function createError (code, message) {
+    const error = new Error(message)
+    error.code = code
+    return error
+  }
 
-  ipc.on('callViewMethod', function (e, data) {
-    var error, result
-    try {
-      var webContents = viewMap[data.id].webContents
-      var methodOrProp = webContents[data.method]
-      if (methodOrProp instanceof Function) {
-      // call function
-        result = methodOrProp.apply(webContents, data.args)
-      } else {
-      // set property
-        if (data.args && data.args.length > 0) {
-          webContents[data.method] = data.args[0]
-        }
-        // read property
-        result = methodOrProp
-      }
-    } catch (e) {
-      error = e
+  function requireTabContent (sender, id) {
+    const view = viewMap[id]
+    if (!view?.webContents) {
+      throw createError('TAB_CONTENT_NOT_FOUND', `Tab Content not found for ${id}`)
     }
-    if (result instanceof Promise) {
-      result.then(function (result) {
-        if (data.callId) {
-          e.sender.send('async-call-result', { callId: data.callId, error: null, result })
-        }
-      })
-      result.catch(function (error) {
-        if (data.callId) {
-          e.sender.send('async-call-result', { callId: data.callId, error, result: null })
-        }
-      })
-    } else if (data.callId) {
-      e.sender.send('async-call-result', { callId: data.callId, error, result })
+    if (!windows.ownsTabContent(sender, id)) {
+      throw createError('TAB_CONTENT_NOT_OWNER', `Browser Window does not own Tab Content ${id}`)
     }
-  })
+    if (typeof view.webContents.isDestroyed === 'function' && view.webContents.isDestroyed()) {
+      throw createError('TAB_CONTENT_DESTROYED', `Tab Content ${id} is destroyed`)
+    }
+    return view
+  }
 
-  ipc.handle('getNavigationHistory', function (e, id) {
-    if (!viewMap[id]?.webContents) {
-      return null
-    }
+  function getNavigationHistory (webContents) {
     const entries = []
-    const activeIndex = viewMap[id].webContents.navigationHistory.getActiveIndex()
-    const size = viewMap[id].webContents.navigationHistory.length()
+    const activeIndex = webContents.navigationHistory.getActiveIndex()
+    const size = webContents.navigationHistory.length()
 
     for (let i = 0; i < size; i++) {
-      entries.push(viewMap[id].webContents.navigationHistory.getEntryAtIndex(i))
+      entries.push(webContents.navigationHistory.getEntryAtIndex(i))
     }
 
     return {
       activeIndex,
       entries
     }
-  })
+  }
 
-  ipc.on('getCapture', function (e, data) {
-    var view = viewMap[data.id]
-    if (!view) {
-    // view could have been destroyed
-      return
+  function getSourceURL (url) {
+    if (!url.startsWith('min://')) {
+      return url
     }
+    try {
+      return new URL(url).searchParams.get('url') || url
+    } catch (error) {
+      return url
+    }
+  }
 
-    // Use scaleFactor for consistent HiDPI handling
-    view.webContents.capturePage({ scaleFactor: data.scaleFactor }).then(function (img) {
-      var size = img.getSize()
-      if (size.width === 0 && size.height === 0) {
-        return
+  async function executeTabContentCommand (sender, request) {
+    const id = request.id
+    const operation = request.operation
+    const payload = request.payload || {}
+
+    if (operation === 'lifecycle.create') {
+      const webPreferences = {
+        partition: payload.private ? id.toString() : 'persist:webcontent'
       }
-
-      e.sender.send('captureData', { id: data.id, url: img.toDataURL() })
-    })
-  })
-
-  ipc.on('saveViewCapture', function (e, data) {
-    var view = viewMap[data.id]
-    if (!view) {
-    // view could have been destroyed
-      return
+      createView(sender, payload.existingTabContentId, id, webPreferences, payload.bounds)
+      if (payload.initialURL) {
+        loadURLInView(id, payload.initialURL, windows.windowFromContents(sender)?.win)
+      }
+      return true
+    }
+    if (operation === 'lifecycle.present') {
+      if (!viewMap[id]) {
+        throw createError('TAB_CONTENT_NOT_FOUND', `Tab Content not found for ${id}`)
+      }
+      setView(id, sender)
+      setBounds(id, payload.bounds)
+      if (payload.focus && BrowserWindow.fromWebContents(sender)?.isFocused()) {
+        if (!focusView(id)) {
+          sender.focus()
+        }
+      }
+      return true
+    }
+    if (operation === 'lifecycle.hide') {
+      hideCurrentView(sender)
+      return true
     }
 
-    view.webContents.capturePage().then(function (image) {
-      view.webContents.downloadURL(image.toDataURL())
-    })
+    const view = requireTabContent(sender, id)
+    const webContents = view.webContents
+
+    switch (operation) {
+      case 'lifecycle.destroy':
+        destroyView(id)
+        return true
+      case 'lifecycle.set-bounds':
+        setBounds(id, payload.bounds)
+        return true
+      case 'navigation.load':
+        loadURLInView(id, payload.url, windows.windowFromContents(sender)?.win)
+        return true
+      case 'navigation.back':
+        webContents.goBack()
+        return true
+      case 'navigation.forward':
+        webContents.goForward()
+        return true
+      case 'navigation.back-skipping-internal': { // preserve Min's internal-page redirect behavior
+        const history = getNavigationHistory(webContents)
+        const currentURL = history.entries[history.activeIndex]?.url || ''
+        const previousURL = history.entries[history.activeIndex - 1]?.url
+        if (currentURL.startsWith('min://') && history.activeIndex > 1 && previousURL === getSourceURL(currentURL) && webContents.canGoToOffset(-2)) {
+          webContents.goToOffset(-2)
+        } else {
+          webContents.goBack()
+        }
+        return true
+      }
+      case 'navigation.stop':
+        webContents.stop()
+        return true
+      case 'navigation.reload':
+        if (payload.ignoreCache) {
+          webContents.reloadIgnoringCache()
+        } else {
+          webContents.reload()
+        }
+        return true
+      case 'navigation.state':
+        return { canGoBack: webContents.canGoBack(), canGoForward: webContents.canGoForward() }
+      case 'focus.content':
+        return focusView(id)
+      case 'focus.state':
+        return webContents.isFocused()
+      case 'focus.input-state':
+        return webContents.executeJavaScript(`
+          document.activeElement.tagName === 'INPUT'
+          || document.activeElement.tagName === 'TEXTAREA'
+          || document.activeElement.tagName === 'IFRAME'
+          || (function () {
+            var node = document.activeElement
+            while (node) {
+              if (node.getAttribute && node.getAttribute('contenteditable')) return true
+              node = node.parentElement
+            }
+            return false
+          })()
+        `)
+      case 'fullscreen.exit':
+        return webContents.executeJavaScript('if (document.webkitIsFullScreen) document.webkitExitFullscreen()')
+      case 'find.start':
+        return webContents.findInPage(payload.text, payload.options)
+      case 'find.stop':
+        webContents.stopFindInPage(payload.action)
+        return true
+      case 'zoom.get':
+        return webContents.getZoomFactor()
+      case 'zoom.set':
+        webContents.zoomFactor = payload.factor
+        return payload.factor
+      case 'zoom.adjust':
+        webContents.zoomFactor = Math.min(payload.maximum, Math.max(payload.minimum, webContents.zoomFactor + payload.amount))
+        return webContents.zoomFactor
+      case 'interaction.scroll-state': {
+        const x = Number(payload.x) || 0
+        const y = Number(payload.y) || 0
+        return webContents.executeJavaScript(`
+          (function () {
+            var left = 0
+            var right = 0
+            var isInFrame = false
+            var node = document.elementFromPoint(${x}, ${y})
+            while (node) {
+              if (node.tagName === 'IFRAME') isInFrame = true
+              if (node.scrollLeft !== undefined) {
+                left = Math.max(left, node.scrollLeft)
+                right = Math.max(right, node.scrollWidth - node.clientWidth - node.scrollLeft)
+              }
+              node = node.parentElement
+            }
+            return { left: left, right: right, isInFrame: isInFrame }
+          })()
+        `)
+      }
+      case 'interaction.scroll-to': {
+        const position = Number(payload.position) || 0
+        return webContents.executeJavaScript(`
+          (function () {
+            window.scrollTo(0, ${position})
+            return window.scrollY === ${position}
+          })()
+        `)
+      }
+      case 'page.run-user-script':
+      case 'page.evaluate-repl':
+        return webContents.executeJavaScript(payload.code, payload.userGesture)
+      case 'page.print':
+        return webContents.executeJavaScript('window.print()')
+      case 'internal-page.action': {
+        const allowedActions = ['printArticle', 'printPDF', 'downloadPDF', 'startFindInPage', 'endFindInPage']
+        if (!allowedActions.includes(payload.action)) {
+          throw createError('UNSUPPORTED_OPERATION', `Unsupported internal-page action: ${payload.action}`)
+        }
+        return webContents.executeJavaScript(`parentProcessActions.${payload.action}()`)
+      }
+      case 'internal-page.message': {
+        const allowedChannels = ['enterPictureInPicture', 'getContextMenuData', 'receiveSettingsData']
+        if (!allowedChannels.includes(payload.channel)) {
+          throw createError('UNSUPPORTED_OPERATION', `Unsupported internal-page message: ${payload.channel}`)
+        }
+        webContents.send(payload.channel, payload.data)
+        return true
+      }
+      case 'download.url':
+        webContents.downloadURL(payload.url)
+        return true
+      case 'download.save-page':
+        return webContents.savePage(payload.path, 'HTMLComplete')
+      case 'capture.preview': {
+        const image = await webContents.capturePage({ scaleFactor: payload.scaleFactor })
+        const size = image.getSize()
+        return size.width === 0 && size.height === 0 ? null : image.toDataURL()
+      }
+      case 'capture.download': {
+        const image = await webContents.capturePage()
+        webContents.downloadURL(image.toDataURL())
+        return true
+      }
+      case 'audio.set-muted':
+        webContents.setAudioMuted(payload.muted)
+        return true
+      case 'edit.copy':
+        webContents.copy()
+        return true
+      case 'edit.copy-image':
+        webContents.copyImageAt(payload.x, payload.y)
+        return true
+      case 'edit.paste':
+        webContents.paste()
+        return true
+      case 'edit.paste-match-style':
+        webContents.pasteAndMatchStyle()
+        return true
+      case 'edit.replace-misspelling':
+        webContents.replaceMisspelling(payload.suggestion)
+        return true
+      case 'development.inspect':
+        webContents.inspectElement(payload.x, payload.y)
+        return true
+      case 'development.toggle-tools':
+        webContents.toggleDevTools()
+        return true
+      default:
+        throw createError('UNSUPPORTED_OPERATION', `Unsupported Tab Content operation: ${operation}`)
+    }
+  }
+
+  ipc.handle('tab-content-command', async function (event, request) {
+    try {
+      return { ok: true, value: await executeTabContentCommand(event.sender, request) }
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: error.code || 'TAB_CONTENT_OPERATION_FAILED',
+          message: error.message
+        }
+      }
+    }
   })
-
-  function registerExternalView (id, view, state) {
-    viewMap[id] = view
-    viewStateMap[id] = state
-  }
-
-  function unregisterExternalView (id) {
-    delete viewMap[id]
-    delete viewStateMap[id]
-  }
 
   return {
     destroyAllViews,
-    destroyView,
     getDefaultViewWebPreferences,
     getTabIDFromWebContents,
-    getView,
-    registerExternalView,
-    unregisterExternalView
+    executeTabContentCommand
   }
 }
 

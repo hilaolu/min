@@ -178,7 +178,7 @@ const userscripts = {
     if (urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
       return
     }
-    webviews.callAsync(tabId, 'executeJavaScript', [script.content, false, null])
+    webviews.runUserScript(tabId, script.content)
   },
   onPageLoad: function (tabId) {
     if (userscripts.scripts.length === 0) {
@@ -208,7 +208,7 @@ const userscripts = {
         userscripts.stopDirWatcher()
       }
     })
-    webviews.bindEvent('dom-ready', userscripts.onPageLoad)
+    webviews.bindEvent('document-ready', userscripts.onPageLoad)
 
     webviews.bindIPC('showUserscriptDirectory', function () {
       userscripts.showDirectory()

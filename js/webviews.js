@@ -4,6 +4,31 @@ var settings = require('util/settings/settings.js')
 
 /* implements selecting webviews, switching between them, and creating new ones. */
 
+function invokeTabContent (id, operation, payload) {
+  return ipc.invoke('tab-content-command', { id, operation, payload }).then(function (response) {
+    if (!response.ok) {
+      const error = new Error(response.error.message)
+      error.code = response.error.code
+      throw error
+    }
+    return response.value
+  })
+}
+
+function runTabContent (id, operation, payload) {
+  return invokeTabContent(id, operation, payload).catch(function (error) {
+    console.warn(`Tab Content operation ${operation} failed:`, error)
+  })
+}
+
+function queryTabContent (id, operation, payload, callback) {
+  const promise = invokeTabContent(id, operation, payload)
+  if (callback) {
+    promise.then(result => callback(null, result), error => callback(error))
+  }
+  return promise
+}
+
 var placeholderImg = document.getElementById('webview-placeholder')
 
 var hasSeparateTitlebar = settings.get('useSeparateTitlebar')
@@ -42,9 +67,18 @@ var previewImageManager = {
   // Capture screenshot for tab (asynchronous)
   capture: function (tabId) {
     if (tabId === webviews.selectedId) {
-      ipc.send('getCapture', {
-        id: tabId,
-        scaleFactor: 0.1 // Capture at 1/10th scale regardless of DPI
+      queryTabContent(tabId, 'capture.preview', { scaleFactor: 0.1 }).then(function (dataURL) {
+        if (!dataURL || !browserSession.tabs.get(tabId)) {
+          return
+        }
+        browserSession.updateTab(tabId, { previewImage: dataURL })
+        previewImageManager.markCaptured(tabId)
+        if (tabId === webviews.selectedId && webviews.placeholderRequests.length > 0) {
+          placeholderImg.src = dataURL
+          placeholderImg.hidden = false
+        }
+      }).catch(function (error) {
+        console.warn('Failed to capture Tab Content preview:', error)
       })
     }
   },
@@ -93,14 +127,12 @@ function onPageURLChange (tab, url) {
       url: url
     })
   }
-
-  webviews.callAsync(tab, 'setVisualZoomLevelLimits', [1, 3])
 }
 
 // called whenever a navigation finishes
-function onNavigate (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-  if (isMainFrame) {
-    onPageURLChange(tabId, url)
+function onNavigate (tabId, event) {
+  if (event.isMainFrame) {
+    onPageURLChange(tabId, event.url)
   }
 }
 
@@ -111,10 +143,10 @@ function onPageLoad (tabId) {
 }
 
 // called when navigation starts (including reloads)
-function onNavigationStart (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
+function onNavigationStart (tabId, event) {
   delete webviews.downloadNavigationViews[tabId]
 
-  if (isMainFrame) {
+  if (event.isMainFrame) {
     // Invalidate screenshot when navigation starts
     previewImageManager.invalidate(tabId)
   }
@@ -129,12 +161,7 @@ function scrollOnLoad (tabId, scrollPosition) {
         var done = false
         setTimeout(function () {
           if (!done) {
-            webviews.callAsync(tabId, 'executeJavaScript', `
-            (function() {
-              window.scrollTo(0, ${scrollPosition})
-              return window.scrollY === ${scrollPosition}
-            })()
-            `, function (err, completed) {
+            webviews.scrollTo(tabId, scrollPosition, function (err, completed) {
               if (!err && completed) {
                 done = true
               }
@@ -142,18 +169,18 @@ function scrollOnLoad (tabId, scrollPosition) {
           }
         }, 750 * i)
       }
-      webviews.unbindEvent('did-finish-load', listener)
+      webviews.unbindEvent('load-finished', listener)
     }
   }
-  webviews.bindEvent('did-finish-load', listener)
+  webviews.bindEvent('load-finished', listener)
 }
 
 function setAudioMutedOnCreate (tabId, muted) {
   const listener = function () {
-    webviews.callAsync(tabId, 'setAudioMuted', muted)
-    webviews.unbindEvent('did-navigate', listener)
+    webviews.setAudioMuted(tabId, muted)
+    webviews.unbindEvent('navigation-committed', listener)
   }
-  webviews.bindEvent('did-navigate', listener)
+  webviews.bindEvent('navigation-committed', listener)
 }
 
 const webviews = {
@@ -161,7 +188,6 @@ const webviews = {
   downloadNavigationViews: {}, // tabIds whose main-frame navigation turned into a download
   selectedId: null,
   placeholderRequests: [],
-  asyncCallbacks: {},
   internalPages: {
     error: 'min://app/pages/error/index.html'
   },
@@ -184,14 +210,14 @@ const webviews = {
       }
     }
   },
-  emitEvent: function (event, tabId, args) {
+  emitEvent: function (event, tabId, payload = {}) {
     if (!webviews.hasViewForTab(tabId)) {
       // the view could have been destroyed between when the event was occured and when it was recieved in the UI process, see https://github.com/minbrowser/min/issues/604#issuecomment-419653437
       return
     }
     webviews.events.forEach(function (ev) {
       if (ev.event === event) {
-        ev.fn.apply(this, [tabId].concat(args))
+        ev.fn(tabId, payload)
       }
     })
   },
@@ -248,37 +274,26 @@ const webviews = {
       setAudioMutedOnCreate(tabId, tabData.muted)
     }
 
-    // if the tab is private, we want to partition it. See http://electron.atom.io/docs/v0.34.0/api/web-view-tag/#partition
-    // since tab IDs are unique, we can use them as partition names
-    if (tabData.private === true) {
-      var partition = tabId.toString() // options.tabId is a number, which remote.session.fromPartition won't accept. It must be converted to a string first
+    let initialURL = null
+    if (!existingViewId && tabData.url) {
+      initialURL = urlParser.parse(tabData.url)
+    } else if (!existingViewId && tabData.private) {
+      // workaround for https://github.com/minbrowser/min/issues/872
+      initialURL = urlParser.parse('min://newtab')
     }
-
-    ipc.send('createView', {
-      existingViewId,
-      id: tabId,
-      webPreferences: {
-        partition: partition || 'persist:webcontent'
-      },
-      boundsString: JSON.stringify(webviews.getViewBounds()),
-      events: webviews.events.map(e => e.event).filter((i, idx, arr) => arr.indexOf(i) === idx)
+    runTabContent(tabId, 'lifecycle.create', {
+      bounds: webviews.getViewBounds(),
+      existingTabContentId: existingViewId,
+      initialURL,
+      private: tabData.private === true
     })
-
-    if (!existingViewId) {
-      if (tabData.url) {
-        ipc.send('loadURLInView', { id: tabData.id, url: urlParser.parse(tabData.url) })
-      } else if (tabData.private) {
-        // workaround for https://github.com/minbrowser/min/issues/872
-        ipc.send('loadURLInView', { id: tabData.id, url: urlParser.parse('min://newtab') })
-      }
-    }
 
     browserSession.updateTab(tabId, {
       hasWebContents: true
     })
   },
   setSelected: function (id, options) { // options.focus - whether to focus the view. Defaults to true.
-    webviews.emitEvent('view-hidden', webviews.selectedId)
+    webviews.emitEvent('content-hidden', webviews.selectedId)
 
     webviews.selectedId = id
 
@@ -293,18 +308,17 @@ const webviews = {
       return
     }
 
-    ipc.send('setView', {
-      id: id,
+    runTabContent(id, 'lifecycle.present', {
       bounds: webviews.getViewBounds(),
       focus: !options || options.focus !== false
     })
-    webviews.emitEvent('view-shown', id)
+    webviews.emitEvent('content-shown', id)
   },
   update: function (id, url) {
-    ipc.send('loadURLInView', { id: id, url: urlParser.parse(url) })
+    runTabContent(id, 'navigation.load', { url: urlParser.parse(url) })
   },
   destroy: function (id) {
-    webviews.emitEvent('view-hidden', id)
+    webviews.emitEvent('content-hidden', id)
 
     if (webviews.hasViewForTab(id)) {
       browserSession.updateTab(id, {
@@ -312,7 +326,7 @@ const webviews = {
       })
     }
     // we may be destroying a view for which the tab object no longer exists, so this message should be sent unconditionally
-    ipc.send('destroyView', id)
+    runTabContent(id, 'lifecycle.destroy')
 
     delete webviews.viewFullscreenMap[id]
     delete webviews.downloadNavigationViews[id]
@@ -344,8 +358,8 @@ const webviews = {
       // wait to make sure the image is visible before the view is hidden
       // make sure the placeholder was not removed between when the timeout was created and when it occurs
       if (webviews.placeholderRequests.length > 0) {
-        ipc.send('hideCurrentView')
-        webviews.emitEvent('view-hidden', webviews.selectedId)
+        runTabContent(null, 'lifecycle.hide')
+        webviews.emitEvent('content-hidden', webviews.selectedId)
       }
     }, 0)
   },
@@ -357,8 +371,7 @@ const webviews = {
     if (webviews.placeholderRequests.length === 0) {
       // multiple things can request a placeholder at the same time, but we should only show the view again if nothing requires a placeholder anymore
       if (webviews.hasViewForTab(webviews.selectedId)) {
-        ipc.send('setView', {
-          id: webviews.selectedId,
+        runTabContent(webviews.selectedId, 'lifecycle.present', {
           bounds: webviews.getViewBounds(),
           focus: true
         })
@@ -377,7 +390,7 @@ const webviews = {
   },
   focus: function () {
     if (webviews.selectedId) {
-      ipc.send('focusView', webviews.selectedId)
+      runTabContent(webviews.selectedId, 'focus.content')
     }
   },
   focusActiveContent: function () {
@@ -388,52 +401,44 @@ const webviews = {
     }
   },
   resize: function () {
-    ipc.send('setBounds', { id: webviews.selectedId, bounds: webviews.getViewBounds() })
-  },
-  goBackIgnoringRedirects: async function (id) {
-    const navHistory = await webviews.getNavigationHistory(id)
-    // If the current page is an internal page resulting from a redirect (error pages or reader mode), go back two pages
-
-    var url = navHistory.entries[navHistory.activeIndex].url
-
-    if (urlParser.isInternalURL(url) && navHistory.activeIndex > 1 && navHistory.entries[navHistory.activeIndex - 1].url === urlParser.getSourceURL(url)) {
-      webviews.callAsync(id, 'canGoToOffset', -2, function (err, result) {
-        if (!err && result === true) {
-          webviews.callAsync(id, 'goToOffset', -2)
-        } else {
-          webviews.callAsync(id, 'goBack')
-        }
-      })
-    } else {
-      webviews.callAsync(id, 'goBack')
+    if (webviews.selectedId) {
+      runTabContent(webviews.selectedId, 'lifecycle.set-bounds', { bounds: webviews.getViewBounds() })
     }
   },
-  /*
-  Can be called as
-  callAsync(id, method, args, callback) -> invokes method with args, runs callback with (err, result)
-  callAsync(id, method, callback) -> invokes method with no args, runs callback with (err, result)
-  callAsync(id, property, value, callback) -> sets property to value
-  callAsync(id, property, callback) -> reads property, runs callback with (err, result)
-   */
-  callAsync: function (id, method, argsOrCallback, callback) {
-    var args = argsOrCallback
-    var cb = callback
-    if (argsOrCallback instanceof Function && !cb) {
-      args = []
-      cb = argsOrCallback
-    }
-    if (!(args instanceof Array)) {
-      args = [args]
-    }
-    if (cb) {
-      var callId = Math.random()
-      webviews.asyncCallbacks[callId] = cb
-    }
-    ipc.send('callViewMethod', { id: id, callId: callId, method: method, args: args })
+  goBackIgnoringRedirects: function (id) {
+    return runTabContent(id, 'navigation.back-skipping-internal')
   },
-  getNavigationHistory: function (id) {
-    return ipc.invoke('getNavigationHistory', id)
-  }
+  goBack: id => runTabContent(id, 'navigation.back'),
+  goForward: id => runTabContent(id, 'navigation.forward'),
+  stopLoading: id => runTabContent(id, 'navigation.stop'),
+  reload: (id, ignoreCache = false) => runTabContent(id, 'navigation.reload', { ignoreCache }),
+  getNavigationState: (id, callback) => queryTabContent(id, 'navigation.state', null, callback),
+  isFocused: (id, callback) => queryTabContent(id, 'focus.state', null, callback),
+  isInputFocused: (id, callback) => queryTabContent(id, 'focus.input-state', null, callback),
+  exitFullscreen: id => runTabContent(id, 'fullscreen.exit'),
+  find: (id, text, options) => runTabContent(id, 'find.start', { text, options }),
+  stopFind: (id, action) => runTabContent(id, 'find.stop', { action }),
+  getZoom: (id, callback) => queryTabContent(id, 'zoom.get', null, callback),
+  setZoom: (id, factor) => runTabContent(id, 'zoom.set', { factor }),
+  adjustZoom: (id, amount, minimum, maximum) => runTabContent(id, 'zoom.adjust', { amount, minimum, maximum }),
+  getScrollState: (id, x, y, callback) => queryTabContent(id, 'interaction.scroll-state', { x, y }, callback),
+  scrollTo: (id, position, callback) => queryTabContent(id, 'interaction.scroll-to', { position }, callback),
+  runUserScript: (id, code) => runTabContent(id, 'page.run-user-script', { code, userGesture: false }),
+  evaluateForRepl: (id, code, callback) => queryTabContent(id, 'page.evaluate-repl', { code }, callback),
+  print: id => runTabContent(id, 'page.print'),
+  runInternalPageAction: (id, action) => runTabContent(id, 'internal-page.action', { action }),
+  sendToInternalPage: (id, channel, data) => runTabContent(id, 'internal-page.message', { channel, data }),
+  download: (id, url) => runTabContent(id, 'download.url', { url }),
+  savePage: (id, savePath) => runTabContent(id, 'download.save-page', { path: savePath }),
+  downloadCapture: id => runTabContent(id, 'capture.download'),
+  setAudioMuted: (id, muted) => runTabContent(id, 'audio.set-muted', { muted }),
+  copy: id => runTabContent(id, 'edit.copy'),
+  copyImage: (id, x, y) => runTabContent(id, 'edit.copy-image', { x, y }),
+  paste: id => runTabContent(id, 'edit.paste'),
+  pasteAndMatchStyle: id => runTabContent(id, 'edit.paste-match-style'),
+  replaceMisspelling: (id, suggestion) => runTabContent(id, 'edit.replace-misspelling', { suggestion }),
+  inspect: (id, x, y) => runTabContent(id, 'development.inspect', { x, y }),
+  toggleDeveloperTools: id => runTabContent(id, 'development.toggle-tools')
 }
 
 window.addEventListener('resize', throttle(function () {
@@ -454,7 +459,7 @@ ipc.on('leave-full-screen', function () {
   // electron normally does this automatically (https://github.com/electron/electron/pull/13090/files), but it doesn't work for BrowserViews
   for (var view in webviews.viewFullscreenMap) {
     if (webviews.viewFullscreenMap[view]) {
-      webviews.callAsync(view, 'executeJavaScript', 'document.exitFullscreen()')
+      webviews.exitFullscreen(view)
     }
   }
 
@@ -462,12 +467,12 @@ ipc.on('leave-full-screen', function () {
   webviews.resize()
 })
 
-webviews.bindEvent('enter-html-full-screen', function (tabId) {
+webviews.bindEvent('fullscreen-entered', function (tabId) {
   webviews.viewFullscreenMap[tabId] = true
   webviews.resize()
 })
 
-webviews.bindEvent('leave-html-full-screen', function (tabId) {
+webviews.bindEvent('fullscreen-left', function (tabId) {
   webviews.viewFullscreenMap[tabId] = false
   webviews.resize()
 })
@@ -487,21 +492,21 @@ ipc.on('enter-full-screen', function () {
   webviews.resize()
 })
 
-webviews.bindEvent('did-start-navigation', onNavigationStart)
-webviews.bindEvent('will-redirect', onNavigate)
-webviews.bindEvent('did-navigate', function (tabId, url, httpResponseCode, httpStatusText) {
-  onPageURLChange(tabId, url)
+webviews.bindEvent('navigation-started', onNavigationStart)
+webviews.bindEvent('navigation-redirected', onNavigate)
+webviews.bindEvent('navigation-committed', function (tabId, event) {
+  onPageURLChange(tabId, event.url)
 })
 
-webviews.bindEvent('did-finish-load', onPageLoad)
+webviews.bindEvent('load-finished', onPageLoad)
 
 // Additional events to handle reloads and navigation more robustly
-webviews.bindEvent('did-start-loading', function (tabId) {
+webviews.bindEvent('loading-started', function (tabId) {
   // Invalidate screenshot when page starts loading
   previewImageManager.invalidate(tabId)
 })
 
-webviews.bindEvent('did-stop-loading', function (tabId) {
+webviews.bindEvent('loading-stopped', function (tabId) {
   // Invalidate screenshot when loading stops (don't capture automatically)
   previewImageManager.invalidate(tabId)
 })
@@ -514,19 +519,19 @@ webviews.bindEvent('zoom-changed', function (tabId, zoomDirection) {
   }
 })
 
-webviews.bindEvent('page-title-updated', function (tabId, title, explicitSet) {
+webviews.bindEvent('title-updated', function (tabId, event) {
   browserSession.updateTab(tabId, {
-    title: title
+    title: event.title
   })
 })
 
-webviews.bindEvent('did-fail-load', function (tabId, errorCode, errorDesc, validatedURL, isMainFrame) {
-  if (errorCode && errorCode !== -3 && isMainFrame && validatedURL) {
-    webviews.update(tabId, webviews.internalPages.error + '?ec=' + encodeURIComponent(errorCode) + '&url=' + encodeURIComponent(validatedURL))
+webviews.bindEvent('load-failed', function (tabId, event) {
+  if (event.errorCode && event.errorCode !== -3 && event.isMainFrame && event.url) {
+    webviews.update(tabId, webviews.internalPages.error + '?ec=' + encodeURIComponent(event.errorCode) + '&url=' + encodeURIComponent(event.url))
   }
 })
 
-webviews.bindEvent('crashed', function (tabId, isKilled) {
+webviews.bindEvent('content-crashed', function (tabId) {
   var url = browserSession.tabs.get(tabId).url
 
   browserSession.updateTab(tabId, {
@@ -549,7 +554,7 @@ webviews.bindIPC('getSettingsData', function (tabId, args) {
   if (!urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
     throw new Error()
   }
-  webviews.callAsync(tabId, 'send', ['receiveSettingsData', settings.list])
+  webviews.sendToInternalPage(tabId, 'receiveSettingsData', settings.list)
 })
 webviews.bindIPC('setSetting', function (tabId, args) {
   if (!urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
@@ -563,7 +568,7 @@ settings.listen(function () {
     task.tabs.forEach(function (tab) {
       if (tab.url.startsWith('min://')) {
         try {
-          webviews.callAsync(tab.id, 'send', ['receiveSettingsData', settings.list])
+          webviews.sendToInternalPage(tab.id, 'receiveSettingsData', settings.list)
         } catch (e) {
           // webview might not actually exist
         }
@@ -580,20 +585,15 @@ webviews.bindIPC('scroll-position-change', function (tabId, args) {
 
 webviews.bindIPC('downloadFile', function (tabId, args) {
   if (browserSession.tabs.get(tabId).url.startsWith('min://')) {
-    webviews.callAsync(tabId, 'downloadURL', [args[0]])
+    webviews.download(tabId, args[0])
   }
 })
 
-ipc.on('view-event', function (e, args) {
-  webviews.emitEvent(args.event, args.tabId, args.args)
+ipc.on('tab-content-event', function (e, event) {
+  webviews.emitEvent(event.type, event.tabId, event.payload)
 })
 
-ipc.on('async-call-result', function (e, args) {
-  webviews.asyncCallbacks[args.callId](args.error, args.result)
-  delete webviews.asyncCallbacks[args.callId]
-})
-
-ipc.on('view-ipc', function (e, args) {
+ipc.on('tab-content-message', function (e, args) {
   if (!webviews.hasViewForTab(args.id)) {
     // the view could have been destroyed between when the event was occured and when it was recieved in the UI process, see https://github.com/minbrowser/min/issues/604#issuecomment-419653437
     return
@@ -603,15 +603,6 @@ ipc.on('view-ipc', function (e, args) {
       item.fn(args.id, [args.data], args.frameId, args.frameURL)
     }
   })
-})
-
-ipc.on('captureData', function (e, data) {
-  browserSession.updateTab(data.id, { previewImage: data.url })
-  previewImageManager.markCaptured(data.id)
-  if (data.id === webviews.selectedId && webviews.placeholderRequests.length > 0) {
-    placeholderImg.src = data.url
-    placeholderImg.hidden = false
-  }
 })
 
 ipc.on('download-navigation', function (e, data) {

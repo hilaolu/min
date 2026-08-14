@@ -223,7 +223,7 @@ class ReplStrategy extends CommandStateStrategy {
 
     // Execute code in the current tab
     try {
-      webviews.callAsync(currentTab, 'executeJavaScript', code, (err, result) => {
+      webviews.evaluateForRepl(currentTab, code, (err, result) => {
         const historyEntry = {
           id: this.replHistory.length + 1,
           input: code,

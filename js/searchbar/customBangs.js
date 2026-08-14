@@ -106,7 +106,7 @@ function initialize () {
     snippet: 'Go Back',
     isAction: true,
     fn: function (text) {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goBack')
+      webviews.goBack(browserSession.tabs.getSelected())
     }
   })
 
@@ -115,7 +115,7 @@ function initialize () {
     snippet: 'Go Forward',
     isAction: true,
     fn: function (text) {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
+      webviews.goForward(browserSession.tabs.getSelected())
     }
   })
 
@@ -126,7 +126,7 @@ function initialize () {
     isAction: true,
     fn: function (text) {
       setTimeout(function () { // wait so that the view placeholder is hidden
-        ipc.send('saveViewCapture', { id: browserSession.tabs.getSelected() })
+        webviews.downloadCapture(browserSession.tabs.getSelected())
       }, 400)
     }
   })

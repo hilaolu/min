@@ -35,20 +35,43 @@ function createMainProcess (options = {}) {
     app.setPath('userData', app.getPath('userData') + '-development')
   }
 
-  function getWindowWebContents (window) {
-    return window.getContentView().children[0].webContents
-  }
-
   const runtimeRef = { current: null }
   const overlayRef = { current: null }
+  const settingsRef = { current: null }
+  const touchBarRef = { current: null }
+  const viewManagerRef = { current: null }
 
   const windows = createWindowRegistry({
     app,
-    getWindowWebContents,
-    onAllWindowsClosed: () => viewManager.destroyAllViews()
+    BaseWindow: electron.BaseWindow,
+    browserPage: 'min://app/index.html',
+    buildTouchBar: () => touchBarRef.current?.buildTouchBar(),
+    fs,
+    getSetting: key => settingsRef.current?.get(key),
+    isDevelopmentMode,
+    onAllWindowsClosed: () => {
+      if (viewManagerRef.current) {
+        viewManagerRef.current.destroyAllViews()
+      }
+      if (overlayRef.current) {
+        overlayRef.current.destroy()
+      }
+    },
+    onRecenterOverlay: window => {
+      if (overlayRef.current?.isVisible()) {
+        overlayRef.current.recenter(window)
+      }
+    },
+    path,
+    rootDir,
+    screen: electron.screen,
+    userDataPath: app.getPath('userData'),
+    WebContentsView: electron.WebContentsView
   })
+  const getWindowWebContents = windows.getChromeContents
 
   const settings = createSettings({ fs, ipc, windows, getWindowWebContents })
+  settingsRef.current = settings
   settings.initialize(app.getPath('userData'))
 
   const filtering = createFilteringPolicy({
@@ -75,7 +98,6 @@ function createMainProcess (options = {}) {
     createPrompt: prompt.createPrompt,
     electron,
     filterPopups: filtering.filterPopups,
-    getOverlayManager: () => overlayRef.current,
     getWindowWebContents,
     ipc,
     path,
@@ -84,13 +106,12 @@ function createMainProcess (options = {}) {
     WebContentsView: electron.WebContentsView,
     windows
   })
+  viewManagerRef.current = viewManager
 
   const overlayManager = createOverlayManager({
     WebContentsView: electron.WebContentsView,
     getDefaultViewWebPreferences: viewManager.getDefaultViewWebPreferences,
     getWindowWebContents,
-    registerView: viewManager.registerExternalView,
-    unregisterView: viewManager.unregisterExternalView,
     windows
   })
   overlayRef.current = overlayManager
@@ -164,6 +185,7 @@ function createMainProcess (options = {}) {
     sendIPCToWindow,
     windows
   })
+  touchBarRef.current = touchBar
 
   let overlayHTML = ''
   try {
@@ -175,14 +197,12 @@ function createMainProcess (options = {}) {
 
   const runtime = createAppRuntime({
     buildAppMenu: menu.buildAppMenu,
-    buildTouchBar: touchBar.buildTouchBar,
     commandPalette,
     createDockMenu: menu.createDockMenu,
     electron,
     fs,
     installSessionPolicies: sessionPolicies.install,
     installThemePolicy: () => installThemePolicy({ nativeTheme: electron.nativeTheme, settings }),
-    overlayManager,
     path,
     registryInstaller,
     rootDir,

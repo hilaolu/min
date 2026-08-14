@@ -12,18 +12,13 @@ var navigationButtons = {
       navigationButtons.forwardButton.disabled = true
       return
     }
-    webviews.callAsync(browserSession.tabs.getSelected(), 'canGoBack', function (err, canGoBack) {
+    webviews.getNavigationState(browserSession.tabs.getSelected(), function (err, state) {
       if (err) {
         return
       }
-      navigationButtons.backButton.disabled = !canGoBack
-    })
-    webviews.callAsync(browserSession.tabs.getSelected(), 'canGoForward', function (err, canGoForward) {
-      if (err) {
-        return
-      }
-      navigationButtons.forwardButton.disabled = !canGoForward
-      if (canGoForward) {
+      navigationButtons.backButton.disabled = !state.canGoBack
+      navigationButtons.forwardButton.disabled = !state.canGoForward
+      if (state.canGoForward) {
         navigationButtons.container.classList.add('can-go-forward')
       } else {
         navigationButtons.container.classList.remove('can-go-forward')
@@ -38,7 +33,7 @@ var navigationButtons = {
     })
 
     navigationButtons.forwardButton.addEventListener('click', function () {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
+      webviews.goForward(browserSession.tabs.getSelected())
     })
 
     navigationButtons.container.addEventListener('mouseenter', function () {
@@ -57,8 +52,8 @@ var navigationButtons = {
     })
 
     browserSession.tasks.on('tab-selected', this.update)
-    webviews.bindEvent('did-navigate', this.update)
-    webviews.bindEvent('did-navigate-in-page', this.update)
+    webviews.bindEvent('navigation-committed', this.update)
+    webviews.bindEvent('in-page-navigation-committed', this.update)
   }
 }
 

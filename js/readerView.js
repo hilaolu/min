@@ -67,19 +67,19 @@ var readerView = {
       throw new Error("attempting to print in a tab that isn't a reader page")
     }
 
-    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.printArticle()')
+    webviews.runInternalPageAction(browserSession.tabs.getSelected(), 'printArticle')
   },
   initialize: function () {
     // update the reader button on page load
 
-    webviews.bindEvent('did-start-navigation', function (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-      if (isInPlace) {
+    webviews.bindEvent('navigation-started', function (tabId, event) {
+      if (event.isInPlace) {
         return
       }
-      if (readerDecision.shouldRedirect(url) === 1) {
+      if (readerDecision.shouldRedirect(event.url) === 1) {
         // if this URL has previously been marked as readerable, load reader view without waiting for the page to load
-        readerView.enter(tabId, url)
-      } else if (isMainFrame) {
+        readerView.enter(tabId, event.url)
+      } else if (event.isMainFrame) {
         browserSession.updateTab(tabId, {
           readerable: false // assume the new page can't be readered, we'll get another message if it can
         })

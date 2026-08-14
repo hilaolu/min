@@ -184,16 +184,16 @@ function setColor (bg, fg, isLowContrast) {
 const tabColor = {
   useSiteTheme: true,
   initialize: function () {
-    webviews.bindEvent('page-favicon-updated', function (tabId, favicons) {
-      tabColor.updateFromImage(favicons, tabId, function () {
+    webviews.bindEvent('favicon-updated', function (tabId, event) {
+      tabColor.updateFromImage(event.favicons, tabId, function () {
         if (tabId === browserSession.tabs.getSelected()) {
           tabColor.updateColors()
         }
       })
     })
 
-    webviews.bindEvent('did-change-theme-color', function (tabId, color) {
-      tabColor.updateFromThemeColor(color, tabId)
+    webviews.bindEvent('theme-color-changed', function (tabId, event) {
+      tabColor.updateFromThemeColor(event.color, tabId)
       if (tabId === browserSession.tabs.getSelected()) {
         tabColor.updateColors()
       }
@@ -204,8 +204,8 @@ const tabColor = {
     But don't actually render anything here because the new icon won't have been received yet
     and we want to go from old color > new color, rather than old color > default > new color
      */
-    webviews.bindEvent('did-start-navigation', function (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-      if (isMainFrame) {
+    webviews.bindEvent('navigation-started', function (tabId, event) {
+      if (event.isMainFrame) {
         browserSession.updateTab(tabId, {
           backgroundColor: null,
           favicon: null
@@ -217,7 +217,7 @@ const tabColor = {
     Always rerender once the page has finished loading
     this is needed to go back to default colors in case this page doesn't specify one
      */
-    webviews.bindEvent('did-finish-load', function (tabId) {
+    webviews.bindEvent('load-finished', function (tabId) {
       tabColor.updateColors()
     })
 

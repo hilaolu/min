@@ -29,9 +29,7 @@ var webviewGestures = {
     }, 900)
   },
   zoomWebviewBy: function (tabId, amt) {
-    webviews.callAsync(tabId, 'zoomFactor', function (err, oldFactor) {
-      webviews.callAsync(tabId, 'zoomFactor', Math.min(webviewMaxZoom, Math.max(webviewMinZoom, oldFactor + amt)))
-    })
+    webviews.adjustZoom(tabId, amt, webviewMinZoom, webviewMaxZoom)
   },
   zoomWebviewIn: function (tabId) {
     return this.zoomWebviewBy(tabId, 0.2)
@@ -40,7 +38,7 @@ var webviewGestures = {
     return this.zoomWebviewBy(tabId, -0.2)
   },
   resetWebviewZoom: function (tabId) {
-    webviews.callAsync(tabId, 'zoomFactor', 1.0)
+    webviews.setZoom(tabId, 1.0)
   }
 }
 
@@ -93,7 +91,7 @@ function onSwipeGestureLowVelocity () {
     return
   }
 
-  webviews.callAsync(browserSession.tabs.getSelected(), 'getZoomFactor', function(err, result) {
+  webviews.getZoom(browserSession.tabs.getSelected(), function(err, result) {
     const minScrollDistance = 150 * result;
 
       if ((leftMouseMove / rightMouseMove > 5) || (rightMouseMove / leftMouseMove > 5)) {
@@ -102,7 +100,7 @@ function onSwipeGestureLowVelocity () {
         if (beginningScrollRight < 5) {
           resetDistanceCounters()
           resetScrollCounters()
-          webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
+          webviews.goForward(browserSession.tabs.getSelected())
         }
       }
 
@@ -137,26 +135,7 @@ webviews.bindIPC('wheel-event', function (tabId, e) {
   var platformSecondaryKey = ((navigator.platform === 'MacIntel') ? e.ctrlKey : false)
 
   if (beginningScrollLeft === null || beginningScrollRight === null) {
-    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', `
-    (function () {
-      var left = 0
-      var right = 0
-      var isInFrame = false;
-      
-      var n = document.elementFromPoint(${e.clientX}, ${e.clientY})
-      while (n) {
-        if (n.tagName === 'IFRAME') {
-          isInFrame = true;
-        }
-        if (n.scrollLeft !== undefined) {
-            left = Math.max(left, n.scrollLeft)
-            right = Math.max(right, n.scrollWidth - n.clientWidth - n.scrollLeft)
-        }
-        n = n.parentElement
-      }  
-      return {left, right, isInFrame}
-    })()
-    `, function (err, result) {
+    webviews.getScrollState(browserSession.tabs.getSelected(), e.clientX, e.clientY, function (err, result) {
       if (err) {
         console.warn(err)
         return

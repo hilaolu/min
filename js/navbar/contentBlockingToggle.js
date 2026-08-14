@@ -19,7 +19,7 @@ const contentBlockingToggle = {
     }
     setting.exceptionDomains = setting.exceptionDomains.filter(d => d.replace(/^www\./g, '') !== domain.replace(/^www\./g, ''))
     settings.set('filtering', setting)
-    webviews.callAsync(browserSession.tabs.getSelected(), 'reload')
+    webviews.reload(browserSession.tabs.getSelected())
   },
   disableBlocking: function (url) {
     if (!url) {
@@ -39,7 +39,7 @@ const contentBlockingToggle = {
       setting.exceptionDomains.push(domain)
     }
     settings.set('filtering', setting)
-    webviews.callAsync(browserSession.tabs.getSelected(), 'reload')
+    webviews.reload(browserSession.tabs.getSelected())
   },
   isBlockingEnabled: function (url) {
     try {

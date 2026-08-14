@@ -62,7 +62,7 @@ const tabContextMenu = {
           webviews.update(tabId, new URL(browserSession.tabs.get(tabId).url).searchParams.get('url'))
         } else {
           // this can't be an error page, use the normal reload method
-          webviews.callAsync(tabId, 'reload')
+          webviews.reload(tabId)
         }
       }
     })

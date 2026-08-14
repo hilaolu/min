@@ -1,13 +1,11 @@
-function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, createDockMenu, electron, fs, installSessionPolicies, installThemePolicy, overlayManager, path, registryInstaller, rootDir, settings, windows }) {
+function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, electron, fs, installSessionPolicies, installThemePolicy, path, registryInstaller, rootDir, settings, windows }) {
   const {
     app, // Module to control application life.
-    BaseWindow, // Module to create native browser window.
     BrowserWindow,
     session,
     ipcMain: ipc,
     Menu,
-    crashReporter,
-    WebContentsView
+    crashReporter
   } = electron
 
   crashReporter.start({
@@ -23,20 +21,6 @@ function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, create
   }
 
   let isInstallerRunning = false
-  const isDevelopmentMode = process.argv.some(arg => arg === '--development-mode')
-
-  function clamp (n, min, max) {
-    return Math.max(Math.min(n, max), min)
-  }
-
-  function recenterOverlay (win) {
-    try {
-      const manager = overlayManager
-      if (manager && typeof manager.recenter === 'function' && manager.isVisible()) {
-        manager.recenter(win)
-      }
-    } catch (e) {}
-  }
 
   if (process.platform === 'win32') {
     (async function () {
@@ -59,14 +43,10 @@ function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, create
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
   app.commandLine.appendSwitch('lang', 'en-US')
 
-  var userDataPath = app.getPath('userData')
-
   // Disable QUIC if setting is disabled
   if (settings.get('enableQUIC') === false) {
     app.commandLine.appendSwitch('disable-quic')
   }
-
-  const browserPage = 'min://app/index.html'
 
   var mainMenu = null
   var secondaryMenu = null
@@ -96,40 +76,8 @@ function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, create
     return
   }
 
-  var saveWindowBounds = function () {
-    if (windows.getCurrent()) {
-      var bounds = Object.assign(windows.getCurrent().getBounds(), {
-        maximized: windows.getCurrent().isMaximized()
-      })
-      fs.writeFileSync(path.join(userDataPath, 'windowBounds.json'), JSON.stringify(bounds))
-    }
-  }
-
   function sendIPCToWindow (window, action, data) {
-    if (window && window.isDestroyed()) {
-      return
-    }
-
-    if (window && getWindowWebContents(window).isLoadingMainFrame()) {
-    // immediately after a did-finish-load event, isLoading can still be true,
-    // so wait a bit to confirm that the page is really loading
-      setTimeout(function () {
-        if (getWindowWebContents(window).isLoadingMainFrame()) {
-          getWindowWebContents(window).once('did-finish-load', function () {
-            getWindowWebContents(window).send(action, data || {})
-          })
-        } else {
-          getWindowWebContents(window).send(action, data || {})
-        }
-      }, 0)
-    } else if (window) {
-      getWindowWebContents(window).send(action, data || {})
-    } else {
-      const newWindow = createWindow()
-      getWindowWebContents(newWindow).once('did-finish-load', function () {
-        getWindowWebContents(newWindow).send(action, data || {})
-      })
-    }
+    windows.send(window, action, data)
   }
 
   function openTabInWindow (url) {
@@ -165,210 +113,7 @@ function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, create
   }
 
   function createWindow (customArgs = {}) {
-    var bounds
-
-    try {
-      var data = fs.readFileSync(path.join(userDataPath, 'windowBounds.json'), 'utf-8')
-      bounds = JSON.parse(data)
-    } catch (e) {}
-
-    if (!bounds) { // there was an error, probably because the file doesn't exist
-      var size = electron.screen.getPrimaryDisplay().workAreaSize
-      bounds = {
-        x: 0,
-        y: 0,
-        width: size.width,
-        height: size.height,
-        maximized: true
-      }
-    }
-
-    // make the bounds fit inside a currently-active screen
-    // (since the screen Min was previously open on could have been removed)
-    // see: https://github.com/minbrowser/min/issues/904
-    var containingRect = electron.screen.getDisplayMatching(bounds).workArea
-
-    bounds = {
-      x: clamp(bounds.x, containingRect.x, (containingRect.x + containingRect.width) - bounds.width),
-      y: clamp(bounds.y, containingRect.y, (containingRect.y + containingRect.height) - bounds.height),
-      width: clamp(bounds.width, 0, containingRect.width),
-      height: clamp(bounds.height, 0, containingRect.height),
-      maximized: bounds.maximized
-    }
-
-    return createWindowWithBounds(bounds, customArgs)
-  }
-
-  function createWindowWithBounds (bounds, customArgs) {
-    const newWin = new BaseWindow({
-      width: bounds.width,
-      height: bounds.height,
-      x: bounds.x,
-      y: bounds.y,
-      minWidth: (process.platform === 'win32' ? 400 : 320), // controls take up more horizontal space on Windows
-      minHeight: 350,
-      titleBarStyle: settings.get('useSeparateTitlebar') ? 'default' : 'hidden',
-      trafficLightPosition: { x: 12, y: 10 },
-      icon: path.join(rootDir, 'icons/icon256.png'),
-      frame: settings.get('useSeparateTitlebar'),
-      alwaysOnTop: settings.get('windowAlwaysOnTop'),
-      backgroundColor: '#fff' // the value of this is ignored, but setting it seems to work around https://github.com/electron/electron/issues/10559
-    })
-
-    // windows and linux always use a menu button in the upper-left corner instead
-    // if frame: false is set, this won't have any effect, but it does apply on Linux if "use separate titlebar" is enabled
-    if (process.platform !== 'darwin') {
-      newWin.setMenuBarVisibility(false)
-    }
-
-    const mainView = new WebContentsView({
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
-        additionalArguments: [
-          '--user-data-path=' + userDataPath,
-          '--app-version=' + app.getVersion(),
-          '--app-name=' + app.getName(),
-          ...((isDevelopmentMode ? ['--development-mode'] : [])),
-          '--window-id=' + windows.nextId,
-          ...((windows.getAll().length === 0 ? ['--initial-window'] : [])),
-          ...(windows.hasEverCreatedWindow ? [] : ['--launch-window']),
-          ...(customArgs.initialTask ? ['--initial-task=' + customArgs.initialTask] : []),
-          ...(settings.get('smoothScrolling') ? ['--smooth-scrolling=' + settings.get('smoothScrolling')] : [])
-        ]
-      }
-    })
-    mainView.webContents.loadURL(browserPage)
-
-    if (bounds.maximized) {
-      newWin.maximize()
-
-      mainView.webContents.once('did-finish-load', function () {
-        sendIPCToWindow(newWin, 'maximize')
-      })
-    }
-
-    const winBounds = newWin.getContentBounds()
-
-    mainView.setBounds({ x: 0, y: 0, width: winBounds.width, height: winBounds.height })
-    newWin.contentView.addChildView(mainView)
-
-    // sometimes getContentBounds doesn't provide correct bounds until after the window has finished loading
-    mainView.webContents.once('did-finish-load', function () {
-      const winBounds = newWin.getContentBounds()
-      mainView.setBounds({ x: 0, y: 0, width: winBounds.width, height: winBounds.height })
-    })
-
-    newWin.on('resize', function () {
-    // The result of getContentBounds doesn't update until the next tick
-      setTimeout(function () {
-        const winBounds = newWin.getContentBounds()
-        mainView.setBounds({ x: 0, y: 0, width: winBounds.width, height: winBounds.height })
-        recenterOverlay(newWin)
-      }, 0)
-    })
-
-    newWin.on('close', function () {
-    // save the window size for the next launch of the app
-      saveWindowBounds()
-    })
-
-    function refocusBrowserContents () {
-      const isMinimized = newWin.isMinimized()
-      windows.getState(newWin).isMinimized = isMinimized
-      if (!isMinimized) {
-        sendIPCToWindow(newWin, 'windowFocus')
-      }
-    }
-
-    newWin.on('focus', function () {
-      refocusBrowserContents()
-    })
-
-    newWin.on('minimize', function () {
-      sendIPCToWindow(newWin, 'minimize')
-      windows.getState(newWin).isMinimized = true
-    })
-
-    newWin.on('restore', function () {
-      refocusBrowserContents()
-    })
-
-    newWin.on('maximize', function () {
-      sendIPCToWindow(newWin, 'maximize')
-      recenterOverlay(newWin)
-    })
-
-    newWin.on('unmaximize', function () {
-      sendIPCToWindow(newWin, 'unmaximize')
-      recenterOverlay(newWin)
-    })
-
-    newWin.on('focus', function () {
-      sendIPCToWindow(newWin, 'focus')
-    })
-
-    newWin.on('blur', function () {
-    // if the devtools for this window are focused, this check will be false, and we keep the focused class on the window
-      if (BaseWindow.getFocusedWindow() !== newWin) {
-        sendIPCToWindow(newWin, 'blur')
-      }
-    })
-
-    newWin.on('enter-full-screen', function () {
-      sendIPCToWindow(newWin, 'enter-full-screen')
-      recenterOverlay(newWin)
-    })
-
-    newWin.on('leave-full-screen', function () {
-      sendIPCToWindow(newWin, 'leave-full-screen')
-      // https://github.com/minbrowser/min/issues/1093
-      newWin.setMenuBarVisibility(false)
-      recenterOverlay(newWin)
-    })
-
-    newWin.on('enter-html-full-screen', function () {
-      sendIPCToWindow(newWin, 'enter-html-full-screen')
-    })
-
-    newWin.on('leave-html-full-screen', function () {
-      sendIPCToWindow(newWin, 'leave-html-full-screen')
-      // https://github.com/minbrowser/min/issues/952
-      newWin.setMenuBarVisibility(false)
-    })
-
-    /*
-  Handles events from mouse buttons
-  Unsupported on macOS, and on Linux, there is a default handler already,
-  so registering a handler causes events to happen twice.
-  See: https://github.com/electron/electron/issues/18322
-  */
-    if (process.platform === 'win32') {
-      newWin.on('app-command', function (e, command) {
-        if (command === 'browser-backward') {
-          sendIPCToWindow(newWin, 'goBack')
-        } else if (command === 'browser-forward') {
-          sendIPCToWindow(newWin, 'goForward')
-        }
-      })
-    }
-
-    // prevent remote pages from being loaded using drag-and-drop, since they would have node access
-    mainView.webContents.on('will-navigate', function (e, url) {
-      if (url !== browserPage) {
-        e.preventDefault()
-      }
-    })
-
-    mainView.webContents.on('before-input-event', function (e, input) {
-      sendIPCToWindow(newWin, 'before-input-event', input)
-    })
-
-    newWin.setTouchBar(buildTouchBar())
-
-    windows.addWindow(newWin)
-
-    return newWin
+    return windows.create(customArgs)
   }
 
   app.on('session-created', installSessionPolicies)
@@ -454,8 +199,11 @@ function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, create
     }
   })
 
-  ipc.on('focusMainWebContents', function () {
-    getWindowWebContents(windows.getCurrent()).focus()
+  ipc.on('focusMainWebContents', function (event) {
+    const window = windows.windowFromContents(event.sender)?.win || windows.getCurrent()
+    if (window) {
+      getWindowWebContents(window).focus()
+    }
   })
 
   ipc.on('showSecondaryMenu', function (event, data) {
@@ -513,9 +261,7 @@ function createAppRuntime ({ buildAppMenu, buildTouchBar, commandPalette, create
     placesWindow.webContents.postMessage('places-connect', null, e.ports)
   })
 
-  function getWindowWebContents (win) {
-    return win.getContentView().children[0].webContents
-  }
+  const getWindowWebContents = windows.getChromeContents
 
   /* command palette overlay */
 

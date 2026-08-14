@@ -25,7 +25,7 @@ const webviewMenu = {
         {
           label: 'Picture in Picture',
           click: function () {
-            webviews.callAsync(browserSession.tabs.getSelected(), 'send', ['enterPictureInPicture', { x: data.x, y: data.y }])
+            webviews.sendToInternalPage(browserSession.tabs.getSelected(), 'enterPictureInPicture', { x: data.x, y: data.y })
           }
         }
       ])
@@ -38,7 +38,7 @@ const webviewMenu = {
         return {
           label: suggestion,
           click: function () {
-            webviews.callAsync(browserSession.tabs.getSelected(), 'replaceMisspelling', suggestion)
+            webviews.replaceMisspelling(browserSession.tabs.getSelected(), suggestion)
           }
         }
       })
@@ -100,7 +100,7 @@ const webviewMenu = {
       linkActions.push({
         label: 'Save Link As...',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'downloadURL', [link])
+          webviews.download(browserSession.tabs.getSelected(), link)
         }
       })
 
@@ -145,7 +145,7 @@ const webviewMenu = {
       imageActions.push({
         label: 'Save Image As',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'downloadURL', [mediaURL])
+          webviews.download(browserSession.tabs.getSelected(), mediaURL)
         }
       })
 
@@ -180,14 +180,14 @@ const webviewMenu = {
       clipboardActions.push({
         label: 'Copy',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'copyImageAt', [data.x, data.y])
+          webviews.copyImage(browserSession.tabs.getSelected(), data.x, data.y)
         }
       })
     } else if (selection) {
       clipboardActions.push({
         label: 'Copy',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'copy')
+          webviews.copy(browserSession.tabs.getSelected())
         }
       })
     }
@@ -196,7 +196,7 @@ const webviewMenu = {
       clipboardActions.push({
         label: 'Paste',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'paste')
+          webviews.paste(browserSession.tabs.getSelected())
         }
       })
     }
@@ -205,7 +205,7 @@ const webviewMenu = {
       clipboardActions.push({
         label: 'Paste and Match Style',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'pasteAndMatchStyle')
+          webviews.pasteAndMatchStyle(browserSession.tabs.getSelected())
         }
       })
     }
@@ -248,7 +248,7 @@ const webviewMenu = {
         label: 'Go Forward',
         click: function () {
           try {
-            webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
+            webviews.goForward(browserSession.tabs.getSelected())
           } catch (e) { }
         }
       }
@@ -261,7 +261,7 @@ const webviewMenu = {
       {
         label: 'Inspect Element',
         click: function () {
-          webviews.callAsync(browserSession.tabs.getSelected(), 'inspectElement', [data.x || 0, data.y || 0])
+          webviews.inspect(browserSession.tabs.getSelected(), data.x || 0, data.y || 0)
         }
       }
     ])
@@ -298,9 +298,10 @@ const webviewMenu = {
     remoteMenu.open(menuSections, data.x + offset.x, data.y + offset.y)
   },
   initialize: function () {
-    webviews.bindEvent('context-menu', function (tabId, data) {
+    webviews.bindEvent('context-menu-requested', function (tabId, event) {
+      const data = event.data
       webviewMenu.menuData = data
-      webviews.callAsync(browserSession.tabs.getSelected(), 'send', ['getContextMenuData', { x: data.x, y: data.y }])
+      webviews.sendToInternalPage(browserSession.tabs.getSelected(), 'getContextMenuData', { x: data.x, y: data.y })
     })
     webviews.bindIPC('contextMenuData', function (tabId, args) {
       webviewMenu.showMenu(webviewMenu.menuData, args[0])

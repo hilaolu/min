@@ -44,7 +44,7 @@ var tabAudio = {
     var tab = browserSession.tabs.get(tabId)
     // can be muted if has audio, can be unmuted if muted
     if (tab.hasAudio || tab.muted) {
-      webviews.callAsync(tabId, 'setAudioMuted', !tab.muted)
+      webviews.setAudioMuted(tabId, !tab.muted)
       browserSession.updateTab(tabId, { muted: !tab.muted })
     }
   },
@@ -53,7 +53,7 @@ var tabAudio = {
       tabAudio.toggleAudio(browserSession.tabs.getSelected())
     })
 
-    webviews.bindEvent('media-started-playing', function (tabId) {
+    webviews.bindEvent('media-started', function (tabId) {
       browserSession.updateTab(tabId, { hasAudio: true })
     })
     webviews.bindEvent('media-paused', function (tabId) {

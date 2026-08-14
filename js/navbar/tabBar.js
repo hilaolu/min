@@ -280,12 +280,12 @@ settings.listen('showDividerBetweenTabs', function (dividerPreference) {
 })
 
 /* tab loading and progress bar status */
-webviews.bindEvent('did-start-loading', function (tabId) {
+webviews.bindEvent('loading-started', function (tabId) {
   progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'start')
   browserSession.updateTab(tabId, { loaded: false })
 })
 
-webviews.bindEvent('did-stop-loading', function (tabId) {
+webviews.bindEvent('loading-stopped', function (tabId) {
   progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'finish')
   browserSession.updateTab(tabId, { loaded: true })
   tabBar.updateTab(tabId)

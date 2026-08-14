@@ -17,28 +17,28 @@ const PDFViewer = {
       throw new Error("attempting to print in a tab that isn't a PDF viewer")
     }
 
-    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.printPDF()')
+    webviews.runInternalPageAction(browserSession.tabs.getSelected(), 'printPDF')
   },
   savePDF: function (viewerTabId) {
     if (!PDFViewer.isPDFViewer(viewerTabId)) {
       throw new Error("attempting to save in a tab that isn't a PDF viewer")
     }
 
-    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.downloadPDF()')
+    webviews.runInternalPageAction(browserSession.tabs.getSelected(), 'downloadPDF')
   },
   startFindInPage: function (viewerTabId) {
     if (!PDFViewer.isPDFViewer(viewerTabId)) {
       throw new Error("attempting to call startFindInPage in a tab that isn't a PDF viewer")
     }
 
-    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.startFindInPage()')
+    webviews.runInternalPageAction(browserSession.tabs.getSelected(), 'startFindInPage')
   },
   endFindInPage: function (viewerTabId) {
     if (!PDFViewer.isPDFViewer(viewerTabId)) {
       throw new Error("attempting to call endFindInPage in a tab that isn't a PDF viewer")
     }
 
-    webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'parentProcessActions.endFindInPage()')
+    webviews.runInternalPageAction(browserSession.tabs.getSelected(), 'endFindInPage')
   },
   handlePDFOpenEvent: function (event, data) {
     if (!data.tabId) {

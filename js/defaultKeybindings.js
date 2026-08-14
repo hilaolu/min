@@ -96,23 +96,23 @@ const defaultKeybindings = {
 
     keybindings.defineShortcut({ keys: 'esc' }, function (e) {
       if (webviews.placeholderRequests.length === 0 && document.activeElement.tagName !== 'INPUT') {
-        webviews.callAsync(browserSession.tabs.getSelected(), 'stop')
+        webviews.stopLoading(browserSession.tabs.getSelected())
       }
 
       tabEditor.hide()
 
       // exit full screen mode
-      webviews.callAsync(browserSession.tabs.getSelected(), 'executeJavaScript', 'if(document.webkitIsFullScreen){document.webkitExitFullscreen()}')
+      webviews.exitFullscreen(browserSession.tabs.getSelected())
 
-      webviews.callAsync(browserSession.tabs.getSelected(), 'focus')
+      webviews.focus()
     })
 
     keybindings.defineShortcut('goBack', function (d) {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goBack')
+      webviews.goBack(browserSession.tabs.getSelected())
     })
 
     keybindings.defineShortcut('goForward', function (d) {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'goForward')
+      webviews.goForward(browserSession.tabs.getSelected())
     })
 
     keybindings.defineShortcut('switchToPreviousTab', function (d) {
@@ -207,12 +207,12 @@ const defaultKeybindings = {
         webviews.update(browserSession.tabs.getSelected(), new URL(browserSession.tabs.get(browserSession.tabs.getSelected()).url).searchParams.get('url'))
       } else {
         // this can't be an error page, use the normal reload method
-        webviews.callAsync(browserSession.tabs.getSelected(), 'reload')
+        webviews.reload(browserSession.tabs.getSelected())
       }
     })
 
     keybindings.defineShortcut('reloadIgnoringCache', function () {
-      webviews.callAsync(browserSession.tabs.getSelected(), 'reloadIgnoringCache')
+      webviews.reload(browserSession.tabs.getSelected(), true)
     })
 
     keybindings.defineShortcut('showHistory', function () {

@@ -25,12 +25,8 @@
  * overlayManager.eval('console.log("Hello from overlay")');
  */
 
-function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, getWindowWebContents, registerView, unregisterView, windows }) {
-// Dependencies - these are expected to be available globally in the main process
-  // var { WebContentsView } = require('electron')
-  // var windows = require('./windows.js')
-  // var { getDefaultViewWebPreferences } = require('./viewManager.js')
-  // var { getWindowWebContents } = require('./main.js')
+function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, getWindowWebContents, windows }) {
+  const overlayId = 'overlay-current'
 
   var overlayManager = {
   /** @type {Object|null} Current overlay instance (only one allowed) */
@@ -98,13 +94,6 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
 
       // Store the overlay as current
       this.currentOverlay = overlay
-
-      // Add to viewMap for compatibility (use a fixed ID since only one overlay exists)
-      const overlayId = 'overlay-current'
-      registerView(overlayId, overlay.view, {
-        loadedInitialURL: true,
-        hasJS: true
-      })
     },
 
     /**
@@ -138,7 +127,7 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
         return false
       }
 
-      if (overlay.visible) {
+      if (this.isVisible()) {
         this.hide(win)
         return false
       } else {
@@ -167,7 +156,7 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
         return
       }
 
-      if (overlay.visible) {
+      if (windows.isOverlayAttached(overlayId, overlay.view)) {
         return // Already visible
       }
 
@@ -191,8 +180,9 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
         height: overlay.size.height
       })
 
-      // Add the overlay to the window
-      win.getContentView().addChildView(overlay.view)
+      if (!windows.attachOverlay(overlayId, overlay.view, win)) {
+        return
+      }
       overlay.visible = true
       overlay.window = win
 
@@ -225,12 +215,11 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
         win = overlay.window || windows.getCurrent()
       }
 
-      if (!win || !overlay.visible) {
+      if (!win || !windows.isOverlayAttached(overlayId, overlay.view)) {
         return
       }
 
-      // Remove the overlay from the window
-      win.getContentView().removeChildView(overlay.view)
+      windows.detachOverlay(overlayId, overlay.view)
       overlay.visible = false
       overlay.window = null
 
@@ -268,18 +257,9 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
       }
 
       // Hide the overlay first
-      if (overlay.visible) {
+      if (windows.isOverlayAttached(overlayId, overlay.view)) {
         this.hide(overlay.window)
       }
-
-      // Remove from all windows
-      windows.getAll().forEach(function (window) {
-        try {
-          window.getContentView().removeChildView(overlay.view)
-        } catch (e) {
-        // View might not be attached to this window
-        }
-      })
 
       // Destroy the web contents
       if (overlay.view && overlay.view.webContents) {
@@ -288,7 +268,6 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
 
       // Clean up references
       this.currentOverlay = null
-      unregisterView('overlay-current')
     },
 
     /**
@@ -305,7 +284,7 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
    */
     isVisible: function () {
       const overlay = this.currentOverlay
-      return overlay ? overlay.visible : false
+      return Boolean(overlay && windows.isOverlayAttached(overlayId, overlay.view))
     },
 
     /**
@@ -314,9 +293,9 @@ function createOverlayManager ({ WebContentsView, getDefaultViewWebPreferences, 
     recenter: function (win) {
       const overlay = this.currentOverlay
       if (!overlay || !overlay.view) return
-      if (!win) {
-        win = windows.getCurrent()
-      }
+      const owner = windows.windowFromContents(overlay.view.webContents)?.win
+      if (win && owner !== win) return
+      win = owner
       if (!win) return
 
       const winBounds = win.getContentBounds()

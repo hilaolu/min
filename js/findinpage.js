@@ -30,7 +30,7 @@ var findinpage = {
     findinpage.input.select()
 
     if (findinpage.input.value) {
-      webviews.callAsync(findinpage.activeTab, 'findInPage', findinpage.input.value)
+      webviews.find(findinpage.activeTab, findinpage.input.value)
     }
   },
   end: function (options) {
@@ -40,14 +40,14 @@ var findinpage = {
     findinpage.container.hidden = true
 
     if (findinpage.activeTab) {
-      webviews.callAsync(findinpage.activeTab, 'stopFindInPage', action)
+      webviews.stopFind(findinpage.activeTab, action)
 
       /* special case for PDF viewer */
       if (browserSession.tabs.get(findinpage.activeTab) && PDFViewer.isPDFViewer(findinpage.activeTab)) {
         PDFViewer.endFindInPage(findinpage.activeTab)
       }
 
-      webviews.callAsync(findinpage.activeTab, 'focus')
+      webviews.focus()
     }
 
     findinpage.activeTab = null
@@ -64,39 +64,39 @@ findinpage.endButton.addEventListener('click', function () {
 
 findinpage.input.addEventListener('input', function (e) {
   if (this.value) {
-    webviews.callAsync(findinpage.activeTab, 'findInPage', findinpage.input.value)
+    webviews.find(findinpage.activeTab, findinpage.input.value)
   } else {
-    webviews.callAsync(findinpage.activeTab, 'stopFindInPage', 'clearSelection')
+    webviews.stopFind(findinpage.activeTab, 'clearSelection')
     findinpage.counter.textContent = ''
   }
 })
 
 findinpage.input.addEventListener('keypress', function (e) {
   if (e.keyCode === 13) { // Return/Enter key
-    webviews.callAsync(findinpage.activeTab, 'findInPage', [findinpage.input.value, {
+    webviews.find(findinpage.activeTab, findinpage.input.value, {
       forward: !e.shiftKey, // find previous if Shift is pressed
       findNext: false
-    }])
+    })
   }
 })
 
 findinpage.previous.addEventListener('click', function (e) {
-  webviews.callAsync(findinpage.activeTab, 'findInPage', [findinpage.input.value, {
+  webviews.find(findinpage.activeTab, findinpage.input.value, {
     forward: false,
     findNext: false
-  }])
+  })
   findinpage.input.focus()
 })
 
 findinpage.next.addEventListener('click', function (e) {
-  webviews.callAsync(findinpage.activeTab, 'findInPage', [findinpage.input.value, {
+  webviews.find(findinpage.activeTab, findinpage.input.value, {
     forward: true,
     findNext: false
-  }])
+  })
   findinpage.input.focus()
 })
 
-webviews.bindEvent('view-hidden', function (tabId) {
+webviews.bindEvent('content-hidden', function (tabId) {
   if (tabId === findinpage.activeTab) {
     findinpage.end()
   }
@@ -108,13 +108,14 @@ browserSession.tasks.on('tab-selected', function (tabId) {
   }
 })
 
-webviews.bindEvent('did-start-navigation', function (tabId, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-  if (isMainFrame && !isInPlace && tabId === findinpage.activeTab) {
+webviews.bindEvent('navigation-started', function (tabId, event) {
+  if (event.isMainFrame && !event.isInPlace && tabId === findinpage.activeTab) {
     findinpage.end()
   }
 })
 
-webviews.bindEvent('found-in-page', function (tabId, data) {
+webviews.bindEvent('find-result', function (tabId, event) {
+  const data = event.result
   if (data.matches !== undefined) {
     var matchLabel = data.matches === 1 ? 'match' : 'matches'
     findinpage.counter.textContent = `${data.activeMatchOrdinal} of ${data.matches} ${matchLabel}`
