@@ -305,7 +305,6 @@ const commandPalette = {
     setTimeout(() => {
       try {
         commandPalette.input.focus()
-        commandPalette.input.setSelectionRange(prefix.length, prefix.length)
       } catch (e) {}
     }, 220)
   },
@@ -556,4 +555,4 @@ keybindings.defineShortcut('showCommandPalette', function () {
   commandPalette.showWithPrefix('>')
 })
 
-module.exports = commandPalette 
+module.exports = commandPalette

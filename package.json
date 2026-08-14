@@ -58,7 +58,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "postinstall": "node ./scripts/setupDevEnv.js",
-    "test": "standard --verbose js/**/*.js main/*.js",
+    "test": "node --test test/*.test.js && standard --verbose js/**/*.js main/*.js test/*.js",
     "watch": "node ./scripts/watch.js",
     "startElectron": "electron . --development-mode",
     "start": "npm run build && concurrently \"npm run watch\" \"npm run startElectron\"",
