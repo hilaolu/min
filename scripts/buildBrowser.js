@@ -14,6 +14,8 @@ const fileList = [
 ]
 
 function buildBrowser () {
+  fs.mkdirSync(path.dirname(intermediateOutput), { recursive: true })
+
   /* concatenate legacy modules */
   let output = ''
   fileList.forEach(function (script) {
