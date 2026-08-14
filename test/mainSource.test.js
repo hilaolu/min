@@ -16,20 +16,21 @@ function createRecordingApp () {
   return app
 }
 
-test('App Runtime registers command palette lifecycle IPC once through its interface', function () {
+test('App Runtime routes structured command palette state through one interface', function () {
   const app = createRecordingApp()
   const ipc = new EventEmitter()
+  const handlers = new Map()
+  ipc.handle = (channel, handler) => handlers.set(channel, handler)
+  const calls = []
   const commandPalette = {
-    destroy: function () {},
-    hide: function () {},
-    init: function () {},
-    show: function () {},
-    update: function () {}
+    present: function (sender, state) {
+      calls.push({ sender, state })
+      return { ok: true }
+    }
   }
 
   const runtime = createAppRuntime({
     buildAppMenu: function () {},
-    buildTouchBar: function () {},
     commandPalette,
     createDockMenu: function () {},
     electron: {
@@ -45,7 +46,6 @@ test('App Runtime registers command palette lifecycle IPC once through its inter
     fs: {},
     installSessionPolicies: function () {},
     installThemePolicy: function () {},
-    overlayManager: null,
     path,
     registryInstaller: {},
     rootDir: '/tmp/min-test',
@@ -58,13 +58,9 @@ test('App Runtime registers command palette lifecycle IPC once through its inter
   })
 
   assert.equal(runtime.isPrimaryInstance, true)
-  const channels = [
-    'initCommandPaletteOverlay',
-    'showCommandPaletteOverlay',
-    'hideCommandPaletteOverlay',
-    'destroyCommandPaletteOverlay'
-  ]
-  channels.forEach(function (channel) {
-    assert.equal(ipc.listenerCount(channel), 1, `${channel} should have one listener`)
-  })
+  assert.deepEqual(Array.from(handlers.keys()), ['command-palette:present'])
+  const sender = { id: 3 }
+  const state = { visible: true, input: '>', candidates: [], selectedIndex: 0 }
+  assert.deepEqual(handlers.get('command-palette:present')({ sender }, state), { ok: true })
+  assert.deepEqual(calls, [{ sender, state }])
 })

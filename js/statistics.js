@@ -96,7 +96,7 @@ const statistics = {
     }
 
     statistics.registerGetter('contentTypeFilters', function () {
-      return (settings.get('filtering') || {}).contentTypes
+      return settings.get('filtering').contentTypes
     })
   }
 }

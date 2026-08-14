@@ -1,19 +1,24 @@
-window.addEventListener('message', function (e) {
-  if (!e.origin.startsWith('min://')) {
-    return
-  }
+var settingsElectron = require('electron')
+var settingsIPC = settingsElectron.ipcRenderer
 
-  if (e.data && e.data.message && e.data.message === 'getSettingsData') {
-    ipc.send('getSettingsData')
-  }
-
-  if (e.data && e.data.message && e.data.message === 'setSetting') {
-    ipc.send('setSetting', { key: e.data.key, value: e.data.value })
-  }
-})
-
-ipc.on('receiveSettingsData', function (e, data) {
-  if (window.location.toString().startsWith('min://')) { // probably redundant, but might as well check
-    window.postMessage({ message: 'receiveSettingsData', settings: data }, window.location.toString())
+settingsElectron.contextBridge.exposeInMainWorld('settingsHost', {
+  getSnapshot: function () {
+    if (!window.location.href.startsWith('min://')) return {}
+    return settingsIPC.sendSync('settings:get-snapshot')
+  },
+  onChange: function (callback) {
+    if (!window.location.href.startsWith('min://')) return
+    settingsIPC.on('settings:changed', function (event, change) {
+      callback(change)
+    })
+  },
+  set: function (key, value) {
+    if (!window.location.href.startsWith('min://')) {
+      return Promise.resolve({
+        ok: false,
+        error: { code: 'SETTINGS_ORIGIN_DENIED', message: 'Settings are only available to internal pages' }
+      })
+    }
+    return settingsIPC.invoke('settings:set', { key, value })
   }
 })

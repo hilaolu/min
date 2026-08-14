@@ -96,7 +96,7 @@ const contentBlockingToggle = {
       return
     }
 
-    if (settings.get('filtering') && settings.get('filtering').blockingLevel === 0) {
+    if (settings.get('filtering').blockingLevel === 0) {
       button.hidden = true
       return
     }

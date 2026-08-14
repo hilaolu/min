@@ -68,7 +68,7 @@ const sessionRestore = {
       }
     }
 
-    const startupConfigOption = settings.get('startupTabOption') || 2
+    const startupConfigOption = settings.get('startupTabOption')
     if (!savedStringData) {
       sessionRestore.createInitialSession('https://minbrowser.github.io/min/tour')
       return

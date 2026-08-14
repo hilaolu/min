@@ -668,12 +668,23 @@
         clearSuggestions();
       }
 
-      // Make functions available globally for RPC calls
-      window.updateOverlayInput = updateOverlayInput;
-      window.updateSuggestions = updateSuggestions;
-      window.updateSelection = updateSelection;
-      window.showOverlay = showOverlay;
-      window.hideOverlay = hideOverlay;
+      function render(state) {
+        if (!state || typeof state !== "object") return;
+        if (state.visible) {
+          showOverlay();
+          updateOverlayInput(state.input);
+          updateSuggestions(state.candidates);
+          updateSelection({ index: state.selectedIndex });
+        } else {
+          hideOverlay();
+        }
+      }
+
+      if (window.commandPalettePresentation) {
+        window.commandPalettePresentation.onState(render);
+      } else {
+        console.error("Command palette presentation bridge is unavailable");
+      }
 
       // Check for dark mode
       if (

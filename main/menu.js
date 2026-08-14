@@ -382,7 +382,7 @@ function createMenu ({ app, createWindow, destroyAllViews, electron, getPlacesWi
             {
               label: 'Always on Top',
               type: 'checkbox',
-              checked: settings.get('windowAlwaysOnTop') || false,
+              checked: settings.get('windowAlwaysOnTop'),
               click: function (item, window) {
                 windows.getAll().forEach(function (win) {
                   win.setAlwaysOnTop(item.checked)

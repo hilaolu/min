@@ -73,22 +73,7 @@ function setExceptionInputSize () {
 }
 
 settings.get('filtering', function (value) {
-  // migrate from old settings (<v1.9.0)
-  if (value && typeof value.trackers === 'boolean') {
-    if (value.trackers === true) {
-      value.blockingLevel = 2
-    } else if (value.trackers === false) {
-      value.blockingLevel = 0
-    }
-    delete value.trackers
-    settings.set('filtering', value)
-  }
-
-  if (value && value.blockingLevel !== undefined) {
-    updateBlockingLevelUI(value.blockingLevel)
-  } else {
-    updateBlockingLevelUI(1)
-  }
+  updateBlockingLevelUI(value.blockingLevel)
 
   if (value && value.exceptionDomains && value.exceptionDomains.length > 0) {
     blockingExceptionsInput.value = value.exceptionDomains.join(', ') + ', '
@@ -213,7 +198,7 @@ darkModeSystem.addEventListener('change', function (e) {
 /* site theme setting */
 
 settings.get('siteTheme', function (value) {
-  if (value === true || value === undefined) {
+  if (value === true) {
     siteThemeCheckbox.checked = true
   } else {
     siteThemeCheckbox.checked = false
@@ -228,11 +213,11 @@ siteThemeCheckbox.addEventListener('change', function (e) {
 
 var startupSettingInput = document.getElementById('startup-options')
 
-settings.get('startupTabOption', function(value = 2) {
+settings.get('startupTabOption', function (value) {
   startupSettingInput.value = value
 })
 
-startupSettingInput.addEventListener('change', function() {
+startupSettingInput.addEventListener('change', function () {
   settings.set('startupTabOption', parseInt(this.value))
 })
 
@@ -240,11 +225,11 @@ startupSettingInput.addEventListener('change', function() {
 
 var newWindowSettingInput = document.getElementById('new-window-options')
 
-settings.get('newWindowOption', function(value = 1) {
+settings.get('newWindowOption', function (value) {
   newWindowSettingInput.value = value
 })
 
-newWindowSettingInput.addEventListener('change', function() {
+newWindowSettingInput.addEventListener('change', function () {
   settings.set('newWindowOption', parseInt(this.value))
 })
 
@@ -379,7 +364,7 @@ usageStatisticsCheckbox.addEventListener('change', function (e) {
 var enableQUICCheckbox = document.getElementById('checkbox-enable-quic')
 
 settings.get('enableQUIC', function (value) {
-  enableQUICCheckbox.checked = value || false
+  enableQUICCheckbox.checked = value
 })
 
 enableQUICCheckbox.addEventListener('change', function (e) {
@@ -549,13 +534,13 @@ const toggleProxyOptions = proxyType => {
 }
 
 const setProxy = (key, value) => {
-  settings.get('proxy', (proxy = {}) => {
+  settings.get('proxy', (proxy) => {
     proxy[key] = value
     settings.set('proxy', proxy)
   })
 }
 
-settings.get('proxy', (proxy = {}) => {
+settings.get('proxy', (proxy) => {
   toggleProxyOptions(proxy.type)
 
   proxyTypeInput.options.selectedIndex = proxy.type || 0

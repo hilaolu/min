@@ -1,12 +1,6 @@
 const parser = require('../ext/abp-filter-parser-modified/abp-filter-parser.js')
 
 function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents }) {
-  var defaultFilteringSettings = {
-    blockingLevel: 1,
-    contentTypes: [],
-    exceptionDomains: []
-  }
-
   var enabledFilteringOptions = {
     blockingLevel: 0,
     contentTypes: [], // script, image
@@ -56,9 +50,6 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
   setInterval(function () {
     if (unsavedBlockedRequests > 0) {
       var current = settings.get('filteringBlockedCount')
-      if (!current) {
-        current = 0
-      }
       settings.set('filteringBlockedCount', current + unsavedBlockedRequests)
       unsavedBlockedRequests = 0
     }
@@ -230,16 +221,6 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
   }
 
   function setFilteringSettings (settings) {
-    if (!settings) {
-      settings = {}
-    }
-
-    for (var key in defaultFilteringSettings) {
-      if (settings[key] === undefined) {
-        settings[key] = defaultFilteringSettings[key]
-      }
-    }
-
     if (settings.blockingLevel > 0 && !(enabledFilteringOptions.blockingLevel > 0)) { // we're enabling tracker filtering
       initFilterList()
     }
@@ -254,17 +235,6 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
   }
 
   settings.listen('filtering', function (value) {
-  // migrate from old settings (<v1.9.0)
-    if (value && typeof value.trackers === 'boolean') {
-      if (value.trackers === true) {
-        value.blockingLevel = 2
-      } else if (value.trackers === false) {
-        value.blockingLevel = 0
-      }
-      delete value.trackers
-      settings.set('filtering', value)
-    }
-
     setFilteringSettings(value)
   })
 

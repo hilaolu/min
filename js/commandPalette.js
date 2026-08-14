@@ -12,11 +12,7 @@ const ReplStrategy = require('./commandPalette/strategies/ReplStrategy.js')
 const OVERLAY_CONSTANTS = {
   DEFAULT_ICON: 'carbon:search',
   UPDATE_DEBOUNCE_MS: 50, // Debounce rapid updates
-  IPC_CHANNELS: {
-    SHOW: 'showCommandPaletteOverlay',
-    HIDE: 'hideCommandPaletteOverlay',
-    UPDATE_UI: 'updateCommandPaletteOverlayUI'
-  }
+  IPC_CHANNEL: 'command-palette:present'
 }
 
 // Command palette object
@@ -57,20 +53,7 @@ const commandPalette = {
     // Set up event listeners
     commandPalette.setupEventListeners()
 
-    // Initialize overlay for command palette
-    commandPalette.initializeOverlay()
-
     console.log('Command palette initialized with overlay-only mode')
-  },
-
-  /**
-   * Initialize the command palette overlay
-   */
-  initializeOverlay: function () {
-    // Send IPC message to initialize the command palette overlay
-    if (typeof window.ipc !== 'undefined') {
-      window.ipc.send('initCommandPaletteOverlay')
-    }
   },
 
   /**
@@ -111,6 +94,7 @@ const commandPalette = {
     // Strategy manager event listeners
     commandPalette.strategyManager.on('state-changed', commandPalette.handleStateChange)
     commandPalette.strategyManager.on('candidates-updated', commandPalette.handleCandidatesUpdate)
+    window.ipc.on('command-palette:focus-input', commandPalette.focusInput)
   },
 
   /**
@@ -229,15 +213,8 @@ const commandPalette = {
   /**
    * Ensure the hidden input receives focus reliably
    */
-  focusInputWithRetry: function () {
-    // Try immediately
-    try { commandPalette.input.focus() } catch (e) {}
-    // Retry after overlay manager refocuses the main window
-    setTimeout(() => {
-      if (document.activeElement !== commandPalette.input) {
-        try { commandPalette.input.focus() } catch (e) {}
-      }
-    }, 220)
+  focusInput: function () {
+    if (commandPalette.isVisible) commandPalette.input.focus()
   },
 
   /**
@@ -256,12 +233,7 @@ const commandPalette = {
     const context = commandPalette.getContext()
     commandPalette.strategyManager.resetToFallback(context)
 
-    // Show the overlay and clear its input and suggestions
-    commandPalette.showOverlay()
-    commandPalette.updateOverlayInput('')
-    commandPalette.clearOverlaySuggestions()
-
-    commandPalette.focusInputWithRetry()
+    commandPalette.updateOverlayUI({ open: true, visible: true })
   },
 
   /**
@@ -280,22 +252,7 @@ const commandPalette = {
     // Process the input to determine initial state
     commandPalette.handleInput()
 
-    // Show the overlay and update its input with the prefix
-    commandPalette.showOverlay()
-    commandPalette.updateOverlayInput(prefix)
-
-    setTimeout(() => {
-      try {
-        commandPalette.input.focus()
-        commandPalette.input.setSelectionRange(prefix.length, prefix.length)
-      } catch (e) {}
-    }, 50)
-
-    setTimeout(() => {
-      try {
-        commandPalette.input.focus()
-      } catch (e) {}
-    }, 220)
+    commandPalette.updateOverlayUI({ open: true, visible: true })
   },
 
   /**
@@ -311,31 +268,16 @@ const commandPalette = {
     commandPalette.selectedIndex = 0
     commandPalette.currentCandidates = []
 
-    // Hide the overlay and clear its input and suggestions
-    commandPalette.hideOverlay()
-    commandPalette.updateOverlayInput('')
-    commandPalette.clearOverlaySuggestions()
+    if (commandPalette.overlayUpdateTimeout) {
+      clearTimeout(commandPalette.overlayUpdateTimeout)
+      commandPalette.overlayUpdateTimeout = null
+    }
+
+    commandPalette.updateOverlayUI({ visible: false })
 
     // Ensure the active tab regains focus
-    try {
-      var webviews = require('webviews.js')
-      webviews.focus()
-    } catch (e) {}
-  },
-
-  /**
-   * Update the overlay input content
-   * @param {string} inputValue - The new input value
-   */
-  updateOverlayInput: function (inputValue) {
-    commandPalette.updateOverlayUI({ input: inputValue })
-  },
-
-  /**
-   * Clear suggestions in the overlay
-   */
-  clearOverlaySuggestions: function () {
-    commandPalette.updateOverlayUI({ candidates: [] })
+    var webviews = require('webviews.js')
+    webviews.focus()
   },
 
   /**
@@ -350,12 +292,14 @@ const commandPalette = {
           input: state.input ?? commandPalette.input.value ?? '',
           candidates: state.candidates ?? commandPalette.currentCandidates ?? [],
           selectedIndex: state.selectedIndex ?? commandPalette.selectedIndex ?? 0,
-          isVisible: state.isVisible ?? commandPalette.isVisible ?? false
+          open: state.open === true,
+          visible: state.visible ?? commandPalette.isVisible ?? false
         }
 
         // Serialize candidates to only include display data for security
         if (overlayState.candidates.length > 0) {
           overlayState.candidates = overlayState.candidates.map(candidate => ({
+            id: candidate.id,
             title: candidate.title ?? '',
             description: candidate.description ?? '',
             icon: candidate.icon ?? OVERLAY_CONSTANTS.DEFAULT_ICON,
@@ -364,9 +308,13 @@ const commandPalette = {
           }))
         }
 
-        window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.UPDATE_UI, overlayState)
+        window.ipc.invoke(OVERLAY_CONSTANTS.IPC_CHANNEL, overlayState).then(function (result) {
+          if (!result.ok) console.error('Command palette presentation failed:', result.error)
+        }).catch(function (error) {
+          console.error('Command palette presentation failed:', error)
+        })
       } catch (error) {
-        // Silent fail for production - overlay will continue to work
+        console.error('Command palette presentation failed:', error)
       }
     }
   },
@@ -385,40 +333,6 @@ const commandPalette = {
     commandPalette.overlayUpdateTimeout = setTimeout(() => {
       commandPalette.updateOverlayUI(state)
     }, OVERLAY_CONSTANTS.UPDATE_DEBOUNCE_MS)
-  },
-
-  /**
-   * Show the overlay when command palette becomes visible
-   */
-  showOverlay: function () {
-    if (typeof window.ipc !== 'undefined') {
-      try {
-        window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.SHOW)
-        // Update overlay UI with current state after showing
-        commandPalette.updateOverlayUI({ isVisible: true })
-      } catch (error) {
-        // Silent fail for production - overlay will continue to work
-      }
-    }
-  },
-
-  /**
-   * Hide the overlay when command palette becomes hidden
-   */
-  hideOverlay: function () {
-    if (typeof window.ipc !== 'undefined') {
-      try {
-        // Clear any pending overlay updates
-        if (commandPalette.overlayUpdateTimeout) {
-          clearTimeout(commandPalette.overlayUpdateTimeout)
-          commandPalette.overlayUpdateTimeout = null
-        }
-
-        window.ipc.send(OVERLAY_CONSTANTS.IPC_CHANNELS.HIDE)
-      } catch (error) {
-        // Silent fail for production - overlay will continue to work
-      }
-    }
   },
 
   /**

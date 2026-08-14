@@ -263,31 +263,8 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
 
   const getWindowWebContents = windows.getChromeContents
 
-  /* command palette overlay */
-
-  ipc.on('initCommandPaletteOverlay', function (e) {
-    commandPalette.init()
-  })
-
-  ipc.on('showCommandPaletteOverlay', function (e) {
-    commandPalette.show()
-  })
-
-  ipc.on('hideCommandPaletteOverlay', function (e) {
-    commandPalette.hide()
-  })
-
-  // Unified command palette overlay UI update handler
-  ipc.on('updateCommandPaletteOverlayUI', function (e, overlayState) {
-    try {
-      commandPalette.update(overlayState)
-    } catch (error) {
-    // Silent fail for production - overlay will continue to work
-    }
-  })
-
-  ipc.on('destroyCommandPaletteOverlay', function (e) {
-    commandPalette.destroy()
+  ipc.handle('command-palette:present', function (event, state) {
+    return commandPalette.present(event.sender, state)
   })
 
   return {

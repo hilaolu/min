@@ -17,7 +17,7 @@ function getUpdateRandomNum () {
 }
 
 function getAvailableUpdates () {
-  if (settings.get('updateNotificationsEnabled') !== false) {
+  if (settings.get('updateNotificationsEnabled')) {
     console.info('checking for updates')
     fetch(UPDATE_URL, {
       cache: 'no-cache'

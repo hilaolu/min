@@ -541,7 +541,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         return webContents.executeJavaScript(`parentProcessActions.${payload.action}()`)
       }
       case 'internal-page.message': {
-        const allowedChannels = ['enterPictureInPicture', 'getContextMenuData', 'receiveSettingsData']
+        const allowedChannels = ['enterPictureInPicture', 'getContextMenuData']
         if (!allowedChannels.includes(payload.channel)) {
           throw createError('UNSUPPORTED_OPERATION', `Unsupported internal-page message: ${payload.channel}`)
         }

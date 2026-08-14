@@ -1,7 +1,7 @@
 function createProxyPolicy ({ settings, webContents }) {
   let proxyConfig = {}
 
-  settings.listen('proxy', (proxy = {}) => {
+  settings.listen('proxy', (proxy) => {
     switch (proxy.type) {
       case 1:
         proxyConfig = {

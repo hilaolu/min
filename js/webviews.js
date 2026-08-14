@@ -550,33 +550,6 @@ webviews.bindEvent('content-crashed', function (tabId) {
   }
 })
 
-webviews.bindIPC('getSettingsData', function (tabId, args) {
-  if (!urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
-    throw new Error()
-  }
-  webviews.sendToInternalPage(tabId, 'receiveSettingsData', settings.list)
-})
-webviews.bindIPC('setSetting', function (tabId, args) {
-  if (!urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
-    throw new Error()
-  }
-  settings.set(args[0].key, args[0].value)
-})
-
-settings.listen(function () {
-  browserSession.tasks.forEach(function (task) {
-    task.tabs.forEach(function (tab) {
-      if (tab.url.startsWith('min://')) {
-        try {
-          webviews.sendToInternalPage(tab.id, 'receiveSettingsData', settings.list)
-        } catch (e) {
-          // webview might not actually exist
-        }
-      }
-    })
-  })
-})
-
 webviews.bindIPC('scroll-position-change', function (tabId, args) {
   browserSession.updateTab(tabId, {
     scrollPosition: args[0]

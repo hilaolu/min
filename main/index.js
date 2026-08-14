@@ -6,7 +6,6 @@ const createCommandPaletteOverlay = require('./commandPaletteOverlay.js')
 const createDownloadPolicy = require('./download.js')
 const createFilteringPolicy = require('./filtering.js')
 const createMenu = require('./menu.js')
-const createOverlayManager = require('./overlayManager.js')
 const createPermissionManager = require('./permissionManager.js')
 const createProtocolPolicy = require('./minInternalProtocol.js')
 const createProxyPolicy = require('../js/util/proxy.js')
@@ -36,7 +35,7 @@ function createMainProcess (options = {}) {
   }
 
   const runtimeRef = { current: null }
-  const overlayRef = { current: null }
+  const commandPaletteRef = { current: null }
   const settingsRef = { current: null }
   const touchBarRef = { current: null }
   const viewManagerRef = { current: null }
@@ -53,14 +52,12 @@ function createMainProcess (options = {}) {
       if (viewManagerRef.current) {
         viewManagerRef.current.destroyAllViews()
       }
-      if (overlayRef.current) {
-        overlayRef.current.destroy()
+      if (commandPaletteRef.current) {
+        commandPaletteRef.current.destroy()
       }
     },
     onRecenterOverlay: window => {
-      if (overlayRef.current?.isVisible()) {
-        overlayRef.current.recenter(window)
-      }
+      if (commandPaletteRef.current) commandPaletteRef.current.recenter(window)
     },
     path,
     rootDir,
@@ -70,7 +67,11 @@ function createMainProcess (options = {}) {
   })
   const getWindowWebContents = windows.getChromeContents
 
-  const settings = createSettings({ fs, ipc, windows, getWindowWebContents })
+  const settings = createSettings({
+    fs,
+    getAllWebContents: () => electron.webContents.getAllWebContents(),
+    ipc
+  })
   settingsRef.current = settings
   settings.initialize(app.getPath('userData'))
 
@@ -108,13 +109,14 @@ function createMainProcess (options = {}) {
   })
   viewManagerRef.current = viewManager
 
-  const overlayManager = createOverlayManager({
+  const commandPalette = createCommandPaletteOverlay({
     WebContentsView: electron.WebContentsView,
-    getDefaultViewWebPreferences: viewManager.getDefaultViewWebPreferences,
     getWindowWebContents,
+    pageURL: 'min://app/pages/commandPalette/overlay.html',
+    preloadPath: path.join(rootDir, 'main/commandPalettePreload.js'),
     windows
   })
-  overlayRef.current = overlayManager
+  commandPaletteRef.current = commandPalette
 
   const sendIPCToWindow = (...args) => runtimeRef.current.sendIPCToWindow(...args)
   const createWindow = (...args) => runtimeRef.current.createWindow(...args)
@@ -186,14 +188,6 @@ function createMainProcess (options = {}) {
     windows
   })
   touchBarRef.current = touchBar
-
-  let overlayHTML = ''
-  try {
-    overlayHTML = fs.readFileSync(path.join(rootDir, 'pages/commandPalette/overlay.html'), 'utf-8')
-  } catch (error) {
-    console.warn('Failed to load command palette overlay HTML:', error.message)
-  }
-  const commandPalette = createCommandPaletteOverlay({ overlayHTML, overlayManager })
 
   const runtime = createAppRuntime({
     buildAppMenu: menu.buildAppMenu,
