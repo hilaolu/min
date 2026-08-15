@@ -1,7 +1,7 @@
 /* global Dexie */
 
 const { ipcRenderer: ipc } = require('electron')
-const { schemaV1, schemaV2 } = require('./databaseSchema.js')
+const { schemaV1, schemaV2 } = require('../util/databaseSchema.js')
 
 // defines schema for the browsingData database
 // requires Dexie.min.js

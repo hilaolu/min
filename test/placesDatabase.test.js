@@ -35,7 +35,7 @@ function loadPlacesDatabase ({ openError } = {}) {
           }
         }
       }
-      if (request === './databaseSchema.js') return require('../js/util/databaseSchema.js')
+      if (request === '../util/databaseSchema.js') return require('../js/util/databaseSchema.js')
       throw new Error(`Cannot find module '${request}'`)
     },
     window: {
@@ -56,7 +56,7 @@ test('Places database loads with its purpose-specific hidden-renderer adapter', 
   const loaded = loadPlacesDatabase()
 
   assert.ok(loaded.context.db)
-  assert.deepEqual(loaded.requiredModules, ['electron', './databaseSchema.js'])
+  assert.deepEqual(loaded.requiredModules, ['electron', '../util/databaseSchema.js'])
   assert.deepEqual(loaded.versions.map(version => version.number), [1, 2])
   assert.equal(loaded.versions[1].schema.places, '++id, &url, visitCount, lastVisit, *searchIndex')
 })
@@ -109,7 +109,7 @@ test('Places schema migration preserves version-1 records while removing unused 
     performance: { now: () => 0 },
     require: function (request) {
       if (request === 'electron') return { ipcRenderer: ipc }
-      if (request === './databaseSchema.js') return require('../js/util/databaseSchema.js')
+      if (request === '../util/databaseSchema.js') return require('../js/util/databaseSchema.js')
       return require(request)
     },
     window: { alert: function () {} }
