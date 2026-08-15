@@ -74,12 +74,12 @@ function presentOpenedTab (result, options) {
 
 function moveTabLeft (tabId = browserSession.tabs.getSelected()) {
   browserSession.moveTabBy(tabId, -1)
-  tabBar.updateAll()
+  tabBar.reconcileOrder()
 }
 
 function moveTabRight (tabId = browserSession.tabs.getSelected()) {
   browserSession.moveTabBy(tabId, 1)
-  tabBar.updateAll()
+  tabBar.reconcileOrder()
 }
 
 /* destroys a task object and the associated webviews */
@@ -94,7 +94,7 @@ function destroyTab (id) {
   if (!result) return false
   tabBar.removeTab(id)
   webviews.destroy(id)
-  tabBar.updateAll()
+  tabBar.reconcileOrder()
   if (result.selectedTabId && browserSession.tasks.getSelected()?.id === result.taskId) {
     switchToTab(result.selectedTabId, { stateAlreadySelected: true })
   }

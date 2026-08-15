@@ -88,6 +88,20 @@ test('persisted snapshots exclude private Tabs and are deep copies', function ()
   assert.equal(session.tasks.get(taskId).name, null)
 })
 
+test('Browser Session snapshots and changes never contain preview image bytes', function () {
+  const { session, taskId } = createReadySession()
+  const changes = captureChanges(session)
+  const result = session.openTab({
+    previewImage: 'data:image/png;base64,large-preview',
+    url: 'https://example.com'
+  }, { taskId })
+  session.updateTab(result.tabId, { title: 'Updated' })
+
+  assert.equal(JSON.stringify(session.getCopyableSnapshot()).includes('large-preview'), false)
+  assert.equal(JSON.stringify(session.getPersistedSnapshot()).includes('large-preview'), false)
+  assert.equal(JSON.stringify(changes).includes('large-preview'), false)
+})
+
 test('restoring a Task that contained only private Tabs creates a blank Tab', function () {
   const source = createSession('source')
   const taskId = source.createTask({}, { select: true })
@@ -341,4 +355,65 @@ test('Task ownership changes cannot impersonate another Browser Window', functio
   assert.equal(outcome.status, 'rejected')
   assert.match(outcome.reason, /ownership source/)
   assert.equal(target.tasks.get(taskId).selectedInWindow, null)
+})
+
+function expectedIndexSnapshot (session) {
+  const tasks = session.tasks.getCopyableState().tasks
+  return {
+    selectedTasks: tasks.filter(task => task.selectedInWindow)
+      .map(task => [task.selectedInWindow, task.id]).sort(),
+    tabs: tasks.flatMap(task => task.tabs.map(tab => [tab.id, task.id])).sort(),
+    tasks: tasks.map(task => task.id).sort()
+  }
+}
+
+function assertIndexesMatchState (session) {
+  assert.deepEqual(session.tasks.getIndexSnapshot(), expectedIndexSnapshot(session))
+}
+
+test('Browser Session indexes remain coherent through local, restored, and replicated workflows', function () {
+  const source = createSession('source')
+  const changes = captureChanges(source)
+  const firstTask = source.createTask({}, { select: true })
+  assertIndexesMatchState(source)
+  const firstTab = source.openTab({ url: 'https://one.example' }, { taskId: firstTask }).tabId
+  assertIndexesMatchState(source)
+  const secondTask = source.createTask()
+  const secondTab = source.openTab({ url: 'https://two.example' }, { taskId: secondTask }).tabId
+  assertIndexesMatchState(source)
+  source.moveTabToTask(firstTab, secondTask)
+  assertIndexesMatchState(source)
+  source.selectTask(secondTask)
+  source.selectTab(secondTab)
+  assertIndexesMatchState(source)
+  source.closeTab(firstTab)
+  assertIndexesMatchState(source)
+
+  const restored = createSession('restored')
+  restored.restoreSnapshot(source.getCopyableSnapshot())
+  assertIndexesMatchState(restored)
+
+  const replicated = createSession('replicated')
+  replicated.applyChanges(changesFrom('source', changes))
+  assertIndexesMatchState(replicated)
+
+  source.closeTask(secondTask)
+  assertIndexesMatchState(source)
+  source.restoreSnapshot({ tasks: [] }, { ensureNotEmpty: false })
+  assert.deepEqual(source.tasks.getIndexSnapshot(), { selectedTasks: [], tabs: [], tasks: [] })
+})
+
+test('indexed Browser Session identities and selection remain atomic after invalid mutations', function () {
+  const session = createSession('window')
+  const taskId = session.createTask({}, { select: true })
+  const tabId = session.openTab({ url: 'https://example.com' }, { taskId }).tabId
+
+  assert.throws(() => session.updateTask(taskId, { name: 'partial', id: 'replacement' }), /IDs cannot be changed/)
+  assert.throws(() => session.updateTab(tabId, { title: 'partial', id: 'replacement' }), /lifecycle workflow/)
+  assert.throws(() => session.tasks.setSelected('missing'), /does not exist/)
+
+  assert.equal(session.tasks.get(taskId).name, null)
+  assert.equal(session.getTab(tabId).title, '')
+  assert.equal(session.tasks.getSelected().id, taskId)
+  assertIndexesMatchState(session)
 })

@@ -16,7 +16,7 @@ module.exports = {
       icon: 'carbon:recently-viewed',
       isAction: false,
       showSuggestions: async function (text, input, event) {
-        const results = await places.searchPlaces(text, { limit: Infinity })
+        const results = await places.searchPlaces(text, { limit: 1000 })
 
         searchbarPlugins.reset('bangs')
 
@@ -81,7 +81,7 @@ module.exports = {
         if (!text) {
           return
         }
-        places.searchPlaces(text, { limit: Infinity })
+        places.searchPlaces(text, { limit: 1000 })
           .then(function (results) {
             if (results.length !== 0) {
               results = results.sort(function (a, b) {

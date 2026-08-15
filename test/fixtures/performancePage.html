@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="description" content="performance fixture description" />
+    <title>Performance fixture</title>
+  </head>
+  <body>
+    <main id="content"></main>
+    <footer>ignored footer text</footer>
+    <script>
+      const content = document.getElementById('content')
+      const fragment = document.createDocumentFragment()
+      for (let index = 0; index < 25000; index++) {
+        const item = document.createElement('p')
+        item.textContent = `item ${index} alpha beta representative extracted text`
+        fragment.appendChild(item)
+      }
+      content.appendChild(fragment)
+    </script>
+  </body>
+</html>

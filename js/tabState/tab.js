@@ -2,8 +2,12 @@ class TabList {
   constructor (tabs, parentTaskList, options = {}) {
     this.tabs = tabs || []
     this.parentTaskList = parentTaskList
+    this.taskId = options.taskId
     this.now = options.now || Date.now
     this.createId = options.createId || (() => Math.round(Math.random() * 100000000000000000))
+    this.tabById = new Map()
+    this.selectedId = null
+    this.rebuildIndex()
   }
 
   add (tab = {}, options = {}) {
@@ -24,7 +28,6 @@ class TabList {
       muted: tab.muted || false,
       loaded: tab.loaded || false,
       hasAudio: false,
-      previewImage: '',
       isFileView: false,
       hasWebContents: false
     }
@@ -35,7 +38,11 @@ class TabList {
       this.tabs.splice(this.getSelectedIndex() + 1, 0, newTab)
     }
 
-    this.parentTaskList.emit('tab-added', tabId, newTab, options, this.parentTaskList.getTaskContainingTab(tabId).id)
+    this.tabById.set(tabId, newTab)
+    if (newTab.selected) this.selectedId = tabId
+    this.parentTaskList.registerTab(this.taskId, newTab)
+
+    this.parentTaskList.emit('tab-added', tabId, newTab, options, this.taskId)
 
     return tabId
   }
@@ -44,18 +51,24 @@ class TabList {
     if (!this.has(id)) {
       throw new ReferenceError('Attempted to update a tab that does not exist.')
     }
-    const index = this.getIndex(id)
+    const tab = this.tabById.get(id)
 
-    for (var key in data) {
+    Object.keys(data).forEach(function (key) {
+      if (key === 'id' || key === 'selected') {
+        throw new ReferenceError(`Key ${key} must be changed through a Tab lifecycle workflow.`)
+      }
       if (data[key] === undefined) {
         throw new ReferenceError('Key ' + key + ' is undefined.')
       }
-      this.tabs[index][key] = data[key]
-      this.parentTaskList.emit('tab-updated', id, key, data[key], this.parentTaskList.getTaskContainingTab(id).id)
+    })
+
+    for (var key in data) {
+      tab[key] = data[key]
+      this.parentTaskList.emit('tab-updated', id, key, data[key], this.taskId)
       // changing URL erases scroll position
       if (key === 'url') {
-        this.tabs[index].scrollPosition = 0
-        this.parentTaskList.emit('tab-updated', id, 'scrollPosition', 0, this.parentTaskList.getTaskContainingTab(id).id)
+        tab.scrollPosition = 0
+        this.parentTaskList.emit('tab-updated', id, 'scrollPosition', 0, this.taskId)
       }
     }
   }
@@ -64,10 +77,13 @@ class TabList {
     const index = this.getIndex(id)
     if (index < 0) return false
 
-    const containingTask = this.parentTaskList.getTaskContainingTab(id).id
+    const containingTask = this.taskId
 
-    this.parentTaskList.getTaskContainingTab(id).tabHistory.push(this.toPermanentState(this.tabs[index]))
+    this.parentTaskList.get(this.taskId).tabHistory.push(this.toPermanentState(this.tabs[index]))
     this.tabs.splice(index, 1)
+    this.tabById.delete(id)
+    this.parentTaskList.unregisterTab(id)
+    if (this.selectedId === id) this.selectedId = null
 
     this.parentTaskList.emit('tab-destroyed', id, containingTask)
 
@@ -83,16 +99,12 @@ class TabList {
       }
       return tabsToReturn
     }
-    for (let i = 0; i < this.tabs.length; i++) {
-      if (this.tabs[i].id === id) {
-        return Object.assign({}, this.tabs[i])
-      }
-    }
-    return undefined
+    const tab = this.tabById.get(id)
+    return tab ? Object.assign({}, tab) : undefined
   }
 
   has (id) {
-    return this.getIndex(id) > -1
+    return this.tabById.has(id)
   }
 
   getIndex (id) {
@@ -105,12 +117,7 @@ class TabList {
   }
 
   getSelected () {
-    for (var i = 0; i < this.tabs.length; i++) {
-      if (this.tabs[i].selected) {
-        return this.tabs[i].id
-      }
-    }
-    return null
+    return this.selectedId
   }
 
   getSelectedIndex () {
@@ -130,16 +137,16 @@ class TabList {
     if (!this.has(id)) {
       throw new ReferenceError('Attempted to select a tab that does not exist.')
     }
-    for (var i = 0; i < this.tabs.length; i++) {
-      if (this.tabs[i].id === id) {
-        this.tabs[i].selected = true
-        this.tabs[i].lastActivity = selectedAt
-      } else if (this.tabs[i].selected) {
-        this.tabs[i].selected = false
-        this.tabs[i].lastActivity = selectedAt
-      }
+    const previouslySelected = this.selectedId && this.tabById.get(this.selectedId)
+    if (previouslySelected && previouslySelected.id !== id) {
+      previouslySelected.selected = false
+      previouslySelected.lastActivity = selectedAt
     }
-    this.parentTaskList.emit('tab-selected', id, this.parentTaskList.getTaskContainingTab(id).id)
+    const selected = this.tabById.get(id)
+    selected.selected = true
+    selected.lastActivity = selectedAt
+    this.selectedId = id
+    this.parentTaskList.emit('tab-selected', id, this.taskId)
   }
 
   moveBy (id, offset) {
@@ -175,10 +182,22 @@ class TabList {
   }
 
   splice (...args) {
-    const containingTask = this.parentTaskList.find(t => t.tabs === this).id
+    const containingTask = this.taskId
 
     this.parentTaskList.emit('tab-splice', containingTask, ...args)
-    return this.tabs.splice.apply(this.tabs, args)
+    const result = this.tabs.splice.apply(this.tabs, args)
+    this.rebuildIndex()
+    this.parentTaskList.reindexTaskTabs(this.taskId)
+    return result
+  }
+
+  rebuildIndex () {
+    this.tabById.clear()
+    this.selectedId = null
+    this.tabs.forEach(tab => {
+      this.tabById.set(tab.id, tab)
+      if (tab.selected) this.selectedId = tab.id
+    })
   }
 
   toPermanentState (tab) {
@@ -198,6 +217,6 @@ class TabList {
 }
 
 // tab properties that shouldn't be saved to disk
-TabList.temporaryProperties = ['hasAudio', 'previewImage', 'loaded', 'hasWebContents']
+TabList.temporaryProperties = ['hasAudio', 'loaded', 'hasWebContents']
 
 module.exports = TabList

@@ -1,9 +1,10 @@
-/* global db fullTextPlacesSearch getSearchTextCache searchPlaces tagIndex tokenize */
+/* global db Dexie fullTextPlacesSearch getSearchTextCache searchPlaces tagIndex tokenize */
 
 const { ipcRenderer } = require('electron')
 const createPlacesServiceConnection = require('./placesServiceConnection.js')
+const { PlacesCache, projectPlace } = require('./placesCache.js')
 
-function calculateHistoryScore (item) { // item.boost - how much the score should be multiplied by. Example - 0.05
+function calculateHistoryScore (item, boost = 0) {
   let fs = item.lastVisit * (1 + 0.036 * Math.sqrt(item.visitCount))
 
   // bonus for short url's
@@ -11,8 +12,8 @@ function calculateHistoryScore (item) { // item.boost - how much the score shoul
     fs += (30 - item.url.length) * 2500
   }
 
-  if (item.boost) {
-    fs += fs * item.boost
+  if (boost) {
+    fs += fs * boost
   }
 
   return fs
@@ -24,9 +25,15 @@ const oneDayInMS = 24 * 60 * 60 * 1000 // one day in milliseconds
 const maxItemAge = oneDayInMS * 42
 
 function cleanupHistoryDatabase () { // removes old history entries
-  return db.places.where('lastVisit').below(Date.now() - maxItemAge).and(function (item) {
+  const expired = db.places.where('lastVisit').below(Date.now() - maxItemAge).and(function (item) {
     return item.isBookmarked === false
-  }).delete().catch(function (error) {
+  })
+  return expired.primaryKeys().then(function (ids) {
+    return expired.delete().then(function () {
+      placesCache.removeByIds(ids)
+      return ids.length
+    })
+  }).catch(function (error) {
     console.error('failed to clean up Places', error)
   })
 }
@@ -34,68 +41,33 @@ function cleanupHistoryDatabase () { // removes old history entries
 setTimeout(cleanupHistoryDatabase, 20000) // don't run immediately on startup, since is might slow down searchbar search.
 setInterval(cleanupHistoryDatabase, 60 * 60 * 1000)
 
-// cache history in memory for faster searching. This actually takes up very little space, so we can cache everything.
-
-let historyInMemoryCache = []
+const placesCache = new PlacesCache({ calculateScore: calculateHistoryScore, getSearchTextCache, tagIndex })
+const historyInMemoryCache = placesCache.items
 let doneLoadingHistoryCache = false
+const activeFullTextRequests = new WeakMap()
+const defaultRequestContext = {}
 
-function addToHistoryCache (item) {
-  if (item.isBookmarked) {
-    tagIndex.addPage(item)
-  }
-  delete item.pageHTML
-  delete item.searchIndex
-
-  item.searchTextCache = getSearchTextCache(item)
-
-  historyInMemoryCache.push(item)
+function addToHistoryCache (item, options) {
+  return placesCache.add(item, options)
 }
 
 function addOrUpdateHistoryCache (item) {
-  delete item.pageHTML
-  delete item.searchIndex
-
-  item.searchTextCache = getSearchTextCache(item)
-
-  let oldItem
-
-  for (let i = 0; i < historyInMemoryCache.length; i++) {
-    if (historyInMemoryCache[i].url === item.url) {
-      oldItem = historyInMemoryCache[i]
-      historyInMemoryCache[i] = item
-      break
-    }
-  }
-
-  if (!oldItem) {
-    historyInMemoryCache.push(item)
-  }
-
-  if (oldItem) {
-    tagIndex.onChange(oldItem, item)
-  }
+  return placesCache.upsert(item)
 }
 
 function removeFromHistoryCache (url) {
-  for (let i = 0; i < historyInMemoryCache.length; i++) {
-    if (historyInMemoryCache[i].url === url) {
-      tagIndex.removePage(historyInMemoryCache[i])
-      historyInMemoryCache.splice(i, 1)
-    }
-  }
+  return placesCache.removeByURL(url)
 }
 
 function loadHistoryInMemory () {
-  historyInMemoryCache = []
+  placesCache.reset()
   doneLoadingHistoryCache = false
 
   return db.places.orderBy('visitCount').reverse().each(function (item) {
-    addToHistoryCache(item)
+    addToHistoryCache(item, { sort: false })
   }).then(function () {
     // if we have enough matches during the search, we exit. In order for this to work, frequently visited sites have to come first in the cache.
-    historyInMemoryCache.sort(function (a, b) {
-      return calculateHistoryScore(b) - calculateHistoryScore(a)
-    })
+    placesCache.sort()
 
     doneLoadingHistoryCache = true
   })
@@ -108,6 +80,7 @@ historyReady.catch(function (error) {
 
 const supportedActions = new Set([
   'autocompleteTags',
+  'changeTag',
   'deleteAllHistory',
   'deleteHistory',
   'getAllPlaces',
@@ -116,6 +89,7 @@ const supportedActions = new Set([
   'getPlaceSuggestions',
   'getSuggestedItemsForTags',
   'getSuggestedTags',
+  'importPlaces',
   'searchPlaces',
   'searchPlacesFullText',
   'updatePlace'
@@ -129,7 +103,62 @@ function requestError (callbackId, code, message) {
   }
 }
 
-function handleRequest (data, respond) {
+function runInBatches (items, work, index = 0) {
+  const batch = items.slice(index, index + 250)
+  if (batch.length === 0) return Promise.resolve()
+  return Promise.resolve(work(batch)).then(() => runInBatches(items, work, index + batch.length))
+}
+
+function changeTag (pageData) {
+  return db.places.filter(item => item.tags.includes(pageData.tag)).primaryKeys().then(function (ids) {
+    return runInBatches(ids, function (batchIds) {
+      return db.transaction('rw', db.places, function () {
+        if (pageData.operation === 'delete-bookmarks') return db.places.bulkDelete(batchIds)
+        return db.places.where('id').anyOf(batchIds).toArray().then(function (items) {
+          items.forEach(function (item) {
+            item.tags = item.tags.filter(itemTag => itemTag !== pageData.tag)
+            if (pageData.operation === 'rename') {
+              const replacement = pageData.replacement.replace(/\s/g, '-')
+              if (!item.tags.includes(replacement)) item.tags.push(replacement)
+            }
+          })
+          return db.places.bulkPut(items)
+        })
+      })
+    })
+  })
+}
+
+function importPlaces (items) {
+  return runInBatches(items, function (batch) {
+    return db.transaction('rw', db.places, function () {
+      return Dexie.Promise.all(batch.map(function (data) {
+        return db.places.where('url').equals(data.url).first().then(function (item) {
+          if (!item) {
+            item = {
+              url: data.url,
+              title: data.url,
+              color: null,
+              visitCount: 0,
+              lastVisit: Date.now(),
+              pageHTML: '',
+              extractedText: '',
+              searchIndex: [],
+              isBookmarked: false,
+              tags: [],
+              metadata: {}
+            }
+          }
+          Object.assign(item, data)
+          item.tags = item.tags.map(tag => tag.replace(/\s/g, '-'))
+          return db.places.put(item)
+        })
+      }))
+    })
+  })
+}
+
+function handleRequest (data, respond, requestContext = defaultRequestContext) {
   const action = data.action
   const pageData = data.pageData
   const flags = data.flags || {}
@@ -143,28 +172,15 @@ function handleRequest (data, respond) {
   }
 
   if (action === 'getPlace') {
-    let found = false
-    for (let i = 0; i < historyInMemoryCache.length; i++) {
-      if (historyInMemoryCache[i].url === pageData.url) {
-        respond({
-          result: historyInMemoryCache[i],
-          callbackId: callbackId
-        })
-        found = true
-        break
-      }
-    }
-    if (!found) {
-      respond({
-        result: null,
-        callbackId: callbackId
-      })
-    }
+    respond({
+      result: placesCache.getPublicByURL(pageData.url),
+      callbackId: callbackId
+    })
   }
 
   if (action === 'getAllPlaces') {
     respond({
-      result: historyInMemoryCache,
+      result: placesCache.getAllPublic(),
       callbackId: callbackId
     })
   }
@@ -184,17 +200,20 @@ function handleRequest (data, respond) {
             visitCount: 0,
             lastVisit: Date.now(),
             pageHTML: '',
-            extractedText: pageData.extractedText,
+            extractedText: '',
             searchIndex: [],
             isBookmarked: false,
             tags: [],
             metadata: {}
           }
         }
+        const contentChanged = Object.hasOwn(pageData, 'extractedText') && pageData.extractedText !== item.extractedText
         for (const key in pageData) {
           if (key === 'extractedText') {
-            item.searchIndex = tokenize(pageData.extractedText)
-            item.extractedText = pageData.extractedText
+            if (contentChanged) {
+              item.searchIndex = tokenize(pageData.extractedText)
+              item.extractedText = pageData.extractedText
+            }
           } else if (key === 'tags') {
           // ensure tags are never saved with spaces in them
             item.tags = pageData.tags.map(t => t.replace(/\s/g, '-'))
@@ -208,7 +227,19 @@ function handleRequest (data, respond) {
           item.lastVisit = Date.now()
         }
 
-        return db.places.put(item).then(function () {
+        const metadataChanges = {}
+        for (const key in pageData) {
+          if (key !== 'extractedText') metadataChanges[key] = item[key]
+        }
+        if (flags.isNewVisit) {
+          metadataChanges.visitCount = item.visitCount
+          metadataChanges.lastVisit = item.lastVisit
+        }
+        const persist = isNewItem || contentChanged
+          ? db.places.put(item)
+          : db.places.update(item.id, metadataChanges)
+
+        return persist.then(function () {
           savedItem = item
           savedItemIsNew = isNewItem
         })
@@ -254,23 +285,39 @@ function handleRequest (data, respond) {
     })
   }
 
+  if (action === 'changeTag') {
+    return changeTag(pageData).then(loadHistoryInMemory).then(function () {
+      respond({ result: null, callbackId })
+    }).catch(function (error) {
+      respond(requestError(callbackId, 'PLACES_PERSISTENCE_FAILED', error.message))
+    })
+  }
+
+  if (action === 'importPlaces') {
+    return importPlaces(pageData.items).then(loadHistoryInMemory).then(function () {
+      respond({ result: null, callbackId })
+    }).catch(function (error) {
+      respond(requestError(callbackId, 'PLACES_PERSISTENCE_FAILED', error.message))
+    })
+  }
+
   if (action === 'getSuggestedTags') {
     respond({
-      result: tagIndex.getSuggestedTags(historyInMemoryCache.find(i => i.url === pageData.url)),
+      result: tagIndex.getSuggestedTags(placesCache.getByURL(pageData.url)),
       callbackId: callbackId
     })
   }
 
   if (action === 'getAllTagsRanked') {
     respond({
-      result: tagIndex.getAllTagsRanked(historyInMemoryCache.find(i => i.url === pageData.url)),
+      result: tagIndex.getAllTagsRanked(placesCache.getByURL(pageData.url)),
       callbackId: callbackId
     })
   }
 
   if (action === 'getSuggestedItemsForTags') {
     respond({
-      result: tagIndex.getSuggestedItemsForTags(pageData.tags),
+      result: tagIndex.getSuggestedItemsForTags(pageData.tags).map(item => projectPlace(item)),
       callbackId: callbackId
     })
   }
@@ -285,41 +332,57 @@ function handleRequest (data, respond) {
   if (action === 'searchPlaces') { // do a history search
     searchPlaces(searchText, function (matches) {
       respond({
-        result: matches,
+        result: matches.map(item => projectPlace(item)),
         callbackId: callbackId
       })
     }, options)
   }
 
   if (action === 'searchPlacesFullText') {
-    fullTextPlacesSearch(searchText, function (matches) {
-      matches.sort(function (a, b) {
-        return calculateHistoryScore(b) - calculateHistoryScore(a)
-      })
+    const activeFullTextRequest = activeFullTextRequests.get(requestContext)
+    if (activeFullTextRequest) {
+      activeFullTextRequest.cancelled = true
+      activeFullTextRequest.respond(requestError(
+        activeFullTextRequest.callbackId,
+        'PLACES_QUERY_SUPERSEDED',
+        'Places query was superseded by a newer query'
+      ))
+    }
 
-      respond({
-        result: matches.slice(0, 100),
-        callbackId: callbackId
-      })
-    })
+    const request = { callbackId, cancelled: false, respond }
+    activeFullTextRequests.set(requestContext, request)
+    return fullTextPlacesSearch(searchText, function (matches, error) {
+      if (request.cancelled) return
+      if (activeFullTextRequests.get(requestContext) === request) activeFullTextRequests.delete(requestContext)
+      if (error) {
+        respond(requestError(callbackId, 'PLACES_FULL_TEXT_SEARCH_FAILED', error.message))
+        return
+      }
+      respond({ result: matches, callbackId })
+    }, Object.assign({}, options, { isCancelled: () => request.cancelled }))
   }
 
   if (action === 'getPlaceSuggestions') {
     const returnSuggestionResults = function () {
       const cTime = Date.now()
 
-      let results = historyInMemoryCache.slice().filter(i => cTime - i.lastVisit < 604800000)
+      let results = historyInMemoryCache.filter(i => cTime - i.lastVisit < 604800000)
+
+      const excludedURLs = new Set(options?.excludeURLs || [])
+      results = results.filter(item => !excludedURLs.has(item.url))
 
       for (let i = 0; i < results.length; i++) {
-        results[i].hScore = calculateHistoryScore(results[i])
+        results[i] = { item: results[i], score: calculateHistoryScore(results[i]) }
       }
 
       results = results.sort(function (a, b) {
-        return b.hScore - a.hScore
+        return b.score - a.score
       })
 
+      const suggestionLimit = Number.isFinite(options?.limit) ? Math.max(0, options.limit) : 4
+
       respond({
-        result: results.slice(0, 100),
+        result: results.slice(0, suggestionLimit).map(result => projectPlace(result.item)),
         callbackId: callbackId
       })
     }

@@ -10,13 +10,15 @@ const bookmarkConverter = {
   import: function (data) {
     var tree = new DOMParser().parseFromString(data, 'text/html')
     var bookmarks = Array.from(tree.getElementsByTagName('a'))
+    const items = []
     bookmarks.forEach(function (bookmark) {
       var url = bookmark.getAttribute('href')
       if (!url || (!url.startsWith('http:') && !url.startsWith('https:') && !url.startsWith('file:'))) {
         return
       }
 
-      var data = {
+      var bookmarkData = {
+        url,
         title: bookmark.textContent,
         isBookmarked: true,
         tags: [],
@@ -25,23 +27,24 @@ const bookmarkConverter = {
       try {
         const last = parseInt(bookmark.getAttribute('add_date')) * 1000
         if (!isNaN(last)) {
-          data.lastVisit = last
+          bookmarkData.lastVisit = last
         }
       } catch (e) { }
 
       var parent = bookmark.parentElement
       while (parent != null) {
         if (parent.children[0] && parent.children[0].tagName === 'H3') {
-          data.tags.push(parent.children[0].textContent.replace(/\s/g, '-'))
+          bookmarkData.tags.push(parent.children[0].textContent.replace(/\s/g, '-'))
           break
         }
         parent = parent.parentElement
       }
       if (bookmark.getAttribute('tags')) {
-        data.tags = data.tags.concat(bookmark.getAttribute('tags').split(','))
+        bookmarkData.tags = bookmarkData.tags.concat(bookmark.getAttribute('tags').split(','))
       }
-      places.updateItem(url, data)
+      items.push(bookmarkData)
     })
+    return places.importItems(items)
   },
   exportAll: function () {
     return new Promise(function (resolve, reject) {

@@ -21,9 +21,13 @@ function createPort () {
 test('Places connection acknowledges readiness and wraps successful responses', async function () {
   const ipc = new EventEmitter()
   let markReady
+  let requestContext
   const ready = new Promise(resolve => { markReady = resolve })
   const connection = createPlacesServiceConnection({
-    handleRequest: (request, respond) => respond({ callbackId: request.callbackId, result: ['place'] }),
+    handleRequest: (request, respond, context) => {
+      requestContext = context
+      respond({ callbackId: request.callbackId, result: ['place'] })
+    },
     ipc,
     ready
   })
@@ -37,6 +41,7 @@ test('Places connection acknowledges readiness and wraps successful responses', 
   assert.deepEqual(port.messages, [{ ok: true, type: 'ready' }])
 
   port.listeners.get('message')({ data: { action: 'getAllPlaces', callbackId: 3 } })
+  assert.equal(requestContext, port)
   assert.deepEqual(port.messages[1], {
     callbackId: 3,
     ok: true,

@@ -4,6 +4,9 @@ const TabStack = require('../tabRestore.js')
 class TaskList {
   constructor (options = {}) {
     this.tasks = [] // each task is {id, name, tabs: [], tabHistory: TabStack}
+    this.taskById = new Map()
+    this.taskByTabId = new Map()
+    this.selectedTaskByWindow = new Map()
     this.events = []
     this.pendingCallbacks = []
     this.pendingCallbackTimeout = null
@@ -37,12 +40,13 @@ class TaskList {
   }
 
   add (task = {}, index) {
+    const taskId = task.id || String(this.createId())
     const newTask = {
       name: task.name || null,
-      tabs: new TabList(task.tabs, this, { now: this.now, createId: this.createId }),
+      tabs: new TabList(task.tabs, this, { now: this.now, createId: this.createId, taskId }),
       tabHistory: new TabStack(task.tabHistory),
       collapsed: task.collapsed, // this property must stay undefined if it is already (since there is a difference between "explicitly uncollapsed" and "never collapsed")
-      id: task.id || String(this.createId()),
+      id: taskId,
       selectedInWindow: task.selectedInWindow || null,
       selectionStamp: task.selectionStamp || null
     }
@@ -52,6 +56,8 @@ class TaskList {
     } else {
       this.tasks.push(newTask)
     }
+
+    this.registerTask(newTask)
 
     this.emit('task-added', newTask.id, Object.assign({}, newTask, { tabHistory: task.tabHistory, tabs: task.tabs }), index)
 
@@ -65,10 +71,16 @@ class TaskList {
       throw new ReferenceError('Attempted to update a task that does not exist.')
     }
 
-    for (var key in data) {
+    Object.keys(data).forEach(function (key) {
+      if (key === 'id') {
+        throw new ReferenceError('Task IDs cannot be changed after creation.')
+      }
       if (data[key] === undefined) {
         throw new ReferenceError('Key ' + key + ' is undefined.')
       }
+    })
+
+    for (var key in data) {
       task[key] = data[key]
       this.emit('task-updated', id, key, data[key])
     }
@@ -94,11 +106,11 @@ class TaskList {
   }
 
   get (id) {
-    return this.find(task => task.id === id) || null
+    return this.taskById.get(id) || null
   }
 
   getSelected () {
-    return this.find(task => task.selectedInWindow === this.windowId)
+    return this.selectedTaskByWindow.get(this.windowId) || undefined
   }
 
   byIndex (index) {
@@ -106,7 +118,7 @@ class TaskList {
   }
 
   getTaskContainingTab (tabId) {
-    return this.find(task => task.tabs.has(tabId)) || null
+    return this.taskByTabId.get(tabId) || null
   }
 
   getIndex (id) {
@@ -114,29 +126,30 @@ class TaskList {
   }
 
   setSelected (id, onWindow = this.windowId) {
-    for (var i = 0; i < this.tasks.length; i++) {
-      if (this.tasks[i].selectedInWindow === onWindow) {
-        this.tasks[i].selectedInWindow = null
-      }
-      if (this.tasks[i].id === id) {
-        this.tasks[i].selectedInWindow = onWindow
-      }
+    const selected = this.get(id)
+    if (!selected) throw new ReferenceError('Attempted to select a task that does not exist.')
+    const previouslySelected = this.selectedTaskByWindow.get(onWindow)
+    if (previouslySelected) previouslySelected.selectedInWindow = null
+    const previousOwner = selected.selectedInWindow
+    if (previousOwner && previousOwner !== onWindow && this.selectedTaskByWindow.get(previousOwner) === selected) {
+      this.selectedTaskByWindow.delete(previousOwner)
     }
+    selected.selectedInWindow = onWindow
+    this.selectedTaskByWindow.set(onWindow, selected)
     if (onWindow === this.windowId) {
       this.emit('task-selected', id)
-      if (this.get(id).tabs.getSelected()) {
-        this.emit('tab-selected', this.get(id).tabs.getSelected(), id)
+      if (selected.tabs.getSelected()) {
+        this.emit('tab-selected', selected.tabs.getSelected(), id)
       }
     }
   }
 
   clearSelected (onWindow = this.windowId) {
-    this.tasks.forEach(task => {
-      if (task.selectedInWindow === onWindow) {
-        task.selectedInWindow = null
-        task.selectionStamp = null
-      }
-    })
+    const selected = this.selectedTaskByWindow.get(onWindow)
+    if (!selected) return
+    selected.selectedInWindow = null
+    selected.selectionStamp = null
+    this.selectedTaskByWindow.delete(onWindow)
   }
 
   destroy (id) {
@@ -151,6 +164,8 @@ class TaskList {
 
     if (index < 0) return false
 
+    const task = this.tasks[index]
+    this.unregisterTask(task)
     this.tasks.splice(index, 1)
 
     return index
@@ -167,6 +182,59 @@ class TaskList {
 
   replace (tasks = []) {
     this.tasks = tasks
+    this.rebuildIndexes()
+  }
+
+  registerTask (task) {
+    this.taskById.set(task.id, task)
+    task.tabs.forEach(tab => this.taskByTabId.set(tab.id, task))
+    if (task.selectedInWindow) this.selectedTaskByWindow.set(task.selectedInWindow, task)
+  }
+
+  unregisterTask (task) {
+    this.taskById.delete(task.id)
+    task.tabs.forEach(tab => this.taskByTabId.delete(tab.id))
+    if (task.selectedInWindow && this.selectedTaskByWindow.get(task.selectedInWindow) === task) {
+      this.selectedTaskByWindow.delete(task.selectedInWindow)
+    }
+  }
+
+  registerTab (taskId, tab) {
+    const task = this.get(taskId)
+    if (task) this.taskByTabId.set(tab.id, task)
+  }
+
+  unregisterTab (tabId) {
+    this.taskByTabId.delete(tabId)
+  }
+
+  moveTabOwnership (tabId, taskId) {
+    const task = this.get(taskId)
+    if (!task) throw new ReferenceError('Attempted to index a Tab in a missing Task')
+    this.taskByTabId.set(tabId, task)
+  }
+
+  reindexTaskTabs (taskId) {
+    const task = this.get(taskId)
+    for (const [tabId, owner] of this.taskByTabId) {
+      if (owner.id === taskId) this.taskByTabId.delete(tabId)
+    }
+    if (task) task.tabs.forEach(tab => this.taskByTabId.set(tab.id, task))
+  }
+
+  rebuildIndexes () {
+    this.taskById.clear()
+    this.taskByTabId.clear()
+    this.selectedTaskByWindow.clear()
+    this.tasks.forEach(task => this.registerTask(task))
+  }
+
+  getIndexSnapshot () {
+    return {
+      selectedTasks: Array.from(this.selectedTaskByWindow, ([windowId, task]) => [windowId, task.id]).sort(),
+      tabs: Array.from(this.taskByTabId, ([tabId, task]) => [tabId, task.id]).sort(),
+      tasks: Array.from(this.taskById.keys()).sort()
+    }
   }
 
   withoutEvents (callback) {
@@ -209,7 +277,11 @@ class TaskList {
 
   slice (...args) { return this.tasks.slice.apply(this.tasks, args) }
 
-  splice (...args) { return this.tasks.splice.apply(this.tasks, args) }
+  splice (...args) {
+    const result = this.tasks.splice.apply(this.tasks, args)
+    this.rebuildIndexes()
+    return result
+  }
 
   filter (...args) { return this.tasks.filter.apply(this.tasks, args) }
 

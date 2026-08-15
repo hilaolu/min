@@ -499,6 +499,9 @@ class BrowserSession {
     movedTab.selected = false
     const targetIndex = Math.max(0, Math.min(change.index, targetTask.tabs.count()))
     targetTask.tabs.tabs.splice(targetIndex, 0, movedTab)
+    sourceTask.tabs.rebuildIndex()
+    targetTask.tabs.rebuildIndex()
+    this.taskList.moveTabOwnership(change.tabId, targetTask.id)
     if (change.sourceReplacement && !sourceTask.tabs.has(change.sourceReplacement.id)) {
       sourceTask.tabs.add(copy(change.sourceReplacement), {})
     }

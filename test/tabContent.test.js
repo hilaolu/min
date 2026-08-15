@@ -43,6 +43,7 @@ class RecordingWebContents extends EventEmitter {
   loadURL (url) { this.calls.push(['loadURL', url]) }
   reload () { this.calls.push(['reload']) }
   reloadIgnoringCache () { this.calls.push(['reloadIgnoringCache']) }
+  send (channel, data) { this.calls.push(['send', channel, data]) }
   setVisualZoomLevelLimits (minimum, maximum) { this.calls.push(['zoomLimits', minimum, maximum]) }
   setWindowOpenHandler (handler) { this.windowOpenHandler = handler }
   stop () { this.calls.push(['stop']) }
@@ -178,7 +179,8 @@ test('every behavior command crosses the Browser Window ownership guard', async 
     ['zoom.set', { factor: 1 }],
     ['download.url', { url: 'https://example.com/file' }],
     ['audio.set-muted', { muted: true }],
-    ['development.toggle-tools', null]
+    ['development.toggle-tools', null],
+    ['indexing.configure', { enabled: false, navigationGeneration: 1 }]
   ]
 
   for (const [operation, payload] of protectedOperations) {
@@ -209,6 +211,74 @@ test('Electron events are installed in the main process and emitted as named sem
     }
   })
   assert.deepEqual(view.webContents.calls.at(-1), ['zoomLimits', 1, 3])
+})
+
+test('main-frame navigation generations reach both Tab Content and Browser Chrome', async function () {
+  const fixture = createFixture()
+  const view = await createContent(fixture)
+
+  view.webContents.emit('did-start-navigation', {}, 'https://next.example', false, true)
+
+  assert.deepEqual(view.webContents.calls.at(-1), ['send', 'page-navigation-generation', 1])
+  assert.deepEqual(fixture.chromeMessages.at(-1), {
+    channel: 'tab-content-event',
+    message: {
+      tabId: 'tab-1',
+      type: 'navigation-started',
+      payload: {
+        url: 'https://next.example',
+        isInPlace: false,
+        isMainFrame: true,
+        navigationGeneration: 1
+      }
+    }
+  })
+
+  await fixture.manager.executeTabContentCommand(fixture.chrome, {
+    id: 'tab-1',
+    operation: 'indexing.configure',
+    payload: { enabled: false, navigationGeneration: 1 }
+  })
+  assert.deepEqual(view.webContents.calls.at(-1), [
+    'send',
+    'page-indexing-config',
+    { enabled: false, navigationGeneration: 1 }
+  ])
+})
+
+test('preview capture resizes before encoding, enforces byte bounds, and rejects private Tabs', async function () {
+  const fixture = createFixture()
+  const view = await createContent(fixture)
+  const resizeCalls = []
+  view.webContents.capturePage = async function () {
+    return {
+      getSize: () => ({ width: 1200, height: 800 }),
+      resize: options => {
+        resizeCalls.push(options)
+        return { toDataURL: () => 'data:image/png;base64,small' }
+      }
+    }
+  }
+
+  const preview = await fixture.manager.executeTabContentCommand(fixture.chrome, {
+    id: 'tab-1',
+    operation: 'capture.preview',
+    payload: { width: 2000, height: 2000, maxBytes: 1024 }
+  })
+  assert.equal(preview, 'data:image/png;base64,small')
+  assert.deepEqual(resizeCalls, [{ width: 480, height: 320, quality: 'good' }])
+
+  await fixture.manager.executeTabContentCommand(fixture.chrome, {
+    id: 'private-preview',
+    operation: 'lifecycle.create',
+    payload: { bounds: { x: 0, y: 0, width: 100, height: 100 }, private: true }
+  })
+  const privatePreview = await fixture.manager.executeTabContentCommand(fixture.chrome, {
+    id: 'private-preview',
+    operation: 'capture.preview',
+    payload: { width: 100, height: 100 }
+  })
+  assert.equal(privatePreview, null)
 })
 
 test('the IPC Adapter returns defined errors for missing ownership and unsupported behavior', async function () {

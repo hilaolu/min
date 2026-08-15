@@ -44,6 +44,7 @@
     "electron": "41.2.0",
     "electron-builder": "^24.13.3",
     "electron-installer-windows": "^3.0.0",
+    "fake-indexeddb": "^6.2.5",
     "prettier": "^2.2.1",
     "snazzy": "^9.0.0",
     "standard": "^14.3.4"
@@ -52,6 +53,7 @@
   "scripts": {
     "postinstall": "node ./scripts/setupDevEnv.js",
     "test": "npm run test:node && npm run lint:js",
+    "test:electron-performance": "npm run buildPreload && electron --no-sandbox test/electronPerformance.js",
     "test:node": "node --test test/*.test.js",
     "lint:js": "standard --verbose \"js/**/*.js\" \"main/**/*.js\" \"test/**/*.js\"",
     "watch": "node ./scripts/watch.js",
@@ -62,6 +64,7 @@
     "buildBrowserStyles": "node ./scripts/buildBrowserStyles.js",
     "buildPreload": "node ./scripts/buildPreload.js",
     "build": "npm run buildMain && npm run buildBrowser && npm run buildBrowserStyles && npm run buildPreload",
+    "benchmark:performance": "node scripts/benchmarkPerformance.js",
     "buildWindows": "npm run build && node ./scripts/buildWindows.js",
     "buildMacIntel": "npm run build && node ./scripts/buildMac.js --platform=x86",
     "buildMacArm": "npm run build && node ./scripts/buildMac.js --platform=arm64",

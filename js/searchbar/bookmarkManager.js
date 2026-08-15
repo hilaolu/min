@@ -84,7 +84,7 @@ const bookmarkManager = {
 
     const results = await places.searchPlaces(parsedText.text, {
       searchBookmarks: true,
-      limit: Infinity
+      limit: 1000
     })
     const suggestedTags = await places.autocompleteTags(parsedText.tags)
 

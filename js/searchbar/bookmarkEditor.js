@@ -38,47 +38,22 @@ const bookmarkEditor = {
                   return
                 }
 
-                const items = await places.getAllItems()
-
-                items.forEach(function (item) {
-                  if (item.tags.includes(tag)) {
-                    item.tags = item.tags.filter(t => t !== tag)
-                    item.tags.push(newName)
-                    places.updateItem(item.url, { tags: item.tags })
-                  }
-                })
-                setTimeout(function () {
-                  options.onModify()
-                }, 50)
+                await places.changeTag(tag, 'rename', newName)
+                options.onModify()
               }
             },
             {
               label: 'Delete Tag',
               click: async function () {
-                const items = await places.getAllItems()
-                items.forEach(function (item) {
-                  if (item.tags.includes(tag)) {
-                    item.tags = item.tags.filter(t => t !== tag)
-                    places.updateItem(item.url, { tags: item.tags })
-                  }
-                })
-                setTimeout(function () {
-                  options.onModify()
-                }, 50)
+                await places.changeTag(tag, 'delete')
+                options.onModify()
               }
             },
             {
               label: 'Delete Bookmarks with Tag',
               click: async function () {
-                const items = await places.getAllItems()
-                items.forEach(function (item) {
-                  if (item.tags.includes(tag)) {
-                    places.deleteHistory(item.url)
-                  }
-                })
-                setTimeout(function () {
-                  options.onModify()
-                }, 50)
+                await places.changeTag(tag, 'delete-bookmarks')
+                options.onModify()
               }
             }
           ]

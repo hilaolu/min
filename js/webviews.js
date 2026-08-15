@@ -1,8 +1,10 @@
 const browserSession = require('tabState.js')
+const createPreviewImageManager = require('previewImageManager.js')
 const rendererHost = require('rendererHost.js')
 const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 var urlParser = require('util/urlParser.js')
 var settings = require('util/settings/settings.js')
+const historyPolicy = require('places/historyPolicy.js')
 
 /* implements selecting webviews, switching between them, and creating new ones. */
 
@@ -30,84 +32,26 @@ var hasSeparateTitlebar = settings.get('useSeparateTitlebar')
 var windowIsMaximized = false // affects navbar height on Windows
 var windowIsFullscreen = false
 
-// Simple lazy capture system for webview placeholders
-var previewImageManager = {
-  // Track screenshot status per tab: { timestamp, valid }
-  status: {},
-
-  // Maximum age for a screenshot to be considered valid (30 seconds)
-  maxAge: 30000,
-
-  // Get preview image, return null if not available (truly lazy)
-  get: function (tabId) {
-    var tab = browserSession.tabs.get(tabId)
-    if (!tab || tab.private) {
-      return null
-    }
-
-    var status = this.status[tabId]
-    if (!status || !status.valid || !tab.previewImage) {
-      return null
-    }
-
-    // Check if screenshot is still fresh
-    if ((Date.now() - status.timestamp) < this.maxAge) {
-      return tab.previewImage
-    }
-
-    // Screenshot is too old
-    return null
-  },
-
-  // Capture screenshot for tab (asynchronous)
-  capture: function (tabId) {
-    if (tabId === webviews.selectedId) {
-      queryTabContent(tabId, 'capture.preview', { scaleFactor: 0.1 }).then(function (dataURL) {
-        if (!dataURL || !browserSession.tabs.get(tabId)) {
-          return
-        }
-        browserSession.updateTab(tabId, { previewImage: dataURL })
-        previewImageManager.markCaptured(tabId)
-        if (tabId === webviews.selectedId && webviews.placeholderRequests.length > 0) {
-          placeholderImg.src = dataURL
-          placeholderImg.hidden = false
-        }
-      }).catch(function (error) {
-        console.warn('Failed to capture Tab Content preview:', error)
-      })
+var previewImageManager = createPreviewImageManager({
+  canCapture: tabId => tabId === webviews.selectedId,
+  capture: (tabId, options) => queryTabContent(tabId, 'capture.preview', options),
+  captureOptions: function () {
+    const bounds = webviews.getViewBounds()
+    return {
+      height: Math.min(320, Math.max(1, Math.round(bounds.height * 0.2))),
+      maxBytes: 256 * 1024,
+      width: Math.min(480, Math.max(1, Math.round(bounds.width * 0.2)))
     }
   },
-
-  // Mark screenshot as captured (called when captureData arrives)
-  markCaptured: function (tabId) {
-    this.status[tabId] = {
-      timestamp: Date.now(),
-      valid: true
+  getTab: tabId => browserSession.tabs.get(tabId),
+  onAvailable: function (tabId, dataURL) {
+    if (tabId === webviews.selectedId && webviews.placeholderRequests.length > 0) {
+      placeholderImg.src = dataURL
+      placeholderImg.hidden = false
     }
   },
-
-  // Invalidate screenshot (clear both status and image data)
-  invalidate: function (tabId) {
-    if (this.status[tabId]) {
-      this.status[tabId].valid = false
-    }
-    // Also clear the actual image data to prevent stale content
-    var tab = browserSession.tabs.get(tabId)
-    if (tab) {
-      browserSession.updateTab(tabId, { previewImage: null })
-    }
-  },
-
-  // Clear status for tab (used when tab is destroyed)
-  clear: function (tabId) {
-    delete this.status[tabId]
-    // Also clear the actual image data
-    var tab = browserSession.tabs.get(tabId)
-    if (tab) {
-      browserSession.updateTab(tabId, { previewImage: null })
-    }
-  }
-}
+  onError: error => console.warn('Failed to capture Tab Content preview:', error)
+})
 
 // called whenever a new page starts loading, or an in-page navigation occurs
 function onPageURLChange (tab, url) {
@@ -137,11 +81,25 @@ function onPageLoad (tabId) {
   previewImageManager.invalidate(tabId)
 }
 
+function isTabIndexable (tab, url) {
+  return historyPolicy.canExtractHistory(tab, url, urlParser)
+}
+
+function configurePageIndexing (tabId, url, navigationGeneration) {
+  const tab = browserSession.tabs.get(tabId)
+  runTabContent(tabId, 'indexing.configure', {
+    enabled: isTabIndexable(tab, url),
+    navigationGeneration
+  })
+}
+
 // called when navigation starts (including reloads)
 function onNavigationStart (tabId, event) {
   delete webviews.downloadNavigationViews[tabId]
 
   if (event.isMainFrame) {
+    webviews.navigationGenerations[tabId] = event.navigationGeneration
+    configurePageIndexing(tabId, event.url, event.navigationGeneration)
     // Invalidate screenshot when navigation starts
     previewImageManager.invalidate(tabId)
   }
@@ -181,6 +139,7 @@ function setAudioMutedOnCreate (tabId, muted) {
 const webviews = {
   viewFullscreenMap: {}, // tabId, isFullscreen
   downloadNavigationViews: {}, // tabIds whose main-frame navigation turned into a download
+  navigationGenerations: {},
   selectedId: null,
   placeholderRequests: [],
   internalPages: {
@@ -189,7 +148,8 @@ const webviews = {
   events: [],
   IPCEvents: [],
   hasViewForTab: function (tabId) {
-    return tabId && browserSession.tasks.getTaskContainingTab(tabId) && browserSession.tasks.getTaskContainingTab(tabId).tabs.get(tabId).hasWebContents
+    const task = tabId && browserSession.tasks.getTaskContainingTab(tabId)
+    return Boolean(task?.tabs.get(tabId).hasWebContents)
   },
   bindEvent: function (event, fn) {
     webviews.events.push({
@@ -280,6 +240,7 @@ const webviews = {
       bounds: webviews.getViewBounds(),
       existingTabContentId: existingViewId,
       initialURL,
+      indexingEnabled: isTabIndexable(tabData, initialURL || tabData.url),
       private: tabData.private === true
     })
 
@@ -325,6 +286,7 @@ const webviews = {
 
     delete webviews.viewFullscreenMap[id]
     delete webviews.downloadNavigationViews[id]
+    delete webviews.navigationGenerations[id]
     if (webviews.selectedId === id) {
       webviews.selectedId = null
     }

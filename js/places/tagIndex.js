@@ -8,6 +8,14 @@ var tagIndex = {
   tagTagMap: {},
   tagCounts: {},
   tagUpdateTimes: {},
+  reset: function () {
+    tagIndex.totalDocs = 0
+    tagIndex.termDocCounts = {}
+    tagIndex.termTags = {}
+    tagIndex.tagTagMap = {}
+    tagIndex.tagCounts = {}
+    tagIndex.tagUpdateTimes = {}
+  },
   getPageTokens: function (page) {
     var urlChunk = ''
     try {
@@ -205,14 +213,12 @@ var tagIndex = {
           tagScore += tag.value
         }
       })
-      item.page.score = tagScore
-
-      return item.page
+      return { page: item.page, score: tagScore }
     })
 
     set = set.sort((a, b) => b.score - a.score)
 
-    return set.slice(0, 20)
+    return set.slice(0, 20).map(item => item.page)
   },
   autocompleteTags: function (searchTags) {
     // find which tags are most frequently associated with the searched tags
@@ -237,4 +243,8 @@ var tagIndex = {
 
     return tagScores.filter(t => t.score > 0).sort((a, b) => b.score - a.score).map(i => i.tag)
   }
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = tagIndex
 }

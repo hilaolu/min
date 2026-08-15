@@ -16,19 +16,18 @@ async function showPlaceSuggestions (text, input, inputFlags) {
     }
   }
 
-  let results = await places.getPlaceSuggestions(url)
-
-  searchbarPlugins.reset('placeSuggestions')
-
   var tabList = browserSession.tabs.get().map(function (tab) {
     return tab.url
   })
 
-  results = results.filter(function (item) {
-    return tabList.indexOf(item.url) === -1
+  const results = await places.getPlaceSuggestions(url, {
+    limit: 4,
+    excludeURLs: tabList
   })
 
-  results.slice(0, 4).forEach(function (result) {
+  searchbarPlugins.reset('placeSuggestions')
+
+  results.forEach(function (result) {
     searchbarPlugins.addResult('placeSuggestions', {
       title: urlParser.prettyURL(result.url),
       secondaryText: searchbarUtils.getRealTitle(result.title),

@@ -39,7 +39,7 @@ function createPlacesServiceConnection ({ handleRequest, ipc, ready }) {
         })
       }
       try {
-        Promise.resolve(handleRequest(data, respond)).catch(respondWithError)
+        Promise.resolve(handleRequest(data, respond, port)).catch(respondWithError)
       } catch (error) {
         respondWithError(error)
       }

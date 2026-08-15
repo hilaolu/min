@@ -13,6 +13,7 @@ const urlParser = require('util/urlParser.js')
 const tabEditor = require('navbar/tabEditor.js')
 const progressBar = require('navbar/progressBar.js')
 const permissionRequests = require('navbar/permissionRequests.js')
+const { getUpdateGroups, reconcileKeyedChildren } = require('navbar/tabBarProjection.js')
 
 var lastTabDeletion = 0 // TODO get rid of this
 
@@ -23,6 +24,7 @@ const tabBar = {
   tabElementMap: {}, // tabId: tab element
   events: new EventEmitter(),
   dragulaInstance: null,
+  sizeUpdateFrame: null,
   getTab: function (tabId) {
     return tabBar.tabElementMap[tabId]
   },
@@ -135,80 +137,91 @@ const tabBar = {
 
     return tabEl
   },
-  updateTab: function (tabId, tabEl = tabBar.getTab(tabId)) {
+  updateTab: function (tabId, tabEl = tabBar.getTab(tabId), fields) {
     var tabData = browserSession.tabs.get(tabId)
+    if (!tabData || !tabEl) return
+    const groups = getUpdateGroups(fields)
 
-    // update tab title
-    var tabTitle
+    if (groups.has('title')) {
+      var tabTitle
 
-    const isNewTab = tabData.url === '' || tabData.url === urlParser.parse('min://newtab')
-    if (isNewTab) {
-      tabTitle = 'New Tab'
-    } else if (tabData.title) {
-      tabTitle = tabData.title
-    } else if (tabData.loaded) {
-      tabTitle = tabData.url
+      const isNewTab = tabData.url === '' || tabData.url === urlParser.parse('min://newtab')
+      if (isNewTab) {
+        tabTitle = 'New Tab'
+      } else if (tabData.title) {
+        tabTitle = tabData.title
+      } else if (tabData.loaded) {
+        tabTitle = tabData.url
+      }
+
+      tabTitle = (tabTitle || 'New Tab').substring(0, 500)
+
+      var titleEl = tabEl.querySelector('.title')
+      titleEl.textContent = tabTitle
+
+      tabEl.title = tabTitle
+      if (tabData.private) {
+        tabEl.title += ' (Private tab)'
+      }
     }
 
-    tabTitle = (tabTitle || 'New Tab').substring(0, 500)
+    if (groups.has('url')) {
+      var tabUrl = urlParser.getDomain(tabData.url)
+      if (tabUrl.startsWith('www.') && tabUrl.split('.').length > 2) {
+        tabUrl = tabUrl.replace('www.', '')
+      }
 
-    var titleEl = tabEl.querySelector('.title')
-    titleEl.textContent = tabTitle
+      tabEl.querySelector('.url-element').textContent = tabUrl
 
-    tabEl.title = tabTitle
-    if (tabData.private) {
-      tabEl.title += ' (Private tab)'
+      if (tabUrl && !urlParser.isInternalURL(tabData.url)) {
+        tabEl.classList.add('has-url')
+      } else {
+        tabEl.classList.remove('has-url')
+      }
     }
 
-    var tabUrl = urlParser.getDomain(tabData.url)
-    if (tabUrl.startsWith('www.') && tabUrl.split('.').length > 2) {
-      tabUrl = tabUrl.replace('www.', '')
+    if (groups.has('audio')) {
+      var audioButton = tabEl.querySelector('.tab-audio-button')
+      tabAudio.updateButton(tabId, audioButton)
     }
 
-    tabEl.querySelector('.url-element').textContent = tabUrl
+    if (groups.has('permissions')) {
+      tabEl.querySelectorAll('.permission-request-icon').forEach(el => el.remove())
 
-    if (tabUrl && !urlParser.isInternalURL(tabData.url)) {
-      tabEl.classList.add('has-url')
-    } else {
-      tabEl.classList.remove('has-url')
+      permissionRequests.getButtons(tabId).reverse().forEach(function (button) {
+        tabEl.insertBefore(button, tabEl.children[0])
+      })
     }
 
-    // update tab audio icon
-    var audioButton = tabEl.querySelector('.tab-audio-button')
-    tabAudio.updateButton(tabId, audioButton)
+    if (groups.has('security')) {
+      const iconArea = tabEl.getElementsByClassName('tab-icon-area')[0]
 
-    tabEl.querySelectorAll('.permission-request-icon').forEach(el => el.remove())
-
-    permissionRequests.getButtons(tabId).reverse().forEach(function (button) {
-      tabEl.insertBefore(button, tabEl.children[0])
-    })
-
-    const iconArea = tabEl.getElementsByClassName('tab-icon-area')[0]
-
-    const insecureIcon = tabEl.getElementsByClassName('icon-tab-not-secure')[0]
-    if (tabData.secure === true && insecureIcon) {
-      insecureIcon.remove()
-    } else if (tabData.secure === false && !insecureIcon) {
-      const newInsecureIcon = document.createElement('i')
-      newInsecureIcon.className = 'icon-tab-not-secure tab-icon tab-info-icon i carbon:unlocked'
-      newInsecureIcon.title = 'Your connection to this website is not secure.'
-      iconArea.appendChild(newInsecureIcon)
+      const insecureIcon = tabEl.getElementsByClassName('icon-tab-not-secure')[0]
+      if (tabData.secure === true && insecureIcon) {
+        insecureIcon.remove()
+      } else if (tabData.secure === false && !insecureIcon) {
+        const newInsecureIcon = document.createElement('i')
+        newInsecureIcon.className = 'icon-tab-not-secure tab-icon tab-info-icon i carbon:unlocked'
+        newInsecureIcon.title = 'Your connection to this website is not secure.'
+        iconArea.appendChild(newInsecureIcon)
+      }
     }
   },
   updateAll: function () {
-    empty(tabBar.containerInner)
-    tabBar.tabElementMap = {}
-
-    browserSession.tabs.get().forEach(function (tab) {
-      var el = tabBar.createTab(tab)
-      tabBar.containerInner.appendChild(el)
-      tabBar.tabElementMap[tab.id] = el
+    reconcileKeyedChildren({
+      container: tabBar.containerInner,
+      create: tab => tabBar.createTab(tab),
+      elements: tabBar.tabElementMap,
+      items: browserSession.tabs.get(),
+      update: (element, tab, created) => {
+        if (!created) tabBar.updateTab(tab.id, element)
+      }
     })
 
     if (browserSession.tabs.getSelected()) {
       tabBar.setActiveTab(browserSession.tabs.getSelected())
     }
-    tabBar.handleSizeChange()
+    tabBar.scheduleSizeChange()
   },
   addTab: function (tabId) {
     var tab = browserSession.tabs.get(tabId)
@@ -217,7 +230,7 @@ const tabBar = {
     var tabEl = tabBar.createTab(tab)
     tabBar.containerInner.insertBefore(tabEl, tabBar.containerInner.childNodes[index])
     tabBar.tabElementMap[tabId] = tabEl
-    tabBar.handleSizeChange()
+    tabBar.scheduleSizeChange()
   },
   removeTab: function (tabId) {
     var tabEl = tabBar.getTab(tabId)
@@ -226,8 +239,18 @@ const tabBar = {
       // This happens when destroying tabs from other task where this .tab-item is not present
       tabBar.containerInner.removeChild(tabEl)
       delete tabBar.tabElementMap[tabId]
-      tabBar.handleSizeChange()
+      tabBar.scheduleSizeChange()
     }
+  },
+  reconcileOrder: function () {
+    reconcileKeyedChildren({
+      container: tabBar.containerInner,
+      create: tab => tabBar.createTab(tab),
+      elements: tabBar.tabElementMap,
+      items: browserSession.tabs.get(),
+      update: function () {}
+    })
+    tabBar.scheduleSizeChange()
   },
   handleDividerPreference: function (dividerPreference) {
     if (dividerPreference === true) {
@@ -270,6 +293,13 @@ const tabBar = {
     } else {
       tabBar.container.classList.remove('compact-tabs')
     }
+  },
+  scheduleSizeChange: function () {
+    if (tabBar.sizeUpdateFrame) return
+    tabBar.sizeUpdateFrame = requestAnimationFrame(function () {
+      tabBar.sizeUpdateFrame = null
+      tabBar.handleSizeChange()
+    })
   }
 }
 
@@ -288,19 +318,18 @@ webviews.bindEvent('loading-started', function (tabId) {
 webviews.bindEvent('loading-stopped', function (tabId) {
   progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'finish')
   browserSession.updateTab(tabId, { loaded: true })
-  tabBar.updateTab(tabId)
 })
 
 browserSession.tasks.on('tab-updated', function (id, key) {
-  var updateKeys = ['title', 'secure', 'url', 'muted', 'hasAudio']
+  var updateKeys = ['title', 'secure', 'url', 'muted', 'hasAudio', 'loaded']
   if (updateKeys.includes(key)) {
-    tabBar.updateTab(id)
+    tabBar.updateTab(id, undefined, [key])
   }
 })
 
 permissionRequests.onChange(function (tabId) {
   if (browserSession.tabs.get(tabId)) {
-    tabBar.updateTab(tabId)
+    tabBar.updateTab(tabId, undefined, ['permissions'])
   }
 })
 

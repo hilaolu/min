@@ -27,7 +27,7 @@ async function showSearchbarPlaceResults (text, input, inputFlags, pluginName = 
   // only autocomplete an item if the delete key wasn't pressed
   var canAutocomplete = !inputFlags.isDeletion
 
-  let results = await searchFn(text)
+  let results = await searchFn(text, { limit: resultCount })
 
   // prevent responses from returning out of order
   if (responseSent < currentResponseSent) {

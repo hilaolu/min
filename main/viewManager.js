@@ -77,7 +77,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
 
     viewStateMap[id] = {
       loadedInitialURL: false,
-      hasJS: viewPrefs.javascript // need this later to see if we should swap the view for a JS-enabled one
+      hasJS: viewPrefs.javascript, // need this later to see if we should swap the view for a JS-enabled one
+      navigationGeneration: 0,
+      private: viewPrefs.partition !== 'persist:webcontent'
     }
 
     let view
@@ -100,10 +102,18 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     eventDefinitions.forEach(function ([electronEvent, semanticEvent, createPayload]) {
       view.webContents.on(electronEvent, function () {
         const args = Array.prototype.slice.call(arguments).slice(1)
+        if (electronEvent === 'did-start-navigation' && args[2]) {
+          viewStateMap[id].navigationGeneration++
+          view.webContents.send('page-navigation-generation', viewStateMap[id].navigationGeneration)
+        }
         if (electronEvent === 'did-navigate' || electronEvent === 'will-redirect') {
           view.webContents.setVisualZoomLevelLimits(1, 3)
         }
-        sendTabContentEvent(view, id, semanticEvent, createPayload(args))
+        const payload = createPayload(args)
+        if (electronEvent === 'did-start-navigation' && args[2]) {
+          payload.navigationGeneration = viewStateMap[id].navigationGeneration
+        }
+        sendTabContentEvent(view, id, semanticEvent, payload)
       })
     })
 
@@ -397,6 +407,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
 
     if (operation === 'lifecycle.create') {
       const webPreferences = {
+        additionalArguments: payload.indexingEnabled === false ? ['--min-indexing-disabled'] : [],
         partition: payload.private ? id.toString() : 'persist:webcontent'
       }
       createView(sender, payload.existingTabContentId, id, webPreferences, payload.bounds)
@@ -435,6 +446,12 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         return true
       case 'navigation.load':
         loadURLInView(id, payload.url, windows.windowFromContents(sender)?.win)
+        return true
+      case 'indexing.configure':
+        webContents.send('page-indexing-config', {
+          enabled: payload.enabled === true,
+          navigationGeneration: payload.navigationGeneration
+        })
         return true
       case 'navigation.back':
         webContents.goBack()
@@ -554,9 +571,16 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       case 'download.save-page':
         return webContents.savePage(payload.path, 'HTMLComplete')
       case 'capture.preview': {
-        const image = await webContents.capturePage({ scaleFactor: payload.scaleFactor })
-        const size = image.getSize()
-        return size.width === 0 && size.height === 0 ? null : image.toDataURL()
+        if (viewStateMap[id].private) return null
+        const sourceImage = await webContents.capturePage()
+        const sourceSize = sourceImage.getSize()
+        if (sourceSize.width === 0 || sourceSize.height === 0) return null
+        const width = Math.min(480, Math.max(1, Math.round(Number(payload.width) || 1)))
+        const height = Math.min(320, Math.max(1, Math.round(Number(payload.height) || 1)))
+        const image = sourceImage.resize({ width, height, quality: 'good' })
+        const dataURL = image.toDataURL()
+        const maximumBytes = Math.min(256 * 1024, Math.max(1, Number(payload.maxBytes) || 256 * 1024))
+        return Buffer.byteLength(dataURL, 'utf8') <= maximumBytes ? dataURL : null
       }
       case 'capture.download': {
         const image = await webContents.capturePage()
