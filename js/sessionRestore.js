@@ -9,16 +9,24 @@ const taskOverlay = require('taskOverlay/taskOverlay.js')
 const windowSync = require('tabState/windowSync.js')
 
 const sessionRestore = {
+  previousPersistenceKey: null,
   previousState: null,
 
   save: function (forceSave, sync) {
     // Only one window (the focused one) should write the shared snapshot.
     if (!document.body.classList.contains('focused')) return
 
+    const startupTabOption = settings.get('startupTabOption')
+    const selectedTaskIds = startupTabOption === 3
+      ? browserSession.tasks.getSelectedTaskIds().join(',')
+      : ''
+    const persistenceKey = [browserSession.getPersistenceRevision(), startupTabOption, selectedTaskIds].join(':')
+    if (forceSave !== true && persistenceKey === sessionRestore.previousPersistenceKey) return
+
     const state = browserSession.getPersistedSnapshot()
 
     // If startupTabOption is "open a new blank task", don't save the current Task's Tabs.
-    if (settings.get('startupTabOption') === 3) {
+    if (startupTabOption === 3) {
       state.tasks.forEach(function (task) {
         if (browserSession.tasks.get(task.id).selectedInWindow) {
           task.tabs = []
@@ -27,7 +35,10 @@ const sessionRestore = {
     }
 
     const stateString = JSON.stringify(state)
-    if (forceSave !== true && stateString === sessionRestore.previousState) return
+    if (forceSave !== true && stateString === sessionRestore.previousState) {
+      sessionRestore.previousPersistenceKey = persistenceKey
+      return
+    }
 
     const data = JSON.stringify({
       version: 2,
@@ -37,6 +48,7 @@ const sessionRestore = {
     if (sync === true) {
       try {
         rendererHost.saveBrowserSession(data, { sync: true })
+        sessionRestore.previousPersistenceKey = persistenceKey
         sessionRestore.previousState = stateString
       } catch (error) {
         console.warn(error)
@@ -44,6 +56,7 @@ const sessionRestore = {
       }
     } else {
       rendererHost.saveBrowserSession(data).then(function () {
+        sessionRestore.previousPersistenceKey = persistenceKey
         sessionRestore.previousState = stateString
       }).catch(function (error) {
         console.warn(error)

@@ -193,6 +193,32 @@ test('cleanup removes expired rows from storage and the resident summary cache',
   assert.equal(responses[0].result, null)
 })
 
+test('Places suggestions preserve score order, exclusions, bounds, and public projection', async function () {
+  const now = Date.now()
+  const records = Array.from({ length: 5 }, (_, index) => ({
+    id: index + 1,
+    url: `https://example.com/${index + 1}`,
+    title: `Example ${index + 1}`,
+    visitCount: 1,
+    lastVisit: now - (5 - index) * 1000,
+    extractedText: 'large private body',
+    searchIndex: ['large'],
+    isBookmarked: false,
+    tags: []
+  }))
+  const service = await loadService(records)
+
+  const responses = await request(service, {
+    action: 'getPlaceSuggestions',
+    callbackId: 8,
+    options: { excludeURLs: [records[4].url], limit: 2 }
+  })
+
+  assert.deepEqual(Array.from(responses[0].result, item => item.id), [4, 3])
+  assert.equal(responses[0].result.length, 2)
+  assert.equal('extractedText' in responses[0].result[0], false)
+})
+
 test('a newer full-text request completes the superseded request exactly once', async function () {
   const service = await loadService()
   const firstResponses = []

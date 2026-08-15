@@ -37,6 +37,7 @@ class BrowserSession {
     this.changeCursors = new Map()
     this.pendingChanges = new Map()
     this.windowSelectionStamps = new Map()
+    this.persistenceRevision = 0
     this.recordChanges = true
     this.taskList = new TaskList({
       windowId: this.windowId,
@@ -85,8 +86,32 @@ class BrowserSession {
 
   commitChange (change) {
     this.changeCursors.set(change.sourceWindowId, change.sequence)
+    this.markPersistenceChange(change)
     this.changeListeners.forEach(listener => listener(change))
     return change
+  }
+
+  changeAffectsPersistence (change) {
+    if (change.type === 'task-selected' || change.type === 'task-released') return false
+    if (change.type === 'tab-created') return !change.tab.private
+    if (change.type === 'tab-updated') {
+      if (Object.hasOwn(change.data, 'private')) return true
+      const task = this.taskList.getTaskContainingTab(change.tabId)
+      const tab = task?.tabs.get(change.tabId)
+      if (!tab || tab.private) return false
+      const permanentTab = task.tabs.toPermanentState(tab)
+      return Object.keys(change.data).some(key => Object.hasOwn(permanentTab, key))
+    }
+    if (change.type === 'tab-selected') return true
+    return true
+  }
+
+  markPersistenceChange (change) {
+    if (this.changeAffectsPersistence(change)) this.persistenceRevision++
+  }
+
+  getPersistenceRevision () {
+    return this.persistenceRevision
   }
 
   createChange (type, data) {
@@ -642,6 +667,7 @@ class BrowserSession {
         this.openTab({}, { taskId })
       }
     }))
+    this.persistenceRevision++
     return this.getCopyableSnapshot()
   }
 
@@ -793,6 +819,7 @@ class BrowserSession {
       sourcePending.delete(nextSequence)
       this.changeCursors.set(sourceWindowId, nextSequence)
       this.logicalTime = Math.max(this.logicalTime, change.logicalTime)
+      this.markPersistenceChange(change)
       outcome.appliedChanges.push(change.id)
       transition.affectedTaskIds.forEach(taskId => affectedTaskIds.add(taskId))
       outcome.closedTabIds.push(...transition.closedTabIds)

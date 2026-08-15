@@ -29,6 +29,7 @@ const browserSession = { BrowserSession, get, initialize }
   'duplicateTab',
   'emit',
   'getCopyableSnapshot',
+  'getPersistenceRevision',
   'getPersistedSnapshot',
   'getTab',
   'moveTabBy',

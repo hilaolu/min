@@ -34,6 +34,7 @@ class PlacesCache {
     this.items = []
     this.byURL = new Map()
     this.byId = new Map()
+    this.sorted = true
   }
 
   createSummary (item) {
@@ -48,7 +49,11 @@ class PlacesCache {
     this.byURL.set(summary.url, summary)
     if (summary.id !== undefined) this.byId.set(summary.id, summary)
     if (summary.isBookmarked) this.tagIndex.addPage(summary)
-    if (sort) this.sort()
+    if (sort) {
+      this.sort()
+    } else {
+      this.sorted = false
+    }
     return summary
   }
 
@@ -89,10 +94,12 @@ class PlacesCache {
     this.byURL.clear()
     this.byId.clear()
     this.tagIndex.reset()
+    this.sorted = true
   }
 
   sort () {
     this.items.sort((a, b) => this.calculateScore(b) - this.calculateScore(a))
+    this.sorted = true
   }
 
   getByURL (url) {
@@ -109,6 +116,31 @@ class PlacesCache {
 
   getAllPublic () {
     return this.items.map(item => projectPlace(item))
+  }
+
+  getRecentPublic ({ after, excludeURLs = [], limit = 4, metrics } = {}) {
+    const resultLimit = Number.isFinite(limit) ? Math.max(0, limit) : 4
+    const excluded = excludeURLs instanceof Set ? excludeURLs : new Set(excludeURLs)
+    const candidates = this.sorted
+      ? this.items
+      : this.items.slice().sort((a, b) => this.calculateScore(b) - this.calculateScore(a))
+    const results = []
+    let candidatesVisited = 0
+
+    for (let index = 0; index < candidates.length && results.length < resultLimit; index++) {
+      const item = candidates[index]
+      candidatesVisited++
+      if (Number.isFinite(after) && item.lastVisit <= after) continue
+      if (excluded.has(item.url)) continue
+      results.push(projectPlace(item))
+    }
+
+    if (metrics) {
+      metrics.candidatesVisited = candidatesVisited
+      metrics.resultCount = results.length
+      metrics.usedSortedCache = this.sorted
+    }
+    return results
   }
 }
 

@@ -68,6 +68,20 @@ function benchmarkOrdinarySearch (itemCount) {
   return { elapsedMs: timing.elapsedMs, summaries: itemCount }
 }
 
+function benchmarkSuggestions (itemCount) {
+  const tagIndex = { addPage: function () {}, onChange: function () {}, removePage: function () {}, reset: function () {} }
+  const cache = new PlacesCache({
+    calculateScore: item => item.lastVisit + item.visitCount,
+    getSearchTextCache: item => ({ title: item.title.toLowerCase(), url: item.url.toLowerCase() }),
+    tagIndex
+  })
+  for (let id = 1; id <= itemCount; id++) cache.add(createPlace(id, 0), { sort: false })
+  cache.sort()
+  const metrics = {}
+  const timing = measure(() => cache.getRecentPublic({ after: -Infinity, limit: 4, metrics }))
+  return { elapsedMs: timing.elapsedMs, summaries: itemCount, ...metrics }
+}
+
 function runGenerator (generator) {
   function next (value) {
     const result = generator.next(value)
@@ -160,9 +174,19 @@ function benchmarkRestore (tabCount) {
   const taskCount = Math.max(1, Math.round(tabCount / 100))
   const session = new BrowserSession({ windowId: 'benchmark' })
   const timing = measure(() => session.restoreSnapshot(createSnapshot(taskCount, 100)))
+  const persistedSnapshot = measure(() => v8.serialize(session.getPersistedSnapshot()).byteLength)
+  const persistenceRevision = session.getPersistenceRevision()
+  const idleRevisionChecks = measure(function () {
+    for (let index = 0; index < 1000; index++) {
+      if (session.getPersistenceRevision() !== persistenceRevision) throw new Error('persistence revision changed')
+    }
+  })
   return {
     elapsedMs: timing.elapsedMs,
+    idleRevisionChecks1000Ms: idleRevisionChecks.elapsedMs,
     indexedTabs: session.tasks.getIndexSnapshot().tabs.length,
+    persistedSnapshotBytes: persistedSnapshot.result,
+    persistedSnapshotMs: persistedSnapshot.elapsedMs,
     tabs: taskCount * 100,
     tasks: taskCount
   }
@@ -207,6 +231,7 @@ async function main () {
     extraction: benchmarkExtraction(),
     fullText: await benchmarkFullText(),
     ordinarySearch: [1000, 10000, 20000].map(benchmarkOrdinarySearch),
+    placeSuggestions: [1000, 10000, 20000].map(benchmarkSuggestions),
     places: benchmarkPlaces(),
     storage: await benchmarkStorage()
   }

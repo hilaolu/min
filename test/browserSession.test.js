@@ -415,5 +415,32 @@ test('indexed Browser Session identities and selection remain atomic after inval
   assert.equal(session.tasks.get(taskId).name, null)
   assert.equal(session.getTab(tabId).title, '')
   assert.equal(session.tasks.getSelected().id, taskId)
+  assert.deepEqual(session.tasks.getSelectedTaskIds(), [taskId])
   assertIndexesMatchState(session)
+})
+
+test('Browser Session persistence revisions track durable local and replicated changes only', function () {
+  const source = createSession('source')
+  const changes = captureChanges(source)
+  const taskId = source.createTask({}, { select: true })
+  const tabId = source.openTab({ url: 'https://example.com' }, { taskId }).tabId
+  const initialRevision = source.getPersistenceRevision()
+
+  source.updateTab(tabId, { hasAudio: true, loaded: true })
+  source.releaseTask()
+  source.selectTask(taskId)
+  assert.equal(source.getPersistenceRevision(), initialRevision)
+
+  source.updateTab(tabId, { title: 'Durable title' })
+  assert.equal(source.getPersistenceRevision(), initialRevision + 1)
+
+  const target = createSession('target')
+  const targetRevision = target.getPersistenceRevision()
+  target.applyChanges(changesFrom('source', changes))
+  assert.ok(target.getPersistenceRevision() > targetRevision)
+  assert.equal(target.getTab(tabId).title, 'Durable title')
+
+  const restoredRevision = target.getPersistenceRevision()
+  target.restoreSnapshot(source.getCopyableSnapshot())
+  assert.equal(target.getPersistenceRevision(), restoredRevision + 1)
 })

@@ -364,25 +364,13 @@ function handleRequest (data, respond, requestContext = defaultRequestContext) {
 
   if (action === 'getPlaceSuggestions') {
     const returnSuggestionResults = function () {
-      const cTime = Date.now()
-
-      let results = historyInMemoryCache.filter(i => cTime - i.lastVisit < 604800000)
-
-      const excludedURLs = new Set(options?.excludeURLs || [])
-      results = results.filter(item => !excludedURLs.has(item.url))
-
-      for (let i = 0; i < results.length; i++) {
-        results[i] = { item: results[i], score: calculateHistoryScore(results[i]) }
-      }
-
-      results = results.sort(function (a, b) {
-        return b.score - a.score
-      })
-
       const suggestionLimit = Number.isFinite(options?.limit) ? Math.max(0, options.limit) : 4
-
       respond({
-        result: results.slice(0, suggestionLimit).map(result => projectPlace(result.item)),
+        result: placesCache.getRecentPublic({
+          after: Date.now() - 604800000,
+          excludeURLs: options?.excludeURLs,
+          limit: suggestionLimit
+        }),
         callbackId: callbackId
       })
     }

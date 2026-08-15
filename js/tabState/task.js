@@ -237,6 +237,10 @@ class TaskList {
     }
   }
 
+  getSelectedTaskIds () {
+    return Array.from(this.selectedTaskByWindow.values(), task => task.id).sort()
+  }
+
   withoutEvents (callback) {
     const eventsEnabled = this.eventsEnabled
     this.eventsEnabled = false
