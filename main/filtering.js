@@ -1,6 +1,17 @@
 const parser = require('../ext/abp-filter-parser-modified/abp-filter-parser.js')
 
-function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents }) {
+function createFilteringPolicy ({
+  app,
+  cancelInterval = clearInterval,
+  clock = () => performance.now(),
+  fs,
+  observePerformance = false,
+  path,
+  rootDir,
+  scheduleInterval = setInterval,
+  settings,
+  webContents
+}) {
   var enabledFilteringOptions = {
     blockingLevel: 0,
     contentTypes: [], // script, image
@@ -47,13 +58,14 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
   // for tracking the number of blocked requests
   var unsavedBlockedRequests = 0
 
-  setInterval(function () {
+  const blockedRequestTimer = scheduleInterval(function () {
     if (unsavedBlockedRequests > 0) {
       var current = settings.get('filteringBlockedCount')
       settings.set('filteringBlockedCount', current + unsavedBlockedRequests)
       unsavedBlockedRequests = 0
     }
   }, 60000)
+  if (blockedRequestTimer?.unref) blockedRequestTimer.unref()
 
   // electron uses different names for resource types than ABP
   // electron: https://github.com/electron/electron/blob/34c4c8d5088fa183f56baea28809de6f2a427e02/shell/browser/net/atom_network_delegate.cc#L30
@@ -70,35 +82,53 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
   }
 
   var parsedFilterData = {}
+  var filterListGeneration = 0
+  var filterListReady = Promise.resolve()
+  const performanceMetrics = {
+    filterChecks: 0,
+    filterListLoadCount: 0,
+    filterListReadyMs: 0,
+    filterMatches: 0,
+    maximumRequestMs: 0,
+    requestCount: 0,
+    totalRequestMs: 0,
+    trackingParamAttempts: 0,
+    trackingParamFastPaths: 0,
+    trackingParamParses: 0,
+    trackingRedirects: 0
+  }
+
+  function readFilterFile (filePath) {
+    return new Promise(function (resolve) {
+      fs.readFile(filePath, 'utf8', function (error, data) {
+        resolve(error ? '' : data || '')
+      })
+    })
+  }
 
   function initFilterList () {
-  // discard old data if the list is being re-initialized
-    parsedFilterData = {}
+    const generation = ++filterListGeneration
+    const loadStarted = observePerformance ? clock() : 0
+    const nextFilterData = {}
+    if (observePerformance) performanceMetrics.filterListLoadCount++
 
-    fs.readFile(path.join(rootDir, 'ext/filterLists/easylist+easyprivacy-noelementhiding.txt'),
-      'utf8', function (err, data) {
-        if (err) {
-          return
-        }
-        parser.parse(data, parsedFilterData)
-      }
-    )
-
-    fs.readFile(path.join(rootDir, 'ext/filterLists/minFilters.txt'),
-      'utf8', function (err, data) {
-        if (err) {
-          return
-        }
-        parser.parse(data, parsedFilterData)
-      }
-    )
-
-    fs.readFile(path.join(app.getPath('userData'), 'customFilters.txt'),
-      'utf8', function (err, data) {
-        if (!err && data) {
-          parser.parse(data, parsedFilterData)
-        }
+    filterListReady = Promise.all([
+      readFilterFile(path.join(rootDir, 'ext/filterLists/easylist+easyprivacy-noelementhiding.txt')),
+      readFilterFile(path.join(rootDir, 'ext/filterLists/minFilters.txt')),
+      readFilterFile(path.join(app.getPath('userData'), 'customFilters.txt'))
+    ]).then(function (filterLists) {
+      return new Promise(function (resolve) {
+        parser.parse(filterLists.join('\n'), nextFilterData, function () {
+          if (generation === filterListGeneration) parsedFilterData = nextFilterData
+          if (observePerformance && generation === filterListGeneration) {
+            performanceMetrics.filterListReadyMs = clock() - loadStarted
+          }
+          resolve()
+        })
       })
+    })
+
+    return filterListReady
   }
 
   function removeWWW (domain) {
@@ -138,6 +168,12 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
   }
 
   function removeTrackingParams (url) {
+    if (observePerformance) performanceMetrics.trackingParamAttempts++
+    if (url.indexOf('?') === -1) {
+      if (observePerformance) performanceMetrics.trackingParamFastPaths++
+      return url
+    }
+    if (observePerformance) performanceMetrics.trackingParamParses++
     try {
       var urlObj = new URL(url)
       for (const param of urlObj.searchParams) {
@@ -156,6 +192,17 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
 
   function handleRequest (details, callback) {
   /* eslint-disable standard/no-callback-literal */
+    const requestStarted = observePerformance ? clock() : 0
+    if (observePerformance) performanceMetrics.requestCount++
+
+    function respond (result) {
+      if (observePerformance) {
+        const elapsed = clock() - requestStarted
+        performanceMetrics.totalRequestMs += elapsed
+        performanceMetrics.maximumRequestMs = Math.max(performanceMetrics.maximumRequestMs, elapsed)
+      }
+      callback(result)
+    }
 
     // webContentsId may not exist if this request is a mainFrame or subframe
     let domain
@@ -168,7 +215,8 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
     const modifiedURL = (enabledFilteringOptions.blockingLevel > 0 && !isExceptionDomain) ? removeTrackingParams(details.url) : details.url
 
     if (!(details.url.startsWith('http://') || details.url.startsWith('https://')) || details.resourceType === 'mainFrame') {
-      callback({
+      if (observePerformance && modifiedURL !== details.url) performanceMetrics.trackingRedirects++
+      respond({
         cancel: false,
         requestHeaders: details.requestHeaders,
         redirectURL: (modifiedURL !== details.url) ? modifiedURL : undefined
@@ -181,7 +229,7 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
     if (enabledFilteringOptions.contentTypes.length > 0) {
       for (var i = 0; i < enabledFilteringOptions.contentTypes.length; i++) {
         if (details.resourceType === enabledFilteringOptions.contentTypes[i]) {
-          callback({
+          respond({
             cancel: true,
             requestHeaders: details.requestHeaders
           })
@@ -196,14 +244,16 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
       (enabledFilteringOptions.blockingLevel === 2)
       ) {
       // by doing this check second, we can skip checking same-origin requests if only third-party blocking is enabled
+        if (observePerformance) performanceMetrics.filterChecks++
         var matchesFilters = parser.matches(parsedFilterData, details.url, {
           domain: domain,
           elementType: electronABPElementTypeMap[details.resourceType]
         })
         if (matchesFilters) {
           unsavedBlockedRequests++
+          if (observePerformance) performanceMetrics.filterMatches++
 
-          callback({
+          respond({
             cancel: true,
             requestHeaders: details.requestHeaders
           })
@@ -212,7 +262,8 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
       }
     }
 
-    callback({
+    if (observePerformance && modifiedURL !== details.url) performanceMetrics.trackingRedirects++
+    respond({
       cancel: false,
       requestHeaders: details.requestHeaders,
       redirectURL: (modifiedURL !== details.url) ? modifiedURL : undefined
@@ -234,11 +285,30 @@ function createFilteringPolicy ({ app, fs, path, rootDir, settings, webContents 
     ses.webRequest.onBeforeRequest(handleRequest)
   }
 
+  function getPerformanceSnapshot () {
+    return {
+      ...performanceMetrics,
+      filterListReadyMs: Number(performanceMetrics.filterListReadyMs.toFixed(2)),
+      maximumRequestMs: Number(performanceMetrics.maximumRequestMs.toFixed(3)),
+      totalRequestMs: Number(performanceMetrics.totalRequestMs.toFixed(3))
+    }
+  }
+
+  function destroy () {
+    cancelInterval(blockedRequestTimer)
+  }
+
   settings.listen('filtering', function (value) {
     setFilteringSettings(value)
   })
 
-  return { filterPopups, install: registerFiltering }
+  return {
+    destroy,
+    filterPopups,
+    getPerformanceSnapshot,
+    install: registerFiltering,
+    whenReady: () => filterListReady
+  }
 }
 
 module.exports = createFilteringPolicy
