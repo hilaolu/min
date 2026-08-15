@@ -1,3 +1,5 @@
+/* global Blob */
+
 const rendererHost = require('rendererHost.js')
 const statistics = require('js/statistics.js')
 

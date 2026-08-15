@@ -1,4 +1,5 @@
 /* Handles importing / exporting bookmarks to HTML */
+/* global DOMParser */
 
 var places = require('places/places.js')
 const rendererHost = require('rendererHost.js')

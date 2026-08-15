@@ -22,22 +22,22 @@ var tabAudio = {
     return button
   },
   updateButton: function (tabId, button) {
-    var button = button || document.querySelector('.tab-audio-button[data-tab="{id}"]'.replace('{id}', tabId))
+    var audioButton = button || document.querySelector('.tab-audio-button[data-tab="{id}"]'.replace('{id}', tabId))
     var tab = browserSession.tabs.get(tabId)
 
     var muteIcon = tabAudio.muteIcon
     var volumeIcon = tabAudio.volumeIcon
 
     if (tab.muted) {
-      button.hidden = false
-      button.classList.remove(volumeIcon)
-      button.classList.add(muteIcon)
+      audioButton.hidden = false
+      audioButton.classList.remove(volumeIcon)
+      audioButton.classList.add(muteIcon)
     } else if (tab.hasAudio) {
-      button.hidden = false
-      button.classList.add(volumeIcon)
-      button.classList.remove(muteIcon)
+      audioButton.hidden = false
+      audioButton.classList.add(volumeIcon)
+      audioButton.classList.remove(muteIcon)
     } else {
-      button.hidden = true
+      audioButton.hidden = true
     }
   },
   toggleAudio: function (tabId) {

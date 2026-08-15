@@ -1,38 +1,64 @@
-const browserSession = require('tabState.js')
-const browserUI = require('browserUI.js')
-const rendererHost = require('rendererHost.js')
-const taskOverlay = require('taskOverlay/taskOverlay.js')
+function createWindowSync (options) {
+  const {
+    browserSession,
+    browserUI,
+    cancelSchedule = clearTimeout,
+    logger = console,
+    rendererHost,
+    schedule = setTimeout,
+    taskOverlay
+  } = options
 
-const windowSync = {
-  closed: false,
-  pendingChanges: [],
-  pendingReceivedChanges: [],
-  ready: false,
-  syncTimeout: null,
-  unsubscribe: null,
+  let closed = false
+  let initialized = false
+  let pendingChanges = []
+  let pendingReceivedChanges = []
+  let ready = false
+  let syncTimeout = null
+  let unsubscribeLocal = null
+  let unsubscribeTransport = null
 
-  flush: function () {
-    if (windowSync.pendingChanges.length > 0) {
-      rendererHost.publishBrowserSessionChanges(windowSync.pendingChanges)
-      windowSync.pendingChanges = []
+  function flush () {
+    if (closed) return
+    if (pendingChanges.length > 0) {
+      rendererHost.publishBrowserSessionChanges(pendingChanges)
+      pendingChanges = []
     }
-    if (windowSync.syncTimeout) {
-      clearTimeout(windowSync.syncTimeout)
-      windowSync.syncTimeout = null
+    if (syncTimeout) {
+      cancelSchedule(syncTimeout)
+      syncTimeout = null
     }
-  },
+  }
 
-  receive: function (data) {
-    if (windowSync.closed) return
+  function destroy () {
+    if (closed) return
+    closed = true
+    pendingChanges = []
+    pendingReceivedChanges = []
+    if (syncTimeout) {
+      cancelSchedule(syncTimeout)
+      syncTimeout = null
+    }
+    if (unsubscribeLocal) {
+      unsubscribeLocal()
+      unsubscribeLocal = null
+    }
+    if (unsubscribeTransport) {
+      unsubscribeTransport()
+      unsubscribeTransport = null
+    }
+  }
+
+  function receive (data) {
+    if (closed) return
     const outcome = browserSession.applyChanges(data)
     if (outcome.status === 'rejected' || outcome.status === 'snapshot-required') {
-      console.warn('Browser Session replication requires a fresh snapshot:', outcome.reason)
+      logger.warn('Browser Session replication requires a fresh snapshot:', outcome.reason)
     }
     browserUI.discardClosedTabs(outcome.closedTabIds)
     if (outcome.closeWindow) {
-      windowSync.closed = true
+      destroy()
       rendererHost.closeWindow()
-      windowSync.unsubscribe()
       return
     }
     if (outcome.showTaskOverlay) {
@@ -41,32 +67,62 @@ const windowSync = {
     if (outcome.projectSelectedTask && outcome.selectedTaskId) {
       browserUI.switchToTask(outcome.selectedTaskId, { stateAlreadySelected: true })
     }
-  },
+  }
 
-  finishHydration: function () {
-    windowSync.ready = true
-    const pendingReceivedChanges = windowSync.pendingReceivedChanges
-    windowSync.pendingReceivedChanges = []
-    pendingReceivedChanges.forEach(windowSync.receive)
-  },
+  function finishHydration () {
+    if (closed) return
+    ready = true
+    const queuedChanges = pendingReceivedChanges
+    pendingReceivedChanges = []
+    queuedChanges.forEach(receive)
+  }
 
-  initialize: function () {
-    windowSync.closed = false
-    browserSession.onChange(function (change) {
-      windowSync.pendingChanges.push(change)
-      if (!windowSync.syncTimeout) {
-        windowSync.syncTimeout = setTimeout(windowSync.flush, 0)
+  function initialize () {
+    if (initialized) return
+    initialized = true
+    closed = false
+    unsubscribeLocal = browserSession.onChange(function (change) {
+      pendingChanges.push(change)
+      if (!syncTimeout) {
+        syncTimeout = schedule(flush, 0)
       }
     })
 
-    windowSync.unsubscribe = rendererHost.onBrowserSessionChanges(function receiveChanges (data) {
-      if (!windowSync.ready) {
-        windowSync.pendingReceivedChanges.push(data)
+    unsubscribeTransport = rendererHost.onBrowserSessionChanges(function receiveChanges (data) {
+      if (!ready) {
+        pendingReceivedChanges.push(data)
       } else {
-        windowSync.receive(data)
+        receive(data)
       }
     })
   }
+
+  return {
+    destroy,
+    finishHydration,
+    flush,
+    initialize,
+    receive
+  }
 }
 
-module.exports = windowSync
+let productionWindowSync = null
+
+function getProductionWindowSync () {
+  if (!productionWindowSync) {
+    throw new Error('Browser Session window synchronization has not been initialized')
+  }
+  return productionWindowSync
+}
+
+module.exports = {
+  createWindowSync,
+  destroy: (...args) => getProductionWindowSync().destroy(...args),
+  finishHydration: (...args) => getProductionWindowSync().finishHydration(...args),
+  flush: (...args) => getProductionWindowSync().flush(...args),
+  initialize: function (options) {
+    if (!productionWindowSync) productionWindowSync = createWindowSync(options)
+    return productionWindowSync.initialize()
+  },
+  receive: (...args) => getProductionWindowSync().receive(...args)
+}

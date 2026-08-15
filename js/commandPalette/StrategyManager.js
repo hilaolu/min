@@ -224,6 +224,10 @@ class StrategyManager {
       this.eventListeners.set(event, [])
     }
     this.eventListeners.get(event).push(listener)
+    return () => {
+      const listeners = this.eventListeners.get(event) || []
+      this.eventListeners.set(event, listeners.filter(candidate => candidate !== listener))
+    }
   }
 
   /**

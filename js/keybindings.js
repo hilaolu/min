@@ -9,6 +9,7 @@ There are three possible ways that keybindings can be handled.
   */
 
 const keyMapModule = require('util/keyMap.js')
+const createShortcutAvailability = require('./keybindings/shortcutAvailability.js')
 
 var webviews = require('webviews.js')
 var settings = require('util/settings/settings.js')
@@ -17,35 +18,12 @@ var keyMap = keyMapModule.userKeyMap(settings.get('keyMap'))
 
 var shortcutsList = []
 
-/*
-Determines whether a shortcut can actually run
-single-letter shortcuts and shortcuts used for text editing can't run when an input is focused
-*/
-function checkShortcutCanRun (combo, cb) {
-  if (/^(shift)?\+?\w$/.test(combo) || combo === 'mod+left' || combo === 'mod+right') {
-    webviews.isFocused(browserSession.tabs.getSelected(), function (err, isFocused) {
-      if (err || !browserSession.tabs.get(browserSession.tabs.getSelected()).url || !isFocused) {
-      // check whether an input is focused in the browser UI
-        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
-          cb(false)
-        } else {
-          cb(true)
-        }
-      } else {
-      // check whether an input is focused in the webview
-        webviews.isInputFocused(browserSession.tabs.getSelected(), function (err, isInputFocused) {
-          if (err) {
-            console.warn(err)
-            return
-          }
-          cb(isInputFocused === false)
-        })
-      }
-    })
-  } else {
-    cb(true)
-  }
-}
+/* Single-letter and text-editing shortcuts cannot run while an input is focused. */
+const canRunShortcut = createShortcutAvailability({
+  browserSession,
+  document,
+  webviews
+})
 
 function defineShortcut (keysOrKeyMapName, fn, options = {}) {
   let binding
@@ -64,21 +42,25 @@ function defineShortcut (keysOrKeyMapName, fn, options = {}) {
       return
     }
 
-    checkShortcutCanRun(combo, function (canRun) {
+    canRunShortcut(combo, function (canRun) {
       if (canRun) {
         fn(e, combo)
       }
     })
   }
 
-  binding.forEach(function (keys) {
-    shortcutsList.push({
+  const registeredShortcuts = binding.map(function (keys) {
+    return {
       combo: keys,
       keys: keys.split('+'),
       fn: shortcutCallback,
       keyUp: options.keyUp || false
-    })
+    }
   })
+  shortcutsList.push(...registeredShortcuts)
+  return function () {
+    shortcutsList = shortcutsList.filter(shortcut => !registeredShortcuts.includes(shortcut))
+  }
 }
 
 let keyboardMap

@@ -61,7 +61,7 @@ window.debounce = function (fn, delay) {
 
 window.empty = function (node) {
   var n
-  while (n = node.firstElementChild) {
+  while ((n = node.firstElementChild)) {
     node.removeChild(n)
   }
 }
@@ -102,10 +102,25 @@ window.addEventListener('load', function () {
   }, true)
 })
 
-require('tabState.js').initialize()
-require('tabState/windowSync.js').initialize()
+const browserSession = require('tabState.js')
+browserSession.initialize()
+require('tabState/windowSync.js').initialize({
+  browserSession,
+  browserUI: require('browserUI.js'),
+  cancelSchedule: clearTimeout,
+  rendererHost,
+  schedule: setTimeout,
+  taskOverlay: require('taskOverlay/taskOverlay.js')
+})
 require('windowControls.js').initialize()
 require('navbar/menuButton.js').initialize()
+require('webviewGestures.js').initialize({
+  browserSession,
+  cancelSchedule: clearTimeout,
+  navigator,
+  schedule: setTimeout,
+  webviews: require('webviews.js')
+})
 
 require('navbar/addTabButton.js').initialize()
 require('navbar/tabContextMenu.js').initialize()
@@ -126,7 +141,14 @@ require('sessionRestore.js').initialize()
 require('bookmarkConverter.js').initialize()
 require('newTabPage.js').initialize()
 require('macHandoff.js').initialize()
-require('commandPalette.js').initialize()
+require('commandPalette.js').initialize({
+  cancelSchedule: clearTimeout,
+  document,
+  keybindings: require('keybindings.js'),
+  rendererHost,
+  schedule: setTimeout,
+  webviews: require('webviews.js')
+})
 
 // default searchbar plugins
 

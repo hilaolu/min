@@ -51,7 +51,9 @@
   "license": "Apache-2.0",
   "scripts": {
     "postinstall": "node ./scripts/setupDevEnv.js",
-    "test": "node --test test/*.test.js && standard --verbose js/**/*.js main/*.js test/*.js",
+    "test": "npm run test:node && npm run lint:js",
+    "test:node": "node --test test/*.test.js",
+    "lint:js": "standard --verbose \"js/**/*.js\" \"main/**/*.js\" \"test/**/*.js\"",
     "watch": "node ./scripts/watch.js",
     "startElectron": "electron . --development-mode",
     "start": "npm run build && concurrently \"npm run watch\" \"npm run startElectron\"",
@@ -70,7 +72,8 @@
     "updateFilters": "node ./ext/filterLists/updateEasylist.js",
     "updateHttpsList": "node ./ext/httpsUpgrade/updateHttpsList.js",
     "updateSuffixes": "node ./ext/publicSuffixes/updateSuffixes.js",
-    "lint": "prettier --write **/**/*.css **/**/*.md **/**/*.html **/**/*.json && standard --fix js/**/*.js main/*.js | snazzy"
+    "lint": "npm run format",
+    "format": "prettier --write \"**/*.css\" \"**/*.md\" \"**/*.html\" \"**/*.json\" && standard --fix \"js/**/*.js\" \"main/**/*.js\" \"test/**/*.js\" | snazzy"
   },
   "repository": {
     "type": "git",

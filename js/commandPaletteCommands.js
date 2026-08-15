@@ -126,7 +126,7 @@ const availableCommands = [
           searchQuery = inputValue.substring(5).trim()
         }
       }
-      
+
       if (searchQuery) {
         var searchbar = require('searchbar/searchbar.js')
         var webviews = require('webviews.js')
@@ -138,4 +138,4 @@ const availableCommands = [
   }
 ]
 
-module.exports = availableCommands 
+module.exports = availableCommands
