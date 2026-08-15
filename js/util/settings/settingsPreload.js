@@ -2,6 +2,18 @@ var settingsElectron = require('electron')
 var settingsIPC = settingsElectron.ipcRenderer
 
 settingsElectron.contextBridge.exposeInMainWorld('settingsHost', {
+  clearBrowsingData: function () {
+    if (!window.location.href.startsWith('min://app/pages/settings/')) {
+      return Promise.resolve({
+        ok: false,
+        error: {
+          code: 'BROWSING_DATA_ORIGIN_DENIED',
+          message: 'Browsing data can only be cleared from Settings'
+        }
+      })
+    }
+    return settingsIPC.invoke('clearStorageData')
+  },
   connect: function (callback) {
     if (!window.location.href.startsWith('min://')) {
       return { revision: 0, values: {} }

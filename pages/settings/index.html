@@ -66,6 +66,35 @@
       <div id="content-type-blocking"></div>
     </div>
 
+    <div class="settings-container" id="browsing-data-settings-container">
+      <h3>Browsing Data</h3>
+
+      <div class="setting-section">
+        <p
+          class="settings-info-subheading"
+          id="clear-browsing-data-description"
+        >
+          Remove cookies, local storage, IndexedDB, service workers, cached
+          files, DNS data, and cached authentication. Browsing history,
+          bookmarks, and saved passwords are not affected.
+        </p>
+        <button
+          class="settings-action-button"
+          id="clear-browsing-data"
+          aria-describedby="clear-browsing-data-description"
+          type="button"
+        >
+          Clear browsing data
+        </button>
+        <span
+          class="settings-action-status"
+          id="clear-browsing-data-status"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
+    </div>
+
     <div class="settings-container" id="appearance-settings-container">
       <h3>Appearance</h3>
 
@@ -303,6 +332,7 @@
     <script src="../../js/util/settings/settingsContent.js"></script>
     <script src="../../js/util/searchEngine.js"></script>
     <script src="../../js/util/theme.js"></script>
+    <script src="browsingData.js"></script>
     <script src="settings.js"></script>
   </body>
 </html>

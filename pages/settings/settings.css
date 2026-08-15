@@ -70,6 +70,32 @@ html {
   padding-left: 1.18em;
   padding-top: 0.2em;
 }
+
+.settings-action-button {
+  padding: 0.4em 0.75em;
+  border: 1px solid #999;
+  border-radius: 3px;
+}
+
+.settings-action-button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+}
+
+.settings-action-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.dark-mode .settings-action-button:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.075);
+}
+
+.settings-action-status {
+  margin-left: 0.75em;
+  opacity: 0.75;
+}
+
 .banner {
   padding: 1em;
   position: sticky;
