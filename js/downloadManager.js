@@ -1,5 +1,6 @@
 var webviews = require('webviews.js')
 const remoteMenu = require('remoteMenuRenderer.js')
+const rendererHost = require('rendererHost.js')
 
 function getFileSizeString (bytes) {
   const prefixes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
@@ -45,32 +46,33 @@ const downloadManager = {
       }
     }
   },
-  removeItem: function (path) {
-    if (downloadManager.downloadBarElements[path]) {
-      downloadManager.downloadBarElements[path].container.remove()
+  removeItem: function (id) {
+    if (downloadManager.downloadBarElements[id]) {
+      downloadManager.downloadBarElements[id].container.remove()
     }
 
-    delete downloadManager.downloadBarElements[path]
-    delete downloadManager.downloadItems[path]
+    delete downloadManager.downloadBarElements[id]
+    delete downloadManager.downloadItems[id]
+    rendererHost.releaseDownload(id)
 
     if (Object.keys(downloadManager.downloadItems).length === 0) {
       downloadManager.hide()
     }
   },
-  openFolder: function (path) {
-    ipc.invoke('showItemInFolder', path)
+  openFolder: function (id) {
+    rendererHost.revealDownload(id)
   },
-  onItemClicked: function (path) {
-    if (downloadManager.downloadItems[path].status === 'completed') {
-      electron.shell.openPath(path)
+  onItemClicked: function (id) {
+    if (downloadManager.downloadItems[id].status === 'completed') {
+      rendererHost.openDownload(id)
       // provide a bit of time for the file to open before the download bar disappears
       setTimeout(function () {
-        downloadManager.removeItem(path)
+        downloadManager.removeItem(id)
       }, 100)
     }
   },
-  onItemDragged: function (path) {
-    ipc.invoke('startFileDrag', path)
+  onItemDragged: function (id) {
+    rendererHost.startDownloadDrag(id)
   },
   onDownloadCompleted: function () {
     downloadManager.lastDownloadCompleted = Date.now()
@@ -113,11 +115,11 @@ const downloadManager = {
     container.appendChild(openFolder)
 
     container.addEventListener('click', function () {
-      downloadManager.onItemClicked(downloadItem.path)
+      downloadManager.onItemClicked(downloadItem.id)
     })
     container.addEventListener('dragstart', function (e) {
       e.preventDefault()
-      downloadManager.onItemDragged(downloadItem.path)
+      downloadManager.onItemDragged(downloadItem.id)
     })
 
     dropdown.addEventListener('click', function (e) {
@@ -127,8 +129,8 @@ const downloadManager = {
           {
             label: 'Cancel',
             click: function () {
-              ipc.send('cancelDownload', downloadItem.path)
-              downloadManager.removeItem(downloadItem.path)
+              rendererHost.cancelDownload(downloadItem.id)
+              downloadManager.removeItem(downloadItem.id)
             }
           }
         ]
@@ -139,15 +141,15 @@ const downloadManager = {
 
     openFolder.addEventListener('click', function (e) {
       e.stopPropagation()
-      downloadManager.openFolder(downloadItem.path)
-      downloadManager.removeItem(downloadItem.path)
+      downloadManager.openFolder(downloadItem.id)
+      downloadManager.removeItem(downloadItem.id)
     })
 
     downloadManager.container.appendChild(container)
-    downloadManager.downloadBarElements[downloadItem.path] = { container, title, infoBox, detailedInfoBox, progress, dropdown, openFolder }
+    downloadManager.downloadBarElements[downloadItem.id] = { container, title, infoBox, detailedInfoBox, progress, dropdown, openFolder }
   },
   updateItem: function (downloadItem) {
-    const elements = downloadManager.downloadBarElements[downloadItem.path]
+    const elements = downloadManager.downloadBarElements[downloadItem.id]
 
     if (downloadItem.status === 'completed') {
       elements.container.classList.remove('loading')
@@ -184,14 +186,9 @@ const downloadManager = {
       downloadManager.hide()
     })
 
-    ipc.on('download-info', function (e, info) {
-      if (!info.path) {
-        // download save location hasn't been chosen yet
-        return
-      }
-
+    rendererHost.onDownloadChanged(function (info) {
       if (info.status === 'cancelled') {
-        downloadManager.removeItem(info.path)
+        downloadManager.removeItem(info.id)
         return
       }
 
@@ -199,13 +196,13 @@ const downloadManager = {
         downloadManager.onDownloadCompleted()
       }
 
-      if (!downloadManager.downloadItems[info.path]) {
+      if (!downloadManager.downloadItems[info.id]) {
         downloadManager.show()
         downloadManager.createItem(info)
       }
       downloadManager.updateItem(info)
 
-      downloadManager.downloadItems[info.path] = info
+      downloadManager.downloadItems[info.id] = info
     })
   }
 }

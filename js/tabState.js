@@ -1,11 +1,12 @@
 const BrowserSession = require('./tabState/browserSession.js')
+const rendererHost = require('./rendererHost.js')
 
 let currentSession = null
 
 function initialize (options = {}) {
   currentSession = new BrowserSession({
     ...options,
-    windowId: options.windowId || window.windowId
+    windowId: options.windowId || rendererHost.getRuntimeConfiguration().windowId
   })
   return currentSession
 }
@@ -20,7 +21,8 @@ function get () {
 const browserSession = { BrowserSession, get, initialize }
 
 ;[
-  'applyChange',
+  'acquireTask',
+  'applyChanges',
   'closeTab',
   'closeTask',
   'createTask',
@@ -38,6 +40,7 @@ const browserSession = { BrowserSession, get, initialize }
   'openTab',
   'restoreClosedTab',
   'restoreSnapshot',
+  'releaseTask',
   'selectTab',
   'selectTask',
   'updateTab',

@@ -1,4 +1,6 @@
 const browserSession = require('tabState.js')
+const rendererHost = require('rendererHost.js')
+const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 /*
 There are three possible ways that keybindings can be handled.
  Shortcuts that appear in the menubar are registered in main.js, and send IPC messages to the window (which are handled by menuRenderer.js)
@@ -123,8 +125,8 @@ function beforeInputEventHandler (input) {
       (key === 'option' && (input.alt || input.key === 'Alt')) ||
       (key === 'shift' && (input.shift || input.key === 'Shift')) ||
       (key === 'ctrl' && (input.control || input.key === 'Control')) ||
-      (key === 'mod' && window.platformType === 'mac' && (input.meta || input.key === 'Meta')) ||
-      (key === 'mod' && window.platformType !== 'mac' && (input.control || input.key === 'Control')) ||
+      (key === 'mod' && runtimeConfiguration.platform === 'darwin' && (input.meta || input.key === 'Meta')) ||
+      (key === 'mod' && runtimeConfiguration.platform !== 'darwin' && (input.control || input.key === 'Control')) ||
       (key === 'super' && (input.meta || input.key === 'Meta'))
       )
       ) {
@@ -146,9 +148,7 @@ function initialize () {
     beforeInputEventHandler(input)
   })
 
-  ipc.on('before-input-event', function (e, input) {
-    beforeInputEventHandler(input)
-  })
+  rendererHost.onBrowserChromeInput(beforeInputEventHandler)
 }
 
 initialize()

@@ -1,14 +1,19 @@
+const chokidar = require('chokidar')
 const fs = require('fs')
 const path = require('path')
+const writeFileAtomic = require('write-file-atomic')
 
 const createAppRuntime = require('./main.js')
+const { createRuntimeArgument: createBrowserChromeRuntimeArgument } = require('./browserChromeRuntime.js')
 const createCommandPaletteOverlay = require('./commandPaletteOverlay.js')
 const createDownloadPolicy = require('./download.js')
 const createFilteringPolicy = require('./filtering.js')
 const createMenu = require('./menu.js')
 const createPermissionManager = require('./permissionManager.js')
+const createPlacesManager = require('./placesManager.js')
 const createProtocolPolicy = require('./minInternalProtocol.js')
 const createProxyPolicy = require('../js/util/proxy.js')
+const { createRendererHostFiles } = require('./rendererHostFiles.js')
 const createSessionPolicies = require('./sessionPolicies.js')
 const createSettings = require('../js/util/settings/settingsMain.js')
 const createTouchBar = require('./touchbar.js')
@@ -36,6 +41,7 @@ function createMainProcess (options = {}) {
 
   const runtimeRef = { current: null }
   const commandPaletteRef = { current: null }
+  const rendererHostFilesRef = { current: null }
   const settingsRef = { current: null }
   const touchBarRef = { current: null }
   const viewManagerRef = { current: null }
@@ -43,8 +49,10 @@ function createMainProcess (options = {}) {
   const windows = createWindowRegistry({
     app,
     BaseWindow: electron.BaseWindow,
+    browserChromePreloadPath: path.join(rootDir, 'main/browserChromePreload.js'),
     browserPage: 'min://app/index.html',
     buildTouchBar: () => touchBarRef.current?.buildTouchBar(),
+    createBrowserChromeRuntimeArgument,
     fs,
     getSetting: key => settingsRef.current?.get(key),
     isDevelopmentMode,
@@ -54,6 +62,9 @@ function createMainProcess (options = {}) {
       }
       if (commandPaletteRef.current) {
         commandPaletteRef.current.destroy()
+      }
+      if (rendererHostFilesRef.current) {
+        rendererHostFilesRef.current.destroy()
       }
     },
     onRecenterOverlay: window => {
@@ -66,6 +77,30 @@ function createMainProcess (options = {}) {
     WebContentsView: electron.WebContentsView
   })
   const getWindowWebContents = windows.getChromeContents
+
+  const rendererHostFiles = createRendererHostFiles({
+    atomicWriter: writeFileAtomic,
+    dialog: electron.dialog,
+    fs,
+    getBrowserChromeContents: () => windows.getAll().map(windows.getChromeContents),
+    ipc,
+    path,
+    saveTabContentPage: (sender, tabId, filePath) => viewManagerRef.current.executeTabContentCommand(sender, {
+      id: tabId,
+      operation: 'download.save-page',
+      payload: { path: filePath }
+    }),
+    shell: electron.shell,
+    userDataPath: app.getPath('userData'),
+    watch: (...args) => chokidar.watch(...args),
+    windows
+  })
+  rendererHostFilesRef.current = rendererHostFiles
+
+  const places = createPlacesManager({
+    BrowserWindow: electron.BrowserWindow,
+    pageURL: 'file://' + path.join(rootDir, 'js/places/placesService.html')
+  })
 
   const settings = createSettings({
     fs,
@@ -161,7 +196,7 @@ function createMainProcess (options = {}) {
     shell: electron.shell,
     windows
   })
-  installRemoteMenu({ ipc, Menu: electron.Menu, MenuItem: electron.MenuItem })
+  installRemoteMenu({ ipc, Menu: electron.Menu, MenuItem: electron.MenuItem, windows })
   const menu = createMenu({
     app,
     createWindow,
@@ -198,6 +233,7 @@ function createMainProcess (options = {}) {
     installSessionPolicies: sessionPolicies.install,
     installThemePolicy: () => installThemePolicy({ nativeTheme: electron.nativeTheme, settings }),
     path,
+    places,
     registryInstaller,
     rootDir,
     settings,
@@ -207,7 +243,9 @@ function createMainProcess (options = {}) {
 
   return {
     filtering,
+    rendererHostFiles,
     runtime,
+    places,
     sessionPolicies,
     settings,
     viewManager,

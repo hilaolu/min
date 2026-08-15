@@ -2,10 +2,11 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 const Module = require('node:module')
 
-function loadCommandPalette () {
+function loadCommandPalette (rendererHost = {}) {
   const originalLoad = Module._load
   Module._load = function (request, parent, isMain) {
     if (request === 'keybindings.js') return { defineShortcut: function () {} }
+    if (request === 'rendererHost.js') return rendererHost
     return originalLoad.call(this, request, parent, isMain)
   }
   try {
@@ -40,16 +41,15 @@ function createInput () {
 test('prefix presentation publishes complete state and focuses only on presentation handoff', function () {
   const originalWindow = global.window
   const calls = []
-  global.window = {
-    ipc: {
-      invoke: function (channel, state) {
-        calls.push({ channel, state })
-        return Promise.resolve({ ok: true })
-      }
+  global.window = {}
+  const rendererHost = {
+    presentCommandPalette: function (state) {
+      calls.push(state)
+      return Promise.resolve({ ok: true })
     }
   }
   try {
-    const commandPalette = loadCommandPalette()
+    const commandPalette = loadCommandPalette(rendererHost)
     const input = createInput()
     commandPalette.input = input
     commandPalette.isVisible = false
@@ -61,10 +61,9 @@ test('prefix presentation publishes complete state and focuses only on presentat
     assert.equal(input.selectionStart, 1)
     assert.equal(input.focusCount, 0)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].channel, 'command-palette:present')
-    assert.equal(calls[0].state.visible, true)
-    assert.equal(calls[0].state.open, true)
-    assert.equal(calls[0].state.input, '>')
+    assert.equal(calls[0].visible, true)
+    assert.equal(calls[0].open, true)
+    assert.equal(calls[0].input, '>')
 
     commandPalette.focusInput()
     assert.equal(input.focusCount, 1)

@@ -1,13 +1,14 @@
 var isFocusMode = false
+const rendererHost = require('rendererHost.js')
 
-ipc.on('enterFocusMode', function () {
-  isFocusMode = true
-  document.body.classList.add('is-focus-mode')
-})
-
-ipc.on('exitFocusMode', function () {
-  isFocusMode = false
-  document.body.classList.remove('is-focus-mode')
+rendererHost.onBrowserCommand(function (command) {
+  if (command.type === 'enter-focus-mode') {
+    isFocusMode = true
+    document.body.classList.add('is-focus-mode')
+  } else if (command.type === 'exit-focus-mode') {
+    isFocusMode = false
+    document.body.classList.remove('is-focus-mode')
+  }
 })
 
 module.exports = {
@@ -15,6 +16,6 @@ module.exports = {
     return isFocusMode
   },
   warn: function () {
-    ipc.invoke('showFocusModeDialog2')
+    rendererHost.showFocusModeWarning()
   }
 }

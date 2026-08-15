@@ -1,4 +1,5 @@
 const browserSession = require('tabState.js')
+const rendererHost = require('rendererHost.js')
 /* handles viewing pdf files using pdf.js. Recieves events from main.js will-download */
 
 const webviews = require('webviews.js')
@@ -55,7 +56,9 @@ const PDFViewer = {
     webviews.update(data.tabId, PDFurl)
   },
   initialize: function () {
-    ipc.on('openPDF', PDFViewer.handlePDFOpenEvent)
+    rendererHost.onPDFRequested(function (data) {
+      PDFViewer.handlePDFOpenEvent(null, data)
+    })
   }
 }
 

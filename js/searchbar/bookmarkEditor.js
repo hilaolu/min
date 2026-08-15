@@ -1,7 +1,7 @@
 var places = require('places/places.js')
 var autocomplete = require('util/autocomplete.js')
 const remoteMenu = require('remoteMenuRenderer.js')
-var { ipcRenderer } = require('electron')
+const rendererHost = require('rendererHost.js')
 
 const bookmarkEditor = {
   currentInstance: null,
@@ -32,20 +32,11 @@ const bookmarkEditor = {
             {
               label: 'Rename Tag',
               click: async function () {
-                const res = ipcRenderer.sendSync('prompt', {
-                  text: '',
-                  values: [{ placeholder: 'Rename Tag', id: 'name', type: 'text' }],
-                  ok: 'Confirm',
-                  cancel: 'Cancel',
-                  width: 500,
-                  height: 140
-                })
+                const newName = rendererHost.promptForTagRename()
 
-                if (!res || !res.name) {
+                if (!newName) {
                   return
                 }
-
-                const newName = res.name
 
                 const items = await places.getAllItems()
 

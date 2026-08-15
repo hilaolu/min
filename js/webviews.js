@@ -1,18 +1,13 @@
 const browserSession = require('tabState.js')
+const rendererHost = require('rendererHost.js')
+const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 var urlParser = require('util/urlParser.js')
 var settings = require('util/settings/settings.js')
 
 /* implements selecting webviews, switching between them, and creating new ones. */
 
 function invokeTabContent (id, operation, payload) {
-  return ipc.invoke('tab-content-command', { id, operation, payload }).then(function (response) {
-    if (!response.ok) {
-      const error = new Error(response.error.message)
-      error.code = response.error.code
-      throw error
-    }
-    return response.value
-  })
+  return rendererHost.invokeTabContent(id, operation, payload)
 }
 
 function runTabContent (id, operation, payload) {
@@ -244,7 +239,7 @@ const webviews = {
       }
     } else {
       const navbarHeight = !hasSeparateTitlebar &&
-        (window.platformType === 'linux' || window.platformType === 'windows') &&
+        (runtimeConfiguration.platform === 'linux' || runtimeConfiguration.platform === 'win32') &&
         !windowIsMaximized &&
         !windowIsFullscreen
         ? 48
@@ -386,7 +381,7 @@ const webviews = {
     }
   },
   releaseFocus: function () {
-    ipc.send('focusMainWebContents')
+    rendererHost.focusBrowserChrome()
   },
   focus: function () {
     if (webviews.selectedId) {
@@ -429,7 +424,6 @@ const webviews = {
   runInternalPageAction: (id, action) => runTabContent(id, 'internal-page.action', { action }),
   sendToInternalPage: (id, channel, data) => runTabContent(id, 'internal-page.message', { channel, data }),
   download: (id, url) => runTabContent(id, 'download.url', { url }),
-  savePage: (id, savePath) => runTabContent(id, 'download.save-page', { path: savePath }),
   downloadCapture: id => runTabContent(id, 'capture.download'),
   setAudioMuted: (id, muted) => runTabContent(id, 'audio.set-muted', { muted }),
   copy: id => runTabContent(id, 'edit.copy'),
@@ -454,16 +448,18 @@ window.addEventListener('resize', throttle(function () {
   }
 }, 75))
 
-// leave HTML fullscreen when leaving window fullscreen
-ipc.on('leave-full-screen', function () {
-  // electron normally does this automatically (https://github.com/electron/electron/pull/13090/files), but it doesn't work for BrowserViews
-  for (var view in webviews.viewFullscreenMap) {
-    if (webviews.viewFullscreenMap[view]) {
-      webviews.exitFullscreen(view)
+rendererHost.onWindowStateChanged(function (state) {
+  // electron normally leaves HTML fullscreen with native fullscreen, but that doesn't work for Tab Content.
+  if (windowIsFullscreen && !state.fullScreen) {
+    for (var view in webviews.viewFullscreenMap) {
+      if (webviews.viewFullscreenMap[view]) {
+        webviews.exitFullscreen(view)
+      }
     }
   }
 
-  windowIsFullscreen = false
+  windowIsMaximized = state.maximized
+  windowIsFullscreen = state.fullScreen
   webviews.resize()
 })
 
@@ -474,21 +470,6 @@ webviews.bindEvent('fullscreen-entered', function (tabId) {
 
 webviews.bindEvent('fullscreen-left', function (tabId) {
   webviews.viewFullscreenMap[tabId] = false
-  webviews.resize()
-})
-
-ipc.on('maximize', function () {
-  windowIsMaximized = true
-  webviews.resize()
-})
-
-ipc.on('unmaximize', function () {
-  windowIsMaximized = false
-  webviews.resize()
-})
-
-ipc.on('enter-full-screen', function () {
-  windowIsFullscreen = true
   webviews.resize()
 })
 
@@ -562,11 +543,11 @@ webviews.bindIPC('downloadFile', function (tabId, args) {
   }
 })
 
-ipc.on('tab-content-event', function (e, event) {
+rendererHost.onTabContentEvent(function (event) {
   webviews.emitEvent(event.type, event.tabId, event.payload)
 })
 
-ipc.on('tab-content-message', function (e, args) {
+rendererHost.onTabContentMessage(function (args) {
   if (!webviews.hasViewForTab(args.id)) {
     // the view could have been destroyed between when the event was occured and when it was recieved in the UI process, see https://github.com/minbrowser/min/issues/604#issuecomment-419653437
     return
@@ -578,7 +559,7 @@ ipc.on('tab-content-message', function (e, args) {
   })
 })
 
-ipc.on('download-navigation', function (e, data) {
+rendererHost.onDownloadNavigation(function (data) {
   if (!data.tabId) {
     return
   }
@@ -592,7 +573,7 @@ ipc.on('download-navigation', function (e, data) {
 
 /* focus the view when the window is focused */
 
-ipc.on('windowFocus', function () {
+rendererHost.onBrowserChromeActivated(function () {
   if (webviews.placeholderRequests.length === 0 && document.activeElement.tagName !== 'INPUT') {
     webviews.focusActiveContent()
   }

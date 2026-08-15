@@ -1,4 +1,4 @@
-const { ipcRenderer: ipc } = require('electron')
+const rendererHost = require('rendererHost.js')
 
 var searchbar = require('searchbar/searchbar.js')
 var searchbarPlugins = require('searchbar/searchbarPlugins.js')
@@ -33,7 +33,7 @@ module.exports = {
           clearButton.addEventListener('click', function () {
             if (confirm('Clear all history and browsing data?')) {
               places.deleteAllHistory()
-              ipc.invoke('clearStorageData')
+              rendererHost.clearBrowsingData()
 
               // hacky way to refresh the list
               // TODO make a better api for this

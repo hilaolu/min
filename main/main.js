@@ -1,7 +1,6 @@
-function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, electron, fs, installSessionPolicies, installThemePolicy, path, registryInstaller, rootDir, settings, windows }) {
+function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, electron, fs, installSessionPolicies, installThemePolicy, path, places, registryInstaller, rootDir, settings, windows }) {
   const {
     app, // Module to control application life.
-    BrowserWindow,
     session,
     ipcMain: ipc,
     Menu,
@@ -52,22 +51,6 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
   var secondaryMenu = null
   var appIsReady = false
   var urlToOpen = null
-  const placesPage = 'file://' + path.join(rootDir, 'js/places/placesService.html')
-  let placesWindow = null
-
-  function createPlacesWindow () {
-    placesWindow = new BrowserWindow({
-      width: 300,
-      height: 300,
-      show: false,
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
-      }
-    })
-
-    placesWindow.loadURL(placesPage)
-  }
 
   const isFirstInstance = app.requestSingleInstanceLock()
 
@@ -117,6 +100,7 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
   }
 
   app.on('session-created', installSessionPolicies)
+  app.on('before-quit', places.destroy)
 
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
@@ -128,7 +112,7 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
     /* the installer launches the app to install registry items and shortcuts,
   but if that's happening, we shouldn't display anything */
     if (isInstallerRunning) {
-      createPlacesWindow()
+      places.initialize()
       return
     }
 
@@ -153,7 +137,7 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
     mainMenu = buildAppMenu()
     Menu.setApplicationMenu(mainMenu)
     createDockMenu()
-    createPlacesWindow()
+    places.initialize()
   })
 
   app.on('open-url', function (e, url) {
@@ -200,23 +184,27 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
   })
 
   ipc.on('focusMainWebContents', function (event) {
-    const window = windows.windowFromContents(event.sender)?.win || windows.getCurrent()
+    const window = windows.windowFromContents(event.sender)?.win
     if (window) {
       getWindowWebContents(window).focus()
     }
   })
 
   ipc.on('showSecondaryMenu', function (event, data) {
+    const window = windows.windowFromContents(event.sender)?.win
+    if (!window) return
     if (!secondaryMenu) {
       secondaryMenu = buildAppMenu({ secondary: true })
     }
     secondaryMenu.popup({
+      window,
       x: data.x,
       y: data.y
     })
   })
 
   ipc.on('handoffUpdate', function (e, data) {
+    if (!windows.windowFromContents(e.sender)) return
     if (app.setUserActivity && data.url && data.url.startsWith('http')) {
       app.setUserActivity('NSUserActivityTypeBrowsingWeb', {}, data.url)
     } else if (app.invalidateCurrentActivity) {
@@ -224,7 +212,8 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
     }
   })
 
-  ipc.on('quit', function () {
+  ipc.on('quit', function (event) {
+    if (!windows.windowFromContents(event.sender)) return
     app.quit()
   })
 
@@ -245,20 +234,30 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
   })
 
   ipc.on('request-tab-state', function (e) {
+    if (!windows.windowFromContents(e.sender)) return
     const otherWindow = windows.getAll().find(w => getWindowWebContents(w).id !== e.sender.id)
     if (!otherWindow) {
       throw new Error('secondary window doesn\'t exist as source for tab state')
     }
-    ipc.once('return-tab-state', function (e2, data) {
+    const sourceContents = getWindowWebContents(otherWindow)
+    function receiveSnapshot (e2, data) {
+      if (e2.sender !== sourceContents) return
+      ipc.removeListener('return-tab-state', receiveSnapshot)
       e.returnValue = data
-    })
-    getWindowWebContents(otherWindow).send('read-tab-state')
+    }
+    ipc.on('return-tab-state', receiveSnapshot)
+    sourceContents.send('read-tab-state')
   })
 
   /* places service */
 
   ipc.on('places-connect', function (e) {
-    placesWindow.webContents.postMessage('places-connect', null, e.ports)
+    const port = e.ports?.[0]
+    if (!windows.windowFromContents(e.sender)) {
+      if (port) port.close()
+      return
+    }
+    places.connect(e.sender, port)
   })
 
   const getWindowWebContents = windows.getChromeContents
@@ -269,7 +268,7 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
 
   return {
     createWindow,
-    getPlacesWindow: () => placesWindow,
+    getPlacesWindow: places.getWindow,
     getWindowWebContents,
     handleCommandLineArguments,
     isPrimaryInstance: true,

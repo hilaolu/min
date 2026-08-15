@@ -213,8 +213,8 @@ function createSettings ({ fs, getAllWebContents, ipc, storage, warn = console.w
   }
 
   function installIPC () {
-    ipc.on('settings:get-snapshot', function (event) {
-      event.returnValue = snapshot()
+    ipc.on('settings:connect', function (event) {
+      event.returnValue = { revision, values: snapshot() }
     })
     ipc.handle('settings:set', function (event, request) {
       if (!request || typeof request.key !== 'string') {

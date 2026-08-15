@@ -1,6 +1,7 @@
 /* global db fullTextPlacesSearch getSearchTextCache searchPlaces tagIndex tokenize */
 
 const { ipcRenderer } = require('electron')
+const createPlacesServiceConnection = require('./placesServiceConnection.js')
 
 function calculateHistoryScore (item) { // item.boost - how much the score should be multiplied by. Example - 0.05
   let fs = item.lastVisit * (1 + 0.036 * Math.sqrt(item.visitCount))
@@ -23,9 +24,11 @@ const oneDayInMS = 24 * 60 * 60 * 1000 // one day in milliseconds
 const maxItemAge = oneDayInMS * 42
 
 function cleanupHistoryDatabase () { // removes old history entries
-  db.places.where('lastVisit').below(Date.now() - maxItemAge).and(function (item) {
+  return db.places.where('lastVisit').below(Date.now() - maxItemAge).and(function (item) {
     return item.isBookmarked === false
-  }).delete()
+  }).delete().catch(function (error) {
+    console.error('failed to clean up Places', error)
+  })
 }
 
 setTimeout(cleanupHistoryDatabase, 20000) // don't run immediately on startup, since is might slow down searchbar search.
@@ -84,8 +87,9 @@ function removeFromHistoryCache (url) {
 
 function loadHistoryInMemory () {
   historyInMemoryCache = []
+  doneLoadingHistoryCache = false
 
-  db.places.orderBy('visitCount').reverse().each(function (item) {
+  return db.places.orderBy('visitCount').reverse().each(function (item) {
     addToHistoryCache(item)
   }).then(function () {
     // if we have enough matches during the search, we exit. In order for this to work, frequently visited sites have to come first in the cache.
@@ -97,7 +101,33 @@ function loadHistoryInMemory () {
   })
 }
 
-loadHistoryInMemory()
+const historyReady = loadHistoryInMemory()
+historyReady.catch(function (error) {
+  console.error('failed to initialize Places', error)
+})
+
+const supportedActions = new Set([
+  'autocompleteTags',
+  'deleteAllHistory',
+  'deleteHistory',
+  'getAllPlaces',
+  'getAllTagsRanked',
+  'getPlace',
+  'getPlaceSuggestions',
+  'getSuggestedItemsForTags',
+  'getSuggestedTags',
+  'searchPlaces',
+  'searchPlacesFullText',
+  'updatePlace'
+])
+
+function requestError (callbackId, code, message) {
+  return {
+    callbackId,
+    error: { code, message },
+    ok: false
+  }
+}
 
 function handleRequest (data, respond) {
   const action = data.action
@@ -106,6 +136,11 @@ function handleRequest (data, respond) {
   const searchText = data.text && data.text.toLowerCase()
   const callbackId = data.callbackId
   const options = data.options
+
+  if (!supportedActions.has(action)) {
+    respond(requestError(callbackId, 'UNSUPPORTED_PLACES_ACTION', `Unsupported Places action: ${action}`))
+    return
+  }
 
   if (action === 'getPlace') {
     let found = false
@@ -135,8 +170,10 @@ function handleRequest (data, respond) {
   }
 
   if (action === 'updatePlace') {
-    db.transaction('rw', db.places, function () {
-      db.places.where('url').equals(pageData.url).first(function (item) {
+    let savedItem
+    let savedItemIsNew = false
+    return db.transaction('rw', db.places, function () {
+      return db.places.where('url').equals(pageData.url).first().then(function (item) {
         var isNewItem = false
         if (!item) {
           isNewItem = true
@@ -171,35 +208,49 @@ function handleRequest (data, respond) {
           item.lastVisit = Date.now()
         }
 
-        db.places.put(item)
-        if (isNewItem) {
-          addToHistoryCache(item)
-        } else {
-          addOrUpdateHistoryCache(item)
-        }
-        respond({
-          result: null,
-          callbackId: callbackId
+        return db.places.put(item).then(function () {
+          savedItem = item
+          savedItemIsNew = isNewItem
         })
-      }).catch(function (err) {
-        console.warn('failed to update history.')
-        console.warn('page url was: ' + pageData.url)
-        console.error(err)
       })
+    }).then(function () {
+      if (savedItemIsNew) {
+        addToHistoryCache(savedItem)
+      } else {
+        addOrUpdateHistoryCache(savedItem)
+      }
+      respond({
+        result: null,
+        callbackId: callbackId
+      })
+    }).catch(function (error) {
+      console.warn('failed to update history.')
+      console.warn('page url was: ' + pageData.url)
+      console.error(error)
+      respond(requestError(callbackId, 'PLACES_PERSISTENCE_FAILED', error.message))
     })
   }
 
   if (action === 'deleteHistory') {
-    db.places.where('url').equals(pageData.url).delete()
-
-    removeFromHistoryCache(pageData.url)
+    return db.places.where('url').equals(pageData.url).delete().then(function () {
+      removeFromHistoryCache(pageData.url)
+      if (callbackId !== undefined) respond({ result: null, callbackId })
+    }).catch(function (error) {
+      console.error('failed to delete Places history', error)
+      respond(requestError(callbackId, 'PLACES_PERSISTENCE_FAILED', error.message))
+    })
   }
 
   if (action === 'deleteAllHistory') {
-    db.places.filter(function (item) {
+    return db.places.filter(function (item) {
       return item.isBookmarked === false
     }).delete().then(function () {
-      loadHistoryInMemory()
+      return loadHistoryInMemory()
+    }).then(function () {
+      if (callbackId !== undefined) respond({ result: null, callbackId })
+    }).catch(function (error) {
+      console.error('failed to delete all Places history', error)
+      respond(requestError(callbackId, 'PLACES_PERSISTENCE_FAILED', error.message))
     })
   }
 
@@ -280,13 +331,8 @@ function handleRequest (data, respond) {
   }
 }
 
-ipcRenderer.on('places-connect', function (e) {
-  e.ports[0].addEventListener('message', function (e2) {
-    const data = e2.data
-
-    handleRequest(data, function (res) {
-      e.ports[0].postMessage(res)
-    })
-  })
-  e.ports[0].start()
+createPlacesServiceConnection({
+  handleRequest,
+  ipc: ipcRenderer,
+  ready: historyReady
 })

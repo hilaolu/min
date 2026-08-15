@@ -3,6 +3,7 @@ const EventEmitter = require('node:events')
 const path = require('node:path')
 const test = require('node:test')
 
+const { createRuntimeArgument, readRuntimeArgument } = require('../main/browserChromeRuntime.js')
 const createBrowserWindows = require('../main/windowManagement.js')
 
 let nextContentsId = 1
@@ -139,8 +140,10 @@ function createRecordingBrowserWindows () {
       quit: () => { quitCount++ }
     },
     BaseWindow: RecordingWindow,
+    browserChromePreloadPath: '/tmp/min-test/main/browserChromePreload.js',
     browserPage: 'min://app/index.html',
     buildTouchBar: () => null,
+    createBrowserChromeRuntimeArgument: createRuntimeArgument,
     fs: {
       readFileSync: () => {
         if (boundsToRead.length === 0) {
@@ -205,6 +208,35 @@ test('Browser Window Module owns construction, focus, lookup, and final cleanup'
   assert.equal(recording.getQuitCount(), 1)
 })
 
+test('Browser Window supplies immutable safe runtime configuration through its preload', function () {
+  const recording = createRecordingBrowserWindows()
+  recording.boundsToRead.push({ x: 10, y: 20, width: 800, height: 600, maximized: false })
+  const window = recording.windows.create({ initialTask: 'task=one & two' })
+  const chrome = window.contentView.children[0]
+  const preferences = chrome.options.webPreferences
+  const runtimeConfiguration = readRuntimeArgument(preferences.additionalArguments)
+
+  assert.equal(preferences.preload, '/tmp/min-test/main/browserChromePreload.js')
+  assert.equal(preferences.contextIsolation, true)
+  assert.equal(preferences.nodeIntegration, false)
+  assert.equal(preferences.sandbox, false)
+  assert.deepEqual(runtimeConfiguration, {
+    appName: 'Min',
+    appVersion: 'test',
+    developmentMode: false,
+    initialTask: 'task=one & two',
+    initialWindow: true,
+    launchWindow: true,
+    platform: 'linux',
+    windowId: '1'
+  })
+  assert.deepEqual(
+    preferences.additionalArguments.filter(argument => argument.startsWith('--app-') || argument.startsWith('--window-id') || argument.startsWith('--initial-') || argument.startsWith('--launch-') || argument === '--development-mode'),
+    []
+  )
+  assert.equal(preferences.additionalArguments.some(argument => argument.includes('/tmp/min-test')), false)
+})
+
 test('closing a non-current Browser Window persists that exact window bounds', function () {
   const recording = createRecordingBrowserWindows()
   const first = createWithBounds(recording, 10)
@@ -223,6 +255,18 @@ test('closing a non-current Browser Window persists that exact window bounds', f
     height: 600,
     maximized: false
   })
+})
+
+test('a closing Browser Window retains Browser Chrome ownership through beforeunload', function () {
+  const recording = createRecordingBrowserWindows()
+  const window = createWithBounds(recording, 10)
+  const chromeContents = recording.windows.getChromeContents(window)
+
+  window.emit('close')
+  assert.equal(recording.windows.windowFromContents(chromeContents).win, window)
+
+  window.emit('closed')
+  assert.equal(recording.windows.windowFromContents(chromeContents), undefined)
 })
 
 test('Tab Content reselection is stable and does not detach an overlay', function () {

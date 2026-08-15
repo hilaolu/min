@@ -101,6 +101,13 @@ function destroyTab (id) {
   return result
 }
 
+function discardClosedTabs (tabIds) {
+  tabIds.forEach(function (tabId) {
+    tabBar.removeTab(tabId)
+    webviews.destroy(tabId)
+  })
+}
+
 /* destroys a task, and either switches to the next most-recent task or creates a new one */
 
 function closeTask (taskId) {
@@ -222,7 +229,7 @@ webviews.bindIPC('close-window', function (tabId, args) {
   closeTab(tabId)
 })
 
-ipc.on('set-file-view', function (e, data) {
+require('rendererHost.js').onFileViewChanged(function (data) {
   browserSession.tabs.get().forEach(function (tab) {
     if (tab.url === data.url) {
       browserSession.updateTab(tab.id, { isFileView: data.isFileView })
@@ -262,6 +269,7 @@ module.exports = {
   addTask,
   addTab,
   duplicateTab,
+  discardClosedTabs,
   destroyTask,
   destroyTab,
   closeTask,

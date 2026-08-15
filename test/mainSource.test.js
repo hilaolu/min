@@ -47,6 +47,12 @@ test('App Runtime routes structured command palette state through one interface'
     installSessionPolicies: function () {},
     installThemePolicy: function () {},
     path,
+    places: {
+      connect: function () {},
+      destroy: function () {},
+      getWindow: function () {},
+      initialize: function () {}
+    },
     registryInstaller: {},
     rootDir: '/tmp/min-test',
     settings: { get: function () {} },

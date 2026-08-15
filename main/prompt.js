@@ -51,7 +51,12 @@ function installPromptManager ({ BrowserWindow, ipc, path, rootDir, settings, wi
   })
 
   ipc.on('prompt', function (event, data) {
-    createPrompt(data, function (result) {
+    const owner = windows.windowFromContents(event.sender)
+    if (!owner) {
+      event.returnValue = null
+      return
+    }
+    createPrompt({ ...data, parent: owner.win }, function (result) {
       event.returnValue = result
     })
   })

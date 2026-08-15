@@ -6,10 +6,12 @@ and listens for click events on it.
 var menuCallbacks = {}
 
 var nextMenuId = 0
+const rendererHost = require('rendererHost.js')
 
 function open (menuTemplate, x, y) {
   nextMenuId++
-  menuCallbacks[nextMenuId] = {}
+  const menuId = nextMenuId
+  menuCallbacks[menuId] = {}
   var nextItemId = 0
   function prepareToSend (menuPart) {
     if (menuPart instanceof Array) {
@@ -19,7 +21,7 @@ function open (menuTemplate, x, y) {
         menuPart.submenu = prepareToSend(menuPart.submenu)
       }
       if (typeof menuPart.click === 'function') {
-        menuCallbacks[nextMenuId][nextItemId] = menuPart.click
+        menuCallbacks[menuId][nextItemId] = menuPart.click
         menuPart.click = nextItemId
         nextItemId++
       }
@@ -27,23 +29,17 @@ function open (menuTemplate, x, y) {
     }
   }
 
-  ipc.send('open-context-menu', {
-    id: nextMenuId,
+  rendererHost.showContextMenu({
+    id: menuId,
     template: prepareToSend(menuTemplate),
     x,
     y
+  }).then(function (itemId) {
+    if (itemId !== null && menuCallbacks[menuId]?.[itemId]) {
+      menuCallbacks[menuId][itemId]()
+    }
+    delete menuCallbacks[menuId]
   })
 }
-
-ipc.on('context-menu-item-selected', function (e, data) {
-  menuCallbacks[data.menuId][data.itemId]()
-})
-
-ipc.on('context-menu-will-close', function (e, data) {
-  // delay close event until after selected event has been received
-  setTimeout(function () {
-    delete menuCallbacks[data.menuId]
-  }, 16)
-})
 
 module.exports = { open }

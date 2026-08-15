@@ -1,6 +1,6 @@
 const browserSession = require('tabState.js')
-const { ipcRenderer: ipc } = require('electron')
 const remoteMenu = require('remoteMenuRenderer.js')
+const rendererHost = require('rendererHost.js')
 const browserUI = require('browserUI.js')
 const webviews = require('webviews.js')
 const readerView = require('readerView.js')
@@ -28,7 +28,7 @@ const tabContextMenu = {
             const newTaskId = browserSession.createTask({}, { index })
             browserSession.moveTabToTask(tabId, newTaskId, { index: 0 })
 
-            ipc.send('newWindow', { initialTask: newTaskId })
+            rendererHost.createWindow({ initialTask: newTaskId })
 
             browserUI.switchToTask(currentTaskId, { stateAlreadySelected: true })
           }

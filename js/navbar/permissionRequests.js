@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron')
+const rendererHost = require('rendererHost.js')
 const webviews = require('webviews.js')
 
 const permissionRequests = {
@@ -7,7 +7,7 @@ const permissionRequests = {
   grantPermission: function (permissionId) {
     permissionRequests.requests.forEach(function (request) {
       if (request.permissionId && request.permissionId === permissionId) {
-        ipcRenderer.send('permissionGranted', permissionId)
+        rendererHost.grantPermission(permissionId)
       }
     })
   },
@@ -48,7 +48,7 @@ const permissionRequests = {
         button.addEventListener('click', function (e) {
           e.stopPropagation()
           if (request.granted) {
-            ipcRenderer.send('revokePermission', request.permissionId)
+            rendererHost.revokePermission(request.permissionId)
             webviews.reload(tabId)
           } else {
             permissionRequests.grantPermission(request.permissionId)
@@ -64,7 +64,7 @@ const permissionRequests = {
     permissionRequests.listeners.push(listener)
   },
   initialize: function () {
-    ipcRenderer.on('updatePermissions', function (e, data) {
+    rendererHost.onPermissionsChanged(function (data) {
       var oldData = permissionRequests.requests
       permissionRequests.requests = data
       oldData.forEach(function (req) {

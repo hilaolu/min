@@ -8,8 +8,6 @@
   "main": "main.build.js",
   "standard": {
     "globals": [
-      "globalArgs",
-      "platformType",
       "throttle",
       "debounce",
       "empty",
@@ -46,7 +44,6 @@
     "electron": "41.2.0",
     "electron-builder": "^24.13.3",
     "electron-installer-windows": "^3.0.0",
-    "electron-renderify": "0.0.2",
     "prettier": "^2.2.1",
     "snazzy": "^9.0.0",
     "standard": "^14.3.4"

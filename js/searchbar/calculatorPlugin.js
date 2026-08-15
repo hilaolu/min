@@ -2,7 +2,7 @@
   this plugin will provide the ability to perform simple calculations
 */
 
-const { clipboard } = require('electron')
+const rendererHost = require('rendererHost.js')
 const searchbarPlugins = require('searchbar/searchbarPlugins.js')
 const Parser = require('expr-eval').Parser
 
@@ -55,7 +55,7 @@ function doMath (text, input, inputFlags) {
       const titleEl = item.querySelector('.title')
       const descriptionBlockEl = item.querySelector('.description-block')
 
-      clipboard.writeText(titleEl.innerText)
+      rendererHost.copyText(titleEl.innerText)
       descriptionBlockEl.innerText = 'Copied!'
     })
   }

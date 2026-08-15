@@ -1,4 +1,4 @@
-function createBrowserWindows ({ app, BaseWindow, browserPage, buildTouchBar, fs, getSetting, isDevelopmentMode, onAllWindowsClosed, onRecenterOverlay, path, platform = process.platform, rootDir, screen, setTimeout: schedule = setTimeout, userDataPath, WebContentsView }) {
+function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, browserPage, buildTouchBar, createBrowserChromeRuntimeArgument, fs, getSetting, isDevelopmentMode, onAllWindowsClosed, onRecenterOverlay, path, platform = process.platform, rootDir, screen, setTimeout: schedule = setTimeout, userDataPath, WebContentsView }) {
   const records = []
   const contentOwners = new Map()
   const tabOwners = new Map()
@@ -235,17 +235,21 @@ function createBrowserWindows ({ app, BaseWindow, browserPage, buildTouchBar, fs
     })
     const chrome = new WebContentsView({
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        preload: browserChromePreloadPath,
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
         additionalArguments: [
-          '--user-data-path=' + userDataPath,
-          '--app-version=' + app.getVersion(),
-          '--app-name=' + app.getName(),
-          ...(isDevelopmentMode ? ['--development-mode'] : []),
-          '--window-id=' + id,
-          ...(isInitialWindow ? ['--initial-window'] : []),
-          ...(isLaunchWindow ? ['--launch-window'] : []),
-          ...(customArgs.initialTask ? ['--initial-task=' + customArgs.initialTask] : []),
+          createBrowserChromeRuntimeArgument({
+            appName: app.getName(),
+            appVersion: app.getVersion(),
+            developmentMode: isDevelopmentMode,
+            initialTask: customArgs.initialTask || null,
+            initialWindow: isInitialWindow,
+            launchWindow: isLaunchWindow,
+            platform,
+            windowId: id
+          }),
           ...(getSetting('smoothScrolling') ? ['--smooth-scrolling=' + getSetting('smoothScrolling')] : [])
         ]
       }
@@ -292,9 +296,6 @@ function createBrowserWindows ({ app, BaseWindow, browserPage, buildTouchBar, fs
       }
       send(window, 'focus')
     })
-    window.on('minimize', function () {
-      send(window, 'minimize')
-    })
     window.on('restore', function () {
       if (!window.isMinimized()) {
         send(window, 'windowFocus')
@@ -322,11 +323,7 @@ function createBrowserWindows ({ app, BaseWindow, browserPage, buildTouchBar, fs
       window.setMenuBarVisibility(false)
       onRecenterOverlay(window)
     })
-    window.on('enter-html-full-screen', function () {
-      send(window, 'enter-html-full-screen')
-    })
     window.on('leave-html-full-screen', function () {
-      send(window, 'leave-html-full-screen')
       window.setMenuBarVisibility(false)
     })
     if (platform === 'win32') {

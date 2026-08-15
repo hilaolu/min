@@ -30,15 +30,15 @@
     <script src="../../js/util/theme.js"></script>
 
     <script>
-      var backupLoc = new URLSearchParams(window.location.search).get(
-        "backupLoc"
+      var backupName = new URLSearchParams(window.location.search).get(
+        "backupName"
       );
 
       var backupInfoEl = document.getElementById("backup-info");
       backupInfoEl.textContent =
-        "We've saved a backup of your data at this location: %l.".replace(
-          "%l",
-          backupLoc
+        "We've saved a backup named %n in your Min profile folder.".replace(
+          "%n",
+          backupName
         );
     </script>
   </body>

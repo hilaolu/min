@@ -1,4 +1,5 @@
 var keybindings = require('keybindings.js')
+const rendererHost = require('rendererHost.js')
 
 // Import strategy components
 const StrategyManager = require('./commandPalette/StrategyManager.js')
@@ -11,8 +12,7 @@ const ReplStrategy = require('./commandPalette/strategies/ReplStrategy.js')
 // Constants for overlay communication
 const OVERLAY_CONSTANTS = {
   DEFAULT_ICON: 'carbon:search',
-  UPDATE_DEBOUNCE_MS: 50, // Debounce rapid updates
-  IPC_CHANNEL: 'command-palette:present'
+  UPDATE_DEBOUNCE_MS: 50 // Debounce rapid updates
 }
 
 // Command palette object
@@ -94,7 +94,7 @@ const commandPalette = {
     // Strategy manager event listeners
     commandPalette.strategyManager.on('state-changed', commandPalette.handleStateChange)
     commandPalette.strategyManager.on('candidates-updated', commandPalette.handleCandidatesUpdate)
-    window.ipc.on('command-palette:focus-input', commandPalette.focusInput)
+    rendererHost.onCommandPaletteFocusRequested(commandPalette.focusInput)
   },
 
   /**
@@ -285,37 +285,35 @@ const commandPalette = {
    * @param {Object} state - Complete state object to sync
    */
   updateOverlayUI: function (state = {}) {
-    if (typeof window.ipc !== 'undefined') {
-      try {
-        // Build complete state object with fallbacks to current values
-        const overlayState = {
-          input: state.input ?? commandPalette.input.value ?? '',
-          candidates: state.candidates ?? commandPalette.currentCandidates ?? [],
-          selectedIndex: state.selectedIndex ?? commandPalette.selectedIndex ?? 0,
-          open: state.open === true,
-          visible: state.visible ?? commandPalette.isVisible ?? false
-        }
-
-        // Serialize candidates to only include display data for security
-        if (overlayState.candidates.length > 0) {
-          overlayState.candidates = overlayState.candidates.map(candidate => ({
-            id: candidate.id,
-            title: candidate.title ?? '',
-            description: candidate.description ?? '',
-            icon: candidate.icon ?? OVERLAY_CONSTANTS.DEFAULT_ICON,
-            shortcut: candidate.shortcut ?? '',
-            displayData: candidate.displayData ?? {}
-          }))
-        }
-
-        window.ipc.invoke(OVERLAY_CONSTANTS.IPC_CHANNEL, overlayState).then(function (result) {
-          if (!result.ok) console.error('Command palette presentation failed:', result.error)
-        }).catch(function (error) {
-          console.error('Command palette presentation failed:', error)
-        })
-      } catch (error) {
-        console.error('Command palette presentation failed:', error)
+    try {
+      // Build complete state object with fallbacks to current values
+      const overlayState = {
+        input: state.input ?? commandPalette.input.value ?? '',
+        candidates: state.candidates ?? commandPalette.currentCandidates ?? [],
+        selectedIndex: state.selectedIndex ?? commandPalette.selectedIndex ?? 0,
+        open: state.open === true,
+        visible: state.visible ?? commandPalette.isVisible ?? false
       }
+
+      // Serialize candidates to only include display data for security
+      if (overlayState.candidates.length > 0) {
+        overlayState.candidates = overlayState.candidates.map(candidate => ({
+          id: candidate.id,
+          title: candidate.title ?? '',
+          description: candidate.description ?? '',
+          icon: candidate.icon ?? OVERLAY_CONSTANTS.DEFAULT_ICON,
+          shortcut: candidate.shortcut ?? '',
+          displayData: candidate.displayData ?? {}
+        }))
+      }
+
+      rendererHost.presentCommandPalette(overlayState).then(function (result) {
+        if (!result.ok) console.error('Command palette presentation failed:', result.error)
+      }).catch(function (error) {
+        console.error('Command palette presentation failed:', error)
+      })
+    } catch (error) {
+      console.error('Command palette presentation failed:', error)
     }
   },
 

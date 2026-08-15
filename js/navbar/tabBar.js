@@ -1,6 +1,6 @@
 const browserSession = require('tabState.js')
 const EventEmitter = require('events')
-const electron = require('electron')
+const rendererHost = require('rendererHost.js')
 
 const webviews = require('webviews.js')
 const focusMode = require('focusMode.js')
@@ -311,16 +311,16 @@ tabBar.container.addEventListener('dragover', e => e.preventDefault())
 tabBar.container.addEventListener('drop', e => {
   e.preventDefault()
   var data = e.dataTransfer
-  var path = data.files[0] ? 'file://' + electron.webUtils.getPathForFile(data.files[0]) : data.getData('text')
-  if (!path) {
+  var url = data.files[0] ? rendererHost.getDroppedFileURL(data.files[0]) : data.getData('text')
+  if (!url) {
     return
   }
   if (tabEditor.isShown || browserSession.tabs.isEmpty()) {
-    webviews.update(browserSession.tabs.getSelected(), path)
+    webviews.update(browserSession.tabs.getSelected(), url)
     tabEditor.hide()
   } else {
     require('browserUI.js').addTab({
-      url: path,
+      url,
       private: browserSession.tabs.get(browserSession.tabs.getSelected()).private
     }, { enterEditMode: false, openInBackground: !settings.get('openTabsInForeground') })
   }

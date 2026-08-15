@@ -1,5 +1,7 @@
-function installRemoteMenu ({ ipc, Menu, MenuItem }) {
+function installRemoteMenu ({ ipc, Menu, MenuItem, windows }) {
   ipc.on('open-context-menu', function (e, data) {
+    const owner = windows.windowFromContents(e.sender)
+    if (!owner) return
     var menu = new Menu()
 
     data.template.forEach(function (section) {
@@ -24,7 +26,7 @@ function installRemoteMenu ({ ipc, Menu, MenuItem }) {
     menu.on('menu-will-close', function () {
       e.sender.send('context-menu-will-close', { menuId: data.id })
     })
-    menu.popup({ x: data.x, y: data.y })
+    menu.popup({ window: owner.win, x: data.x, y: data.y })
   })
 }
 

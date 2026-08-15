@@ -3,6 +3,7 @@ function createDownloadPolicy ({ getTabIDFromWebContents, ipc, path, sendIPCToWi
   const mainFrameDownloadNavigations = new Map()
 
   ipc.on('cancelDownload', function (e, path) {
+    if (!windows.windowFromContents(e.sender)) return
     if (currrentDownloadItems[path]) {
       currrentDownloadItems[path].cancel()
     }

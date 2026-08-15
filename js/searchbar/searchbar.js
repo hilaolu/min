@@ -1,4 +1,5 @@
 const EventEmitter = require('events')
+const runtimeConfiguration = require('rendererHost.js').getRuntimeConfiguration()
 
 var webviews = require('webviews.js')
 var keybindings = require('keybindings.js')
@@ -38,7 +39,7 @@ var searchbar = {
       return
     }
 
-    if (event && (window.platformType === 'mac' ? event.metaKey : event.ctrlKey)) {
+    if (event && (runtimeConfiguration.platform === 'darwin' ? event.metaKey : event.ctrlKey)) {
       openURLInBackground(url)
       return true
     } else {

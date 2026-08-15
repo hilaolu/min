@@ -1,4 +1,5 @@
 const browserSession = require('tabState.js')
+const runtimeConfiguration = require('rendererHost.js').getRuntimeConfiguration()
 const UPDATE_URL = 'https://minbrowser.org/min/updates/latestVersion.json'
 
 var settings = require('util/settings/settings.js')
@@ -26,7 +27,7 @@ function getAvailableUpdates () {
       .then(function (response) {
         console.info('got response from update check', response)
         if (response.version &&
-            compareVersions(window.globalArgs['app-version'], response.version) > 0 &&
+            compareVersions(runtimeConfiguration.appVersion, response.version) > 0 &&
             (!response.availabilityPercent || getUpdateRandomNum() < response.availabilityPercent)) {
           console.info('an update is available')
           localStorage.setItem('availableUpdate', JSON.stringify(response))
@@ -58,7 +59,7 @@ function showUpdateNotification (text, input, inputFlags) {
   var update = JSON.parse(localStorage.getItem('availableUpdate'))
   if (update) {
     // was the update already installed?
-    if (compareVersions(window.globalArgs['app-version'], update.version) <= 0) {
+    if (compareVersions(runtimeConfiguration.appVersion, update.version) <= 0) {
       return
     }
     var updateAge = Date.now() - update.releaseTime

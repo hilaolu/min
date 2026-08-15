@@ -1,8 +1,6 @@
 const browserSession = require('tabState.js')
 /* list of the available custom commands */
 
-const { ipcRenderer: ipc } = require('electron')
-const fs = require('fs')
 const quickScore = require('quick-score').quickScore
 
 const bangsPlugin = require('searchbar/bangsPlugin.js')
@@ -11,6 +9,7 @@ const webviews = require('webviews.js')
 const browserUI = require('browserUI.js')
 const focusMode = require('focusMode.js')
 const places = require('places/places.js')
+const rendererHost = require('rendererHost.js')
 const contentBlockingToggle = require('navbar/contentBlockingToggle.js')
 const taskOverlay = require('taskOverlay/taskOverlay.js')
 const bookmarkConverter = require('bookmarkConverter.js')
@@ -139,7 +138,7 @@ function initialize () {
     fn: function (text) {
       if (confirm('Clear all history and browsing data?')) {
         places.deleteAllHistory()
-        ipc.invoke('clearStorageData')
+        rendererHost.clearBrowsingData()
       }
     }
   })
@@ -324,22 +323,12 @@ function initialize () {
     icon: 'carbon:upload',
     isAction: true,
     fn: async function () {
-      const filePath = await ipc.invoke('showOpenDialog', {
-        filters: [
-          { name: 'HTML files', extensions: ['htm', 'html'] }
-        ]
-      })
-
-      if (!filePath) {
-        return
+      try {
+        const data = await rendererHost.importBookmarks()
+        if (data) bookmarkConverter.import(data)
+      } catch (error) {
+        console.warn('failed to import bookmarks', error)
       }
-      fs.readFile(filePath[0], 'utf-8', function (err, data) {
-        if (err || !data) {
-          console.warn(err)
-          return
-        }
-        bookmarkConverter.import(data)
-      })
     }
   })
 
@@ -350,9 +339,11 @@ function initialize () {
     isAction: true,
     fn: async function () {
       const data = await bookmarkConverter.exportAll()
-      // save the result
-      const savePath = await ipc.invoke('showSaveDialog', { defaultPath: 'bookmarks.html' })
-      require('fs').writeFileSync(savePath, data)
+      try {
+        await rendererHost.exportBookmarks(data)
+      } catch (error) {
+        console.warn('failed to export bookmarks', error)
+      }
     }
   })
 

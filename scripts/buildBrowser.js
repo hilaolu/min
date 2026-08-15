@@ -1,5 +1,4 @@
 const browserify = require('browserify')
-const renderify = require('electron-renderify')
 const path = require('path')
 const fs = require('fs')
 
@@ -24,17 +23,13 @@ function buildBrowser () {
 
   fs.writeFileSync(intermediateOutput, output, 'utf-8')
 
+  // Browser Chrome has no Node bridge, so Browserify must bundle browser
+  // implementations for core dependencies and referenced globals.
   const instance = browserify(intermediateOutput, {
     paths: [rootDir, jsDir],
-    ignoreMissing: false,
-    node: true,
-    detectGlobals: false
+    ignoreMissing: false
   })
 
-  instance.exclude('chokidar')
-  instance.exclude('write-file-atomic')
-
-  instance.transform(renderify)
   const stream = fs.createWriteStream(outFile, { encoding: 'utf-8' })
   instance.bundle()
     .on('error', function (e) {

@@ -10,6 +10,7 @@ class TaskList {
     this.windowId = options.windowId
     this.now = options.now || Date.now
     this.createId = options.createId || TaskList.getRandomId
+    this.eventsEnabled = true
   }
 
   on (name, fn) {
@@ -17,6 +18,8 @@ class TaskList {
   }
 
   emit (name, ...data) {
+    if (!this.eventsEnabled) return
+
     this.events.forEach(listener => {
       if (listener.name === name || listener.name === '*') {
         this.pendingCallbacks.push([listener.fn, (listener.name === '*' ? [name] : []).concat(data)])
@@ -33,14 +36,15 @@ class TaskList {
     })
   }
 
-  add (task = {}, index, emit = true) {
+  add (task = {}, index) {
     const newTask = {
       name: task.name || null,
       tabs: new TabList(task.tabs, this, { now: this.now, createId: this.createId }),
       tabHistory: new TabStack(task.tabHistory),
       collapsed: task.collapsed, // this property must stay undefined if it is already (since there is a difference between "explicitly uncollapsed" and "never collapsed")
       id: task.id || String(this.createId()),
-      selectedInWindow: task.selectedInWindow || null
+      selectedInWindow: task.selectedInWindow || null,
+      selectionStamp: task.selectionStamp || null
     }
 
     if (index !== undefined) {
@@ -49,14 +53,12 @@ class TaskList {
       this.tasks.push(newTask)
     }
 
-    if (emit) {
-      this.emit('task-added', newTask.id, Object.assign({}, newTask, { tabHistory: task.tabHistory, tabs: task.tabs }), index)
-    }
+    this.emit('task-added', newTask.id, Object.assign({}, newTask, { tabHistory: task.tabHistory, tabs: task.tabs }), index)
 
     return newTask.id
   }
 
-  update (id, data, emit = true) {
+  update (id, data) {
     const task = this.get(id)
 
     if (!task) {
@@ -68,9 +70,7 @@ class TaskList {
         throw new ReferenceError('Key ' + key + ' is undefined.')
       }
       task[key] = data[key]
-      if (emit) {
-        this.emit('task-updated', id, key, data[key])
-      }
+      this.emit('task-updated', id, key, data[key])
     }
   }
 
@@ -113,7 +113,7 @@ class TaskList {
     return this.tasks.findIndex(task => task.id === id)
   }
 
-  setSelected (id, emit = true, onWindow = this.windowId) {
+  setSelected (id, onWindow = this.windowId) {
     for (var i = 0; i < this.tasks.length; i++) {
       if (this.tasks[i].selectedInWindow === onWindow) {
         this.tasks[i].selectedInWindow = null
@@ -123,20 +123,27 @@ class TaskList {
       }
     }
     if (onWindow === this.windowId) {
-      if (emit) {
-        this.emit('task-selected', id)
-        if (this.get(id).tabs.getSelected()) {
-          this.emit('tab-selected', this.get(id).tabs.getSelected(), id)
-        }
+      this.emit('task-selected', id)
+      if (this.get(id).tabs.getSelected()) {
+        this.emit('tab-selected', this.get(id).tabs.getSelected(), id)
       }
     }
   }
 
-  destroy (id, emit = true) {
+  clearSelected (onWindow = this.windowId) {
+    this.tasks.forEach(task => {
+      if (task.selectedInWindow === onWindow) {
+        task.selectedInWindow = null
+        task.selectionStamp = null
+      }
+    })
+  }
+
+  destroy (id) {
     const index = this.getIndex(id)
 
-    if (emit) {
-    // emit the tab-destroyed event for all tabs in this task
+    if (index >= 0) {
+      // emit the tab-destroyed event for all tabs in this task
       this.get(id).tabs.forEach(tab => this.emit('tab-destroyed', tab.id, id))
 
       this.emit('task-destroyed', id)
@@ -147,6 +154,29 @@ class TaskList {
     this.tasks.splice(index, 1)
 
     return index
+  }
+
+  move (id, index) {
+    const currentIndex = this.getIndex(id)
+    if (currentIndex < 0) return false
+    const task = this.tasks.splice(currentIndex, 1)[0]
+    const targetIndex = Math.max(0, Math.min(index, this.tasks.length))
+    this.tasks.splice(targetIndex, 0, task)
+    return targetIndex
+  }
+
+  replace (tasks = []) {
+    this.tasks = tasks
+  }
+
+  withoutEvents (callback) {
+    const eventsEnabled = this.eventsEnabled
+    this.eventsEnabled = false
+    try {
+      return callback()
+    } finally {
+      this.eventsEnabled = eventsEnabled
+    }
   }
 
   getLastActivity (id) {
@@ -196,6 +226,6 @@ class TaskList {
   }
 }
 
-TaskList.temporaryProperties = ['selectedInWindow']
+TaskList.temporaryProperties = ['selectedInWindow', 'selectionStamp']
 
 module.exports = TaskList

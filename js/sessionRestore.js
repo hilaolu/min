@@ -1,17 +1,14 @@
-const { ipcRenderer: ipc } = require('electron')
-const fs = require('fs')
-const path = require('path')
-const writeFileAtomic = require('write-file-atomic')
-
 const browserSession = require('tabState.js')
 const browserUI = require('browserUI.js')
+const rendererHost = require('rendererHost.js')
+const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 const settings = require('util/settings/settings.js')
 const statistics = require('js/statistics.js')
 const tabEditor = require('navbar/tabEditor.js')
 const taskOverlay = require('taskOverlay/taskOverlay.js')
+const windowSync = require('tabState/windowSync.js')
 
 const sessionRestore = {
-  savePath: path.join(window.globalArgs['user-data-path'], 'sessionRestore.json'),
   previousState: null,
 
   save: function (forceSave, sync) {
@@ -38,16 +35,21 @@ const sessionRestore = {
       saveTime: Date.now()
     })
     if (sync === true) {
-      writeFileAtomic.sync(sessionRestore.savePath, data, {})
+      try {
+        rendererHost.saveBrowserSession(data, { sync: true })
+        sessionRestore.previousState = stateString
+      } catch (error) {
+        console.warn(error)
+        statistics.incrementValue('sessionRestoreSaveSyncWriteErrors')
+      }
     } else {
-      writeFileAtomic(sessionRestore.savePath, data, {}, function (err) {
-        if (err) {
-          console.warn(err)
-          statistics.incrementValue('sessionRestoreSaveAsyncWriteErrors')
-        }
+      rendererHost.saveBrowserSession(data).then(function () {
+        sessionRestore.previousState = stateString
+      }).catch(function (error) {
+        console.warn(error)
+        statistics.incrementValue('sessionRestoreSaveAsyncWriteErrors')
       })
     }
-    sessionRestore.previousState = stateString
   },
 
   createInitialSession: function (url = '') {
@@ -61,11 +63,9 @@ const sessionRestore = {
   restoreFromFile: function () {
     let savedStringData
     try {
-      savedStringData = fs.readFileSync(sessionRestore.savePath, 'utf-8')
+      savedStringData = rendererHost.loadBrowserSession()
     } catch (error) {
-      if (error.code !== 'ENOENT') {
-        console.warn('failed to read session restore data', error)
-      }
+      console.warn('failed to read session restore data', error)
     }
 
     const startupConfigOption = settings.get('startupTabOption')
@@ -106,13 +106,12 @@ const sessionRestore = {
     } catch (error) {
       console.error('restoring session failed: ', error)
 
-      const backupSavePath = path.join(window.globalArgs['user-data-path'], 'sessionRestoreBackup-' + Date.now() + '.json')
-      writeFileAtomic.sync(backupSavePath, savedStringData, {})
+      const backupName = rendererHost.backupCorruptBrowserSession(savedStringData)
 
-      browserSession.initialize()
+      browserSession.restoreSnapshot({ tasks: [] }, { ensureNotEmpty: false })
       const taskId = browserSession.createTask({}, { select: true })
       browserUI.addTab({
-        url: 'min://app/pages/sessionRestoreError/index.html?backupLoc=' + encodeURIComponent(backupSavePath)
+        url: 'min://app/pages/sessionRestoreError/index.html?backupName=' + encodeURIComponent(backupName)
       }, {
         enterEditMode: false,
         taskId
@@ -122,34 +121,30 @@ const sessionRestore = {
   },
 
   syncWithWindow: function () {
-    const snapshot = ipc.sendSync('request-tab-state')
+    const snapshot = rendererHost.requestBrowserSessionSnapshot()
     browserSession.restoreSnapshot(snapshot)
 
-    if (Object.hasOwn(window.globalArgs, 'initial-task')) {
-      browserUI.switchToTask(window.globalArgs['initial-task'])
+    if (runtimeConfiguration.initialTask !== null) {
+      const acquired = browserSession.acquireTask({ taskId: runtimeConfiguration.initialTask })
+      browserUI.switchToTask(acquired.selectedTaskId, { stateAlreadySelected: true })
       return
     }
 
-    const newTaskCandidates = browserSession.tasks
-      .filter(task => task.tabs.isEmpty() && !task.selectedInWindow && !task.name)
-      .sort((a, b) => browserSession.tasks.getLastActivity(b.id) - browserSession.tasks.getLastActivity(a.id))
-    if (newTaskCandidates.length > 0) {
-      browserUI.switchToTask(newTaskCandidates[0].id)
-      tabEditor.show(browserSession.tabs.getSelected())
-    } else {
-      browserUI.addTask()
-    }
+    const acquired = browserSession.acquireTask()
+    browserUI.switchToTask(acquired.selectedTaskId, { stateAlreadySelected: true })
+    tabEditor.show(browserSession.tabs.getSelected())
   },
 
   restore: function () {
-    if (Object.hasOwn(window.globalArgs, 'initial-window')) {
+    if (runtimeConfiguration.initialWindow) {
       sessionRestore.restoreFromFile()
     } else {
       sessionRestore.syncWithWindow()
     }
-    if (settings.get('newWindowOption') === 2 && !Object.hasOwn(window.globalArgs, 'launch-window') && !Object.hasOwn(window.globalArgs, 'initial-task')) {
+    if (settings.get('newWindowOption') === 2 && !runtimeConfiguration.launchWindow && runtimeConfiguration.initialTask === null) {
       taskOverlay.show()
     }
+    windowSync.finishHydration()
   },
 
   initialize: function () {
@@ -157,15 +152,13 @@ const sessionRestore = {
 
     window.onbeforeunload = function () {
       sessionRestore.save(true, true)
-      const selectedTask = browserSession.tasks.getSelected()
-      if (selectedTask) {
-        const change = browserSession.updateTask(selectedTask.id, { selectedInWindow: null })
-        ipc.send('tab-state-change', [change])
+      if (browserSession.releaseTask()) {
+        windowSync.flush()
       }
     }
 
-    ipc.on('read-tab-state', function () {
-      ipc.send('return-tab-state', browserSession.getCopyableSnapshot())
+    rendererHost.onBrowserSessionSnapshotRequested(function () {
+      rendererHost.provideBrowserSessionSnapshot(browserSession.getCopyableSnapshot())
     })
   }
 }

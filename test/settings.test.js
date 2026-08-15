@@ -46,6 +46,19 @@ test('Settings owns defaults and persists legacy migrations', async function () 
   assert.equal(Object.hasOwn(storage.writes[0].filtering, 'trackers'), false)
 })
 
+test('Settings connection returns values and their authoritative revision together', async function () {
+  const ipc = createIPC()
+  const settings = createSettings({ ipc, storage: createMemoryStorage('{}') })
+  await settings.initialize('/unused')
+  await settings.set('siteTheme', false)
+  const event = {}
+
+  ipc.emit('settings:connect', event)
+
+  assert.equal(event.returnValue.revision, 1)
+  assert.equal(event.returnValue.values.siteTheme, false)
+})
+
 test('Settings recovers from malformed files with validated defaults', async function () {
   const warnings = []
   const storage = createMemoryStorage('{not json')
@@ -139,8 +152,10 @@ test('Settings cache adapters share synchronous reads, durable writes, and chang
   let applyChange
   const writes = []
   const cache = createSettingsCache({
-    getSnapshot: () => ({ proxy: {}, siteTheme: true }),
-    onChange: callback => { applyChange = callback },
+    connect: callback => {
+      applyChange = callback
+      return { revision: 0, values: { proxy: {}, siteTheme: true } }
+    },
     set: async (key, value) => {
       writes.push({ key, value })
       return { ok: true, revision: 1 }
@@ -163,6 +178,48 @@ test('Settings cache adapters share synchronous reads, durable writes, and chang
   assert.deepEqual(values, [true, false])
   assert.deepEqual(globalChanges, ['siteTheme'])
   assert.deepEqual(writes, [{ key: 'siteTheme', value: false }])
+})
+
+test('Settings connection closes the snapshot-subscription hydration gap', function () {
+  const cache = createSettingsCache({
+    connect: listener => {
+      const snapshot = { revision: 1, values: { siteTheme: true } }
+      listener({ key: 'siteTheme', revision: 2, value: false })
+      return snapshot
+    },
+    set: () => Promise.resolve({ ok: true })
+  })
+
+  assert.equal(cache.get('siteTheme'), false)
+})
+
+test('Settings cache rejects invalid connection snapshots', function () {
+  const createCache = values => createSettingsCache({
+    connect: () => ({ revision: 0, values }),
+    set: () => Promise.resolve({ ok: true })
+  })
+
+  assert.throws(() => createCache([]), /invalid snapshot/)
+  assert.throws(() => createCache(null), /invalid snapshot/)
+})
+
+test('Settings cache ignores duplicate revisions and reports gaps', function () {
+  let applyChange
+  const cache = createSettingsCache({
+    connect: callback => {
+      applyChange = callback
+      return { revision: 3, values: { siteTheme: true } }
+    },
+    set: () => Promise.resolve({ ok: true })
+  })
+  const errors = []
+  cache.onError(error => errors.push(error))
+
+  applyChange({ key: 'siteTheme', revision: 3, value: false })
+  applyChange({ key: 'siteTheme', revision: 5, value: false })
+
+  assert.equal(cache.get('siteTheme'), true)
+  assert.equal(errors[0].code, 'SETTINGS_REVISION_GAP')
 })
 
 test('file Settings storage uses the atomic writer', async function () {

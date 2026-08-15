@@ -1,4 +1,5 @@
 const remoteMenu = require('remoteMenuRenderer.js')
+const rendererHost = require('rendererHost.js')
 const searchbar = require('searchbar/searchbar.js')
 
 module.exports = {
@@ -48,7 +49,7 @@ module.exports = {
             inputMenu[1].push({
               label: 'Paste and Go',
               click: function () {
-                searchbar.openURL(electron.clipboard.readText())
+                searchbar.openURL(rendererHost.readClipboardText())
               }
             })
           }

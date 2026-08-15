@@ -1,29 +1,12 @@
-window.globalArgs = {}
+const rendererHost = require('rendererHost.js')
+const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 
-process.argv.forEach(function (arg) {
-  if (arg.startsWith('--')) {
-    var key = arg.split('=')[0].replace('--', '')
-    var value = arg.split('=')[1]
-    globalArgs[key] = value
-  }
-})
-
-window.windowId = globalArgs['window-id']
-
-window.electron = require('electron')
-window.fs = require('fs')
-window.EventEmitter = require('events')
-window.ipc = electron.ipcRenderer
-
-if (navigator.platform === 'MacIntel') {
+if (runtimeConfiguration.platform === 'darwin') {
   document.body.classList.add('mac')
-  window.platformType = 'mac'
-} else if (navigator.platform === 'Win32') {
+} else if (runtimeConfiguration.platform === 'win32') {
   document.body.classList.add('windows')
-  window.platformType = 'windows'
 } else {
   document.body.classList.add('linux')
-  window.platformType = 'linux'
 }
 
 if (navigator.maxTouchPoints > 0) {
@@ -31,30 +14,10 @@ if (navigator.maxTouchPoints > 0) {
 }
 
 /* add classes so that the window state can be used in CSS */
-ipc.on('enter-full-screen', function () {
-  document.body.classList.add('fullscreen')
-})
-
-ipc.on('leave-full-screen', function () {
-  document.body.classList.remove('fullscreen')
-})
-
-ipc.on('maximize', function () {
-  document.body.classList.add('maximized')
-})
-
-ipc.on('unmaximize', function () {
-  document.body.classList.remove('maximized')
-})
-
-document.body.classList.add('focused')
-
-ipc.on('focus', function () {
-  document.body.classList.add('focused')
-})
-
-ipc.on('blur', function () {
-  document.body.classList.remove('focused')
+rendererHost.onWindowStateChanged(function (state) {
+  document.body.classList.toggle('fullscreen', state.fullScreen)
+  document.body.classList.toggle('maximized', state.maximized)
+  document.body.classList.toggle('focused', state.focused)
 })
 
 // https://remysharp.com/2010/07/21/throttling-function-calls

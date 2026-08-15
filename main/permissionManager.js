@@ -210,6 +210,7 @@ Is there already a pending request of the given type for this origin?
   }
 
   ipc.on('permissionGranted', function (e, permissionId) {
+    if (!windows.windowFromContents(e.sender)) return
     for (var i = 0; i < pendingPermissions.length; i++) {
       if (permissionId && pendingPermissions[i].permissionId === permissionId) {
       // Focus the webContents before granting pointerLock, since clicking
@@ -232,6 +233,7 @@ Is there already a pending request of the given type for this origin?
   })
 
   ipc.on('revokePermission', function (e, permissionId) {
+    if (!windows.windowFromContents(e.sender)) return
     for (var i = 0; i < grantedPermissions.length; i++) {
       if (grantedPermissions[i].permissionId === permissionId) {
         grantedPermissions.splice(i, 1)

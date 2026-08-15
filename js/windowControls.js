@@ -1,4 +1,6 @@
 var settings = require('util/settings/settings.js')
+const rendererHost = require('rendererHost.js')
+const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 
 function initialize () {
   if (settings.get('useSeparateTitlebar') === true) {
@@ -25,7 +27,7 @@ function initialize () {
   var linuxMaximize = document.querySelector('#linux-control-buttons #maximize-button')
 
   function updateCaptionButtons () {
-    if (window.platformType === 'windows') {
+    if (runtimeConfiguration.platform === 'win32') {
       if (windowIsMaximized || windowIsFullscreen) {
         captionMaximize.hidden = true
         captionRestore.hidden = false
@@ -36,62 +38,51 @@ function initialize () {
     }
   }
 
-  if (window.platformType === 'windows') {
+  if (runtimeConfiguration.platform === 'win32') {
     updateCaptionButtons()
 
     captionMinimize.addEventListener('click', function (e) {
-      ipc.invoke('minimize')
+      rendererHost.minimizeWindow()
     })
 
     captionMaximize.addEventListener('click', function (e) {
-      ipc.invoke('maximize')
+      rendererHost.maximizeWindow()
     })
 
     captionRestore.addEventListener('click', function (e) {
       if (windowIsFullscreen) {
-        ipc.invoke('setFullScreen', false)
+        rendererHost.setWindowFullScreen(false)
       } else {
-        ipc.invoke('unmaximize')
+        rendererHost.unmaximizeWindow()
       }
     })
 
     captionClose.addEventListener('click', function (e) {
-      ipc.invoke('close')
+      rendererHost.closeWindow()
     })
   }
 
-  ipc.on('maximize', function (e) {
-    windowIsMaximized = true
-    updateCaptionButtons()
-  })
-  ipc.on('unmaximize', function (e) {
-    windowIsMaximized = false
-    updateCaptionButtons()
-  })
-  ipc.on('enter-full-screen', function (e) {
-    windowIsFullscreen = true
-    updateCaptionButtons()
-  })
-  ipc.on('leave-full-screen', function (e) {
-    windowIsFullscreen = false
+  rendererHost.onWindowStateChanged(function (state) {
+    windowIsMaximized = state.maximized
+    windowIsFullscreen = state.fullScreen
     updateCaptionButtons()
   })
 
-  if (window.platformType === 'linux') {
+  if (runtimeConfiguration.platform === 'linux') {
     linuxClose.addEventListener('click', function (e) {
-      ipc.invoke('close')
+      rendererHost.closeWindow()
     })
     linuxMaximize.addEventListener('click', function (e) {
       if (windowIsFullscreen) {
-        ipc.invoke('setFullScreen', false)
+        rendererHost.setWindowFullScreen(false)
       } else if (windowIsMaximized) {
-        ipc.invoke('unmaximize')
+        rendererHost.unmaximizeWindow()
       } else {
-        ipc.invoke('maximize')
+        rendererHost.maximizeWindow()
       }
     })
     linuxMinimize.addEventListener('click', function (e) {
-      ipc.invoke('minimize')
+      rendererHost.minimizeWindow()
     })
   }
 }

@@ -1,5 +1,6 @@
 const browserSession = require('tabState.js')
 const keybindings = require('keybindings.js')
+const rendererHost = require('rendererHost.js')
 var webviews = require('webviews.js')
 var browserUI = require('browserUI.js')
 var focusMode = require('focusMode.js')
@@ -9,7 +10,7 @@ var urlParser = require('util/urlParser.js')
 const defaultKeybindings = {
   initialize: function () {
     keybindings.defineShortcut('quitMin', function () {
-      ipc.send('quit')
+      rendererHost.quitApplication()
     })
 
     keybindings.defineShortcut('addTab', function () {
@@ -198,7 +199,7 @@ const defaultKeybindings = {
     })
 
     keybindings.defineShortcut('closeWindow', function () {
-      ipc.invoke('close')
+      rendererHost.closeWindow()
     })
 
     keybindings.defineShortcut('reload', function () {
@@ -227,9 +228,9 @@ const defaultKeybindings = {
         anchorTag.href = url
         anchorTag.textContent = url
 
-        electron.clipboard.write({
-          text: url,
-          bookmark: tab.title,
+        rendererHost.copyPageLink({
+          url,
+          title: tab.title,
           html: anchorTag.outerHTML
         })
       }
@@ -254,10 +255,6 @@ const defaultKeybindings = {
     keybindings.defineShortcut('showCommandPaletteRepl', function () {
       var commandPalette = require('commandPalette.js')
       commandPalette.showWithPrefix('>>>')
-    })
-
-    keybindings.defineShortcut('toggleOverlay', function () {
-      ipc.send('toggleOverlay')
     })
   }
 }

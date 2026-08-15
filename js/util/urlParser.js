@@ -1,4 +1,4 @@
-const { domainToASCII } = require('url')
+const domainToASCII = require('./domainToASCII.js')
 
 const searchEngine = require('util/searchEngine.js')
 const hosts = require('./hosts.js')

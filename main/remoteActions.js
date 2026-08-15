@@ -4,6 +4,7 @@ Wraps APIs that are only available in the main process in IPC messages, so that 
 
 function installRemoteActions ({ app, createWindow, dialog, ipc, session, shell, windows }) {
   ipc.handle('startFileDrag', function (e, path) {
+    if (!windows.windowFromContents(e.sender)) return
     app.getFileIcon(path, {}).then(function (icon) {
       e.sender.startDrag({
         file: path,
@@ -30,23 +31,18 @@ function installRemoteActions ({ app, createWindow, dialog, ipc, session, shell,
     })
   }
 
-  ipc.handle('showFocusModeDialog2', showFocusModeDialog2)
-
-  ipc.handle('showOpenDialog', async function (e, options) {
-    const result = await dialog.showOpenDialog(windows.windowFromContents(e.sender).win, options)
-    return result.filePaths
-  })
-
-  ipc.handle('showSaveDialog', async function (e, options) {
-    const result = await dialog.showSaveDialog(windows.windowFromContents(e.sender).win, options)
-    return result.filePath
+  ipc.handle('showFocusModeDialog2', function (event) {
+    if (!windows.windowFromContents(event.sender)) return
+    return showFocusModeDialog2()
   })
 
   ipc.handle('addWordToSpellCheckerDictionary', function (e, word) {
+    if (!windows.windowFromContents(e.sender)) return
     session.fromPartition('persist:webcontent').addWordToSpellCheckerDictionary(word)
   })
 
-  ipc.handle('clearStorageData', function () {
+  ipc.handle('clearStorageData', function (event) {
+    if (!windows.windowFromContents(event.sender)) return
     return session.fromPartition('persist:webcontent').clearStorageData()
     /* It's important not to delete data from file:// from the default partition, since that would also remove internal browser data (such as bookmarks). However, HTTP data does need to be cleared, as there can be leftover data from loading external resources in the browser UI */
       .then(function () {
@@ -105,10 +101,12 @@ function installRemoteActions ({ app, createWindow, dialog, ipc, session, shell,
 
   // workaround for https://github.com/electron/electron/issues/38540
   ipc.handle('showItemInFolder', function (e, path) {
+    if (!windows.windowFromContents(e.sender)) return
     shell.showItemInFolder(path)
   })
 
   ipc.on('newWindow', function (e, customArgs) {
+    if (!windows.windowFromContents(e.sender)) return
     createWindow(customArgs)
   })
 

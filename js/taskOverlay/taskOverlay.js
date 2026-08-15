@@ -1,5 +1,6 @@
 const browserSession = require('tabState.js')
-const { ipcRenderer } = require('electron')
+const rendererHost = require('rendererHost.js')
+const runtimeConfiguration = rendererHost.getRuntimeConfiguration()
 
 var webviews = require('webviews.js')
 var keybindings = require('keybindings.js')
@@ -92,7 +93,7 @@ var taskOverlay = {
       draggable: '.task-tab-item',
       ghostClass: 'tab-drop-placeholder',
       multiDrag: true,
-      multiDragKey: (window.platformType === 'mac' ? 'Meta' : 'Ctrl'),
+      multiDragKey: (runtimeConfiguration.platform === 'darwin' ? 'Meta' : 'Ctrl'),
       selectedClass: 'dragging-selected',
       animation: 200,
       scroll: true,
@@ -371,7 +372,9 @@ var taskOverlay = {
     }, { contexts: ['taskOverlay'] })
 
     keybindings.defineShortcut('addTask', addTaskFromMenu)
-    ipcRenderer.on('addTask', addTaskFromMenu) // for menu item
+    rendererHost.onBrowserCommand(function (command) {
+      if (command.type === 'add-task') addTaskFromMenu()
+    })
 
     taskSwitcherButton.title = 'View Tasks'
     addTaskLabel.textContent = 'New Task'

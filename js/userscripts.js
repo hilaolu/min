@@ -1,10 +1,8 @@
 const browserSession = require('tabState.js')
 /* implements userscript support */
 
-var path = require('path')
-var chokidar = require('chokidar')
-
 var webviews = require('webviews.js')
+const rendererHost = require('rendererHost.js')
 var settings = require('util/settings/settings.js')
 var bangsPlugin = require('searchbar/bangsPlugin.js')
 var tabEditor = require('navbar/tabEditor.js')
@@ -65,102 +63,54 @@ function urlMatchesPattern (url, pattern) {
 }
 
 const userscripts = {
-  scriptDir: path.join(window.globalArgs['user-data-path'], 'userscripts'),
   scripts: [], // {options: {}, content}
+  loadSequence: 0,
   showDirectory: function () {
-    electron.shell.openPath(userscripts.scriptDir)
-  },
-  ensureDirectoryExists: function () {
-    fs.access(userscripts.scriptDir, fs.constants.R_OK, function (err) {
-      if (err) {
-        fs.mkdir(userscripts.scriptDir, function (err) {
-          if (err) {
-            console.warn('failed to create userscripts directory', err)
-          }
-        })
-      }
+    rendererHost.openUserScriptsDirectory().catch(function (error) {
+      console.warn('failed to open userscript directory', error)
     })
   },
   loadScripts: function () {
-    userscripts.scripts = []
+    const sequence = ++userscripts.loadSequence
+    return rendererHost.loadUserScripts().then(function (files) {
+      if (sequence !== userscripts.loadSequence || settings.get('userscriptsEnabled') !== true) return
+      const loadedScripts = []
 
-    fs.readdir(userscripts.scriptDir, function (err, files) {
-      if (err) {
-        userscripts.ensureDirectoryExists()
-        return
-      } else if (files.length === 0) {
-        return
-      }
+      files.forEach(function ({ content: file, filename }) {
+        if (!file) return
+        var domain = filename.slice(0, -3)
+        if (domain.startsWith('www.')) {
+          domain = domain.slice(4)
+        }
+        if (!domain) return
 
-      // store the scripts in memory
-      files.forEach(function (filename) {
-        if (filename.endsWith('.js')) {
-          fs.readFile(path.join(userscripts.scriptDir, filename), 'utf-8', function (err, file) {
-            if (err || !file) {
-              return
-            }
-
-            var domain = filename.slice(0, -3)
-            if (domain.startsWith('www.')) {
-              domain = domain.slice(4)
-            }
-            if (!domain) {
-              return
-            }
-
-            var tampermonkeyFeatures = parseTampermonkeyFeatures(file)
-            if (tampermonkeyFeatures) {
-              var scriptName = tampermonkeyFeatures.name
-              if (scriptName) {
-                scriptName = scriptName[0]
-              } else {
-                scriptName = filename
-              }
-              userscripts.scripts.push({ options: tampermonkeyFeatures, content: file, name: scriptName })
-            } else {
-              // legacy script
-              if (domain === 'global') {
-                userscripts.scripts.push({
-                  options: {
-                    match: ['*']
-                  },
-                  content: file,
-                  name: filename
-                })
-              } else {
-                userscripts.scripts.push({
-                  options: {
-                    match: ['*://' + domain]
-                  },
-                  content: file,
-                  name: filename
-                })
-              }
-            }
+        var tampermonkeyFeatures = parseTampermonkeyFeatures(file)
+        if (tampermonkeyFeatures) {
+          var scriptName = tampermonkeyFeatures.name
+          if (scriptName) {
+            scriptName = scriptName[0]
+          } else {
+            scriptName = filename
+          }
+          loadedScripts.push({ options: tampermonkeyFeatures, content: file, name: scriptName })
+        } else if (domain === 'global') {
+          loadedScripts.push({
+            options: { match: ['*'] },
+            content: file,
+            name: filename
+          })
+        } else {
+          loadedScripts.push({
+            options: { match: ['*://' + domain] },
+            content: file,
+            name: filename
           })
         }
       })
+      userscripts.scripts = loadedScripts
+    }).catch(function (error) {
+      console.warn('failed to load userscripts', error)
     })
-  },
-  startDirWatcher: function () {
-    userscripts.stopDirWatcher() // destroy any previous instance
-    userscripts.watcherInstance = chokidar.watch(userscripts.scriptDir, {
-      ignoreInitial: true,
-      disableGlobbing: true,
-      awaitWriteFinish: {
-        stabilityThreshold: 500,
-        pollInterval: 100
-      }
-    })
-    userscripts.watcherInstance.on('all', debounce(function () {
-      userscripts.loadScripts()
-    }, 100))
-  },
-  stopDirWatcher: function () {
-    if (userscripts.watcherInstance) {
-      userscripts.watcherInstance.close()
-      userscripts.watcherInstance = null
-    }
   },
   getMatchingScripts: function (src) {
     return userscripts.scripts.filter(function (script) {
@@ -202,11 +152,16 @@ const userscripts = {
     settings.listen('userscriptsEnabled', function (value) {
       if (value === true) {
         userscripts.loadScripts()
-        userscripts.startDirWatcher()
       } else {
+        userscripts.loadSequence++
         userscripts.scripts = []
-        userscripts.stopDirWatcher()
       }
+      rendererHost.setUserScriptsWatching(value === true).catch(function (error) {
+        console.warn('failed to update userscript watching', error)
+      })
+    })
+    rendererHost.onUserScriptsChanged(function () {
+      if (settings.get('userscriptsEnabled') === true) userscripts.loadScripts()
     })
     webviews.bindEvent('document-ready', userscripts.onPageLoad)
 

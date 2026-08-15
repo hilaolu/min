@@ -1,4 +1,5 @@
 const settings = require('util/settings/settings.js')
+const runtimeConfiguration = require('rendererHost.js').getRuntimeConfiguration()
 
 const statistics = {
   envGetters: [],
@@ -49,10 +50,10 @@ const statistics = {
       body: JSON.stringify({
         clientID: settings.get('clientID'),
         installTime: settings.get('installTime'),
-        os: process.platform,
-        appVersion: window.globalArgs['app-version'],
-        appName: window.globalArgs['app-name'],
-        isDev: 'development-mode' in window.globalArgs,
+        os: runtimeConfiguration.platform,
+        appVersion: runtimeConfiguration.appVersion,
+        appName: runtimeConfiguration.appName,
+        isDev: runtimeConfiguration.developmentMode,
         usageData: usageData
       })
     })

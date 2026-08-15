@@ -2,15 +2,14 @@ var settingsElectron = require('electron')
 var settingsIPC = settingsElectron.ipcRenderer
 
 settingsElectron.contextBridge.exposeInMainWorld('settingsHost', {
-  getSnapshot: function () {
-    if (!window.location.href.startsWith('min://')) return {}
-    return settingsIPC.sendSync('settings:get-snapshot')
-  },
-  onChange: function (callback) {
-    if (!window.location.href.startsWith('min://')) return
-    settingsIPC.on('settings:changed', function (event, change) {
+  connect: function (callback) {
+    if (!window.location.href.startsWith('min://')) {
+      return { revision: 0, values: {} }
+    }
+    settingsIPC.on('settings:changed', function settingsChanged (event, change) {
       callback(change)
     })
+    return settingsIPC.sendSync('settings:connect')
   },
   set: function (key, value) {
     if (!window.location.href.startsWith('min://')) {

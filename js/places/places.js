@@ -1,33 +1,20 @@
 const browserSession = require('tabState.js')
-const { ipcRenderer: ipc } = require('electron')
+const rendererHost = require('rendererHost.js')
 
 var webviews = require('webviews.js')
 const searchEngine = require('util/searchEngine.js')
 const urlParser = require('util/urlParser.js')
 
 const places = {
-  messagePort: null,
+  connection: null,
   sendMessage: function (data) {
-    places.messagePort.postMessage(data)
-  },
-  pendingPromises: {},
-  invokeWithPromise: function (data) {
-    const callbackId = Math.random()
-    const { promise, resolve, reject } = Promise.withResolvers()
-    places.pendingPromises[callbackId] = { promise, resolve, reject }
-    places.messagePort.postMessage({
-      ...data,
-      callbackId
+    return rendererHost.sendPlacesMessage(data).catch(function (error) {
+      console.warn('Places update failed:', error)
+      return { ok: false, error }
     })
-    return promise
   },
-  replyToPromise: function (callbackId, result) {
-    if (places.pendingPromises[callbackId]) {
-      places.pendingPromises[callbackId].resolve(result)
-      delete places.pendingPromises[callbackId]
-    } else {
-      throw new Error('places is missing callbackId')
-    }
+  invokeWithPromise: function (data) {
+    return rendererHost.requestPlaces(data)
   },
   savePage: function (tabId, extractedText) {
     /* this prevents pages that are immediately left from being saved to history, and also gives the page-favicon-updated event time to fire (so the colors saved to history are correct). */
@@ -114,11 +101,6 @@ const places = {
       text: url
     })
   },
-  onMessage: function (e) {
-    if (e.data.callbackId) {
-      places.replyToPromise(e.data.callbackId, e.data.result)
-    }
-  },
   getItem: function (url) {
     return places.invokeWithPromise({
       action: 'getPlace',
@@ -194,12 +176,10 @@ const places = {
     })
   },
   initialize: function () {
-    const { port1, port2 } = new window.MessageChannel()
-
-    ipc.postMessage('places-connect', null, [port1])
-    places.messagePort = port2
-    port2.addEventListener('message', places.onMessage)
-    port2.start()
+    places.connection = rendererHost.connectPlaces().catch(function (error) {
+      console.warn('Places connection failed:', error)
+      return { ok: false, error }
+    })
 
     webviews.bindIPC('pageData', places.receiveHistoryData)
   }

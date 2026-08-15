@@ -1,5 +1,6 @@
 const browserSession = require('tabState.js')
-const clipboard = electron.clipboard
+const rendererHost = require('rendererHost.js')
+const clipboard = { writeText: rendererHost.copyText }
 
 const webviews = require('webviews.js')
 const browserUI = require('browserUI.js')
@@ -49,7 +50,7 @@ const webviewMenu = {
         suggestionEntries.push({
           label: 'Add to Dictionary',
           click: function () {
-            ipc.invoke('addWordToSpellCheckerDictionary', data.misspelledWord)
+            rendererHost.addSpellcheckerWord(data.misspelledWord)
           }
         })
       }
