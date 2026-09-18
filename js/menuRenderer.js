@@ -56,6 +56,11 @@ module.exports = {
       } else if (command.type === 'save-current-page') {
         const currentTab = browserSession.tabs.get(browserSession.tabs.getSelected())
 
+        if (currentTab.url.startsWith('min://app/pages/markdown/index.html?')) {
+          webviews.saveVaultNote(currentTab.id)
+          return
+        }
+
         // new tabs cannot be saved
         if (!currentTab.url) {
           return

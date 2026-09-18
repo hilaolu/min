@@ -1,4 +1,4 @@
-function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, browserPage, buildTouchBar, createBrowserChromeRuntimeArgument, fs, getSetting, isDevelopmentMode, onAllWindowsClosed, onRecenterOverlay, path, platform = process.platform, rootDir, screen, setTimeout: schedule = setTimeout, userDataPath, WebContentsView }) {
+function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, browserPage, buildTouchBar, createBrowserChromeRuntimeArgument, fs, getSetting, isDevelopmentMode, onAllWindowsClosed, onRecenterOverlay, prepareClose, path, platform = process.platform, rootDir, screen, setTimeout: schedule = setTimeout, userDataPath, WebContentsView }) {
   const records = []
   const contentOwners = new Map()
   const tabOwners = new Map()
@@ -335,7 +335,18 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
         }
       })
     }
-    window.on('close', function () {
+    window.on('close', function (event) {
+      if (prepareClose && !record.closeApproved) {
+        event.preventDefault()
+        if (!record.preparingClose) {
+          record.preparingClose = true
+          Promise.resolve(prepareClose(window)).then(allowed => {
+            record.preparingClose = false
+            if (allowed) { record.closeApproved = true; window.close() }
+          }).catch(() => { record.preparingClose = false })
+        }
+        return
+      }
       beginClose(record)
     })
     window.on('closed', function () {

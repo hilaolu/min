@@ -5,6 +5,7 @@ function getCanonicalURL (url, urlParser) {
 
 function canExtractHistory (tab, url, urlParser) {
   if (!tab || tab.private || typeof url !== 'string') return false
+  if (url.startsWith('vault:') || urlParser.getSourceURL(url).startsWith('vault:')) return false
   if (url.startsWith('data:') || url.length > 5000) return false
   return !(urlParser.isInternalURL(url) && urlParser.getSourceURL(url) === url)
 }

@@ -3,6 +3,16 @@ const { pathToFileURL } = require('url')
 function createProtocolPolicy ({ net, path, protocol, rootDir, Response }) {
   protocol.registerSchemesAsPrivileged([
     {
+      scheme: 'vault',
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+        corsEnabled: true
+      }
+    },
+    {
       scheme: 'min',
       privileges: {
         standard: true,

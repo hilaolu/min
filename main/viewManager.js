@@ -1,8 +1,32 @@
-function createViewManager ({ app, BrowserWindow, createPrompt, electron, filterPopups, getWindowWebContents, ipc, path, rootDir, settings, WebContentsView, windows }) {
+function createViewManager ({ app, BrowserWindow, createPrompt, electron, filterPopups, getWindowWebContents, ipc, path, rootDir, settings, vault, WebContentsView, windows }) {
   var viewMap = {} // id: view
   var viewStateMap = {} // id: view state
 
   var temporaryPopupViews = {} // id: view
+
+  if (vault?.configure) {
+    vault.configure({
+      open: (contents, url) => loadURLInView(getTabIDFromWebContents(contents), url),
+      openExternal: (contents, url) => sendTabContentEvent(viewMap[getTabIDFromWebContents(contents)], getTabIDFromWebContents(contents), 'new-tab-requested', { url, openInForeground: true }),
+      close: contents => new Promise((resolve, reject) => {
+        if (contents.isDestroyed()) return resolve()
+        const timer = setTimeout(() => reject(new Error('Vault tab did not close')), 10000)
+        contents.once('destroyed', () => { clearTimeout(timer); resolve() })
+        const id = getTabIDFromWebContents(contents)
+        sendTabContentEvent(viewMap[id], id, 'vault-close-requested', {})
+      }),
+      focus: (contents, duplicate) => {
+        const id = getTabIDFromWebContents(contents)
+        const win = getWindowFromViewContents(contents)
+        if (win) { win.show(); win.focus() }
+        sendTabContentEvent(viewMap[id], id, 'vault-focus-requested', {})
+        if (duplicate && !duplicate.getURL()) {
+          const duplicateID = getTabIDFromWebContents(duplicate)
+          sendTabContentEvent(viewMap[duplicateID], duplicateID, 'vault-close-requested', {})
+        }
+      }
+    })
+  }
 
   const eventDefinitions = [
     ['before-input-event', 'input-received', args => ({ input: args[0] })],
@@ -136,7 +160,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       when it is clicked.
       (https://github.com/minbrowser/min/issues/1835)
     */
-      if (!details.features) {
+      if (!details.features || details.url.startsWith('vault:')) {
         sendTabContentEvent(view, id, 'new-tab-requested', {
           url: details.url,
           openInForeground: details.disposition !== 'background-tab'
@@ -214,7 +238,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     // show an "open in app" prompt for external protocols
 
     function handleExternalProtocol (e, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-      var knownProtocols = ['http', 'https', 'file', 'min', 'about', 'data', 'javascript', 'chrome'] // TODO anything else?
+      var knownProtocols = ['http', 'https', 'file', 'min', 'vault', 'about', 'data', 'javascript', 'chrome'] // TODO anything else?
       if (!knownProtocols.includes(url.split(':')[0])) {
         var externalApp = app.getApplicationNameForProtocol(url)
         if (externalApp) {
@@ -278,6 +302,22 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
 
     viewMap[id] = view
     windows.registerTabContent(ownerContents, id, view)
+    if (vault?.watch) {
+      vault.watch(view.webContents)
+      view.webContents.on('before-input-event', (event, input) => {
+        if (vault.getAssociation(view.webContents)?.kind === 'markdown' && input.type === 'keyDown' &&
+            (input.control || input.meta) && input.key.toLowerCase() === 's') {
+          event.preventDefault()
+          view.webContents.executeJavaScript('window.vaultEditorSave()').catch(() => {})
+        }
+      })
+      view.webContents.on('will-navigate', (event, url) => {
+        if (url.startsWith('vault:') || vault.getAssociation(view.webContents)?.kind === 'markdown') {
+          event.preventDefault()
+          loadURLInView(id, url)
+        }
+      })
+    }
 
     return view
   }
@@ -340,8 +380,12 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     return windows.windowFromContents(contents)?.win || null
   }
 
-  function loadURLInView (id, url, win) {
-  // wait until the first URL is loaded to set the background color so that new tabs can use a custom background
+  async function loadURLInView (id, url, win) {
+    if (vault) {
+      url = await vault.navigate(viewMap[id].webContents, url)
+      if (!url || !viewMap[id]) return false
+    }
+    // wait until the first URL is loaded to set the background color so that new tabs can use a custom background
     if (!viewStateMap[id].loadedInitialURL) {
     // Give the site a chance to display something before setting the background, in case it has its own dark theme
       viewMap[id].webContents.once('dom-ready', function () {
@@ -350,7 +394,10 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       // If the view has no URL, it won't be attached yet
       windows.attachSelectedTabContent(id, viewMap[id])
     }
-    viewMap[id].webContents.loadURL(url)
+    const contents = viewMap[id].webContents
+    Promise.resolve(contents.loadURL(url)).catch(error => {
+      if (error.code !== 'ERR_ABORTED' && vault?.loadFailed) vault.loadFailed(contents, url)
+    })
     viewStateMap[id].loadedInitialURL = true
   }
 
@@ -438,15 +485,23 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     const webContents = view.webContents
 
     switch (operation) {
+      case 'vault.save':
+        if (vault?.getAssociation(webContents)?.kind === 'markdown') return webContents.executeJavaScript('window.vaultEditorSave()')
+        return false
+      case 'lifecycle.prepare':
+        return vault ? vault.prepareToLeave(webContents) : true
+      case 'lifecycle.resume':
+        if (vault) vault.resume(webContents)
+        return true
       case 'lifecycle.destroy':
+        if (vault && !(await vault.prepareToLeave(webContents))) return false
         destroyView(id)
         return true
       case 'lifecycle.set-bounds':
         setBounds(id, payload.bounds)
         return true
       case 'navigation.load':
-        loadURLInView(id, payload.url, windows.windowFromContents(sender)?.win)
-        return true
+        return loadURLInView(id, payload.url, windows.windowFromContents(sender)?.win)
       case 'indexing.configure':
         webContents.send('page-indexing-config', {
           enabled: payload.enabled === true,
@@ -454,9 +509,11 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         })
         return true
       case 'navigation.back':
+        if (vault && !await vault.navigate(webContents, webContents.navigationHistory.getEntryAtIndex(webContents.navigationHistory.getActiveIndex() - 1)?.url || '')) return false
         webContents.goBack()
         return true
       case 'navigation.forward':
+        if (vault && !await vault.navigate(webContents, webContents.navigationHistory.getEntryAtIndex(webContents.navigationHistory.getActiveIndex() + 1)?.url || '')) return false
         webContents.goForward()
         return true
       case 'navigation.back-skipping-internal': { // preserve Min's internal-page redirect behavior
@@ -464,8 +521,10 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         const currentURL = history.entries[history.activeIndex]?.url || ''
         const previousURL = history.entries[history.activeIndex - 1]?.url
         if (currentURL.startsWith('min://') && history.activeIndex > 1 && previousURL === getSourceURL(currentURL) && webContents.canGoToOffset(-2)) {
+          if (vault && !await vault.navigate(webContents, history.entries[history.activeIndex - 2].url)) return false
           webContents.goToOffset(-2)
         } else {
+          if (vault && !await vault.navigate(webContents, previousURL || '')) return false
           webContents.goBack()
         }
         return true
@@ -474,6 +533,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         webContents.stop()
         return true
       case 'navigation.reload':
+        if (vault && !await vault.navigate(webContents, webContents.getURL())) return false
         if (payload.ignoreCache) {
           webContents.reloadIgnoringCache()
         } else {
@@ -631,6 +691,15 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
   })
 
   return {
+    async prepareWindow (win) {
+      for (const view of Object.values(viewMap)) {
+        if ((!win || getWindowFromViewContents(view) === win) && vault && !await vault.prepareToLeave(view.webContents)) {
+          for (const other of Object.values(viewMap)) vault.resume(other.webContents)
+          return false
+        }
+      }
+      return true
+    },
     destroyAllViews,
     getDefaultViewWebPreferences,
     getTabIDFromWebContents,

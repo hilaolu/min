@@ -100,7 +100,7 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
   }
 
   app.on('session-created', installSessionPolicies)
-  app.on('before-quit', places.destroy)
+  app.on('will-quit', places.destroy)
 
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.

@@ -125,7 +125,7 @@ const userscripts = {
     })
   },
   runScript: function (tabId, script) {
-    if (urlParser.isInternalURL(browserSession.tabs.get(tabId).url)) {
+    if (urlParser.isInternalURL(browserSession.tabs.get(tabId).url) || browserSession.tabs.get(tabId).url.startsWith('vault:')) {
       return
     }
     webviews.runUserScript(tabId, script.content)

@@ -126,7 +126,7 @@ function createDownloadPolicy ({ getTabIDFromWebContents, ipc, path, sendIPCToWi
     reader and PDF internal pages get universal access to web resources
     Note: we can't limit to the URL in the query string, because there could be redirects
     */
-      if (details.webContents && (details.webContents.getURL().startsWith('min://app/pages/pdfViewer') || details.webContents.getURL().startsWith('min://app/reader/') || details.webContents.getURL() === 'min://app/index.html')) {
+      if (!details.url.startsWith('vault:') && details.webContents && (details.webContents.getURL().startsWith('min://app/pages/pdfViewer') || details.webContents.getURL().startsWith('min://app/reader/') || details.webContents.getURL() === 'min://app/index.html')) {
         const filteredHeaders = Object.fromEntries(
           Object.entries(details.responseHeaders).filter(([key, val]) => key.toLowerCase() !== 'access-control-allow-origin' && key.toLowerCase() !== 'access-control-allow-credentials')
         )

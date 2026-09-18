@@ -359,6 +359,7 @@ let vimManager = null
 
 // Initialize Vim mode
 function initVimMode () {
+  if (window.location.href.startsWith('min://app/pages/markdown/index.html')) return
   // Create hidden input for blocking keybindings
   blockKeybindings = document.createElement('input')
   blockKeybindings.style = 'position: fixed; top: 0; left: -9999px;'

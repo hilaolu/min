@@ -143,6 +143,8 @@ if (process.isMainFrame) {
     const requestedExtraction = extractionGeneration
     clearTimeout(extractionTimer)
     if (!indexingEnabled) return
+    if (window.location.protocol === 'vault:' || (window.location.protocol === 'min:' &&
+      (new URLSearchParams(window.location.search).get('url') || '').startsWith('vault:'))) return
 
     extractionTimer = setTimeout(async function () {
       const sourceURL = window.location.href

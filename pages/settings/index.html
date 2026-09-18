@@ -17,6 +17,18 @@
       </div>
     </div>
 
+    <div class="settings-container">
+      <h3>Vault</h3>
+      <div class="setting-section">
+        <form id="vault-root-form">
+          <label for="vault-root-path">Folder</label>
+          <input id="vault-root-path" type="text" required autocomplete="off" spellcheck="false" aria-describedby="vault-root-status" placeholder="/path/to/vault">
+          <button id="select-vault-root" type="submit" disabled>Save</button>
+        </form>
+        <p id="vault-root-status" role="status"></p>
+      </div>
+    </div>
+
     <div class="settings-container" id="privacy-settings-container">
       <h3>Content Blocking</h3>
 
@@ -334,5 +346,6 @@
     <script src="../../js/util/theme.js"></script>
     <script src="browsingData.js"></script>
     <script src="settings.js"></script>
+    <script src="vaultSettings.js"></script>
   </body>
 </html>

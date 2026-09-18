@@ -273,6 +273,15 @@ const webviews = {
   update: function (id, url) {
     runTabContent(id, 'navigation.load', { url: urlParser.parse(url) })
   },
+  prepareToLeave: function (id) {
+    return webviews.hasViewForTab(id) ? invokeTabContent(id, 'lifecycle.prepare') : Promise.resolve(true)
+  },
+  saveVaultNote: function (id) {
+    return runTabContent(id, 'vault.save')
+  },
+  resume: function (id) {
+    if (webviews.hasViewForTab(id)) runTabContent(id, 'lifecycle.resume')
+  },
   destroy: function (id) {
     webviews.emitEvent('content-hidden', id)
 

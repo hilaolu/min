@@ -1,7 +1,7 @@
 /* Use the same user agent as Chrome to improve site compatibility and increase fingerprinting resistance
 see https://github.com/minbrowser/min/issues/657 for more information */
 
-function createUserAgentPolicy ({ app, settings }) {
+function createUserAgentPolicy ({ app, settings, vault }) {
   const defaultUserAgent = app.userAgentFallback
   let hasCustomUserAgent = false
   let newUserAgent
@@ -49,6 +49,7 @@ see https://github.com/minbrowser/min/issues/868
 */
   function enableGoogleUASwitcher (ses) {
     ses.webRequest.onBeforeSendHeaders((details, respond) => {
+      if (vault) vault.prepareHeaders(details)
       if (!hasCustomUserAgent && details.url.includes('accounts.google.com')) {
         const url = new URL(details.url)
 

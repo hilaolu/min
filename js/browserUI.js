@@ -89,7 +89,8 @@ function destroyTask (id) {
 }
 
 /* destroys the webview and tab element for a tab */
-function destroyTab (id) {
+async function destroyTab (id) {
+  if (!await webviews.prepareToLeave(id)) return false
   const result = browserSession.closeTab(id)
   if (!result) return false
   tabBar.removeTab(id)
@@ -110,7 +111,14 @@ function discardClosedTabs (tabIds) {
 
 /* destroys a task, and either switches to the next most-recent task or creates a new one */
 
-function closeTask (taskId) {
+async function closeTask (taskId) {
+  const tabs = browserSession.tasks.get(taskId)?.tabs.get() || []
+  for (const tab of tabs) {
+    if (!await webviews.prepareToLeave(tab.id)) {
+      tabs.forEach(tab => webviews.resume(tab.id))
+      return false
+    }
+  }
   const result = browserSession.closeTask(taskId)
   if (!result) return false
   result.closedTabIds.forEach(function (tabId) {
@@ -227,6 +235,16 @@ webviews.bindEvent('new-tab-requested', function (tabId, event) {
 
 webviews.bindIPC('close-window', function (tabId, args) {
   closeTab(tabId)
+})
+
+webviews.bindEvent('vault-focus-requested', function (tabId) {
+  const task = browserSession.tasks.getTaskContainingTab(tabId)
+  if (task && browserSession.tasks.getSelected()?.id !== task.id) switchToTask(task.id)
+  switchToTab(tabId)
+})
+
+webviews.bindEvent('vault-close-requested', function (tabId) {
+  destroyTab(tabId)
 })
 
 require('rendererHost.js').onFileViewChanged(function (data) {

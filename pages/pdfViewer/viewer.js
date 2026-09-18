@@ -237,7 +237,7 @@ function setUpPageAnnotationLayer (pageView) {
   }
 }
 
-pdfjsLib.getDocument({ url: url, withCredentials: true }).promise.then(async function (_pdf) {
+pdfjsLib.getDocument({ url: url, withCredentials: !url.startsWith('vault:') }).promise.then(async function (_pdf) {
   pdf = _pdf
 
   pageCount = pdf.numPages

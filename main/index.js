@@ -19,6 +19,7 @@ const createSettings = require('../js/util/settings/settingsMain.js')
 const createTouchBar = require('./touchbar.js')
 const createUserAgentPolicy = require('./UASwitcher.js')
 const createViewManager = require('./viewManager.js')
+const createVaultMode = require('./vaultMode.js')
 const createWindowRegistry = require('./windowManagement.js')
 const installPromptManager = require('./prompt.js')
 const installRemoteActions = require('./remoteActions.js')
@@ -56,6 +57,7 @@ function createMainProcess (options = {}) {
     fs,
     getSetting: key => settingsRef.current?.get(key),
     isDevelopmentMode,
+    prepareClose: win => viewManagerRef.current?.prepareWindow(win) ?? true,
     onAllWindowsClosed: () => {
       if (viewManagerRef.current) {
         viewManagerRef.current.destroyAllViews()
@@ -110,6 +112,13 @@ function createMainProcess (options = {}) {
   settingsRef.current = settings
   settings.initialize(app.getPath('userData'))
 
+  const vault = createVaultMode({
+    userDataPath: app.getPath('userData'),
+    ipc,
+    dialog: electron.dialog,
+    isTab: contents => Boolean(viewManagerRef.current?.getTabIDFromWebContents(contents))
+  })
+
   const filtering = createFilteringPolicy({
     app,
     fs,
@@ -129,6 +138,7 @@ function createMainProcess (options = {}) {
   })
 
   const viewManager = createViewManager({
+    vault,
     app,
     BrowserWindow: electron.BrowserWindow,
     createPrompt: prompt.createPrompt,
@@ -143,6 +153,18 @@ function createMainProcess (options = {}) {
     windows
   })
   viewManagerRef.current = viewManager
+  let quitApproved = false
+  let preparingQuit = false
+  app.on('before-quit', event => {
+    if (quitApproved) return
+    event.preventDefault()
+    if (preparingQuit) return
+    preparingQuit = true
+    viewManager.prepareWindow().then(allowed => {
+      preparingQuit = false
+      if (allowed) { quitApproved = true; app.quit() }
+    }).catch(() => { preparingQuit = false })
+  })
 
   const commandPalette = createCommandPaletteOverlay({
     WebContentsView: electron.WebContentsView,
@@ -163,7 +185,7 @@ function createMainProcess (options = {}) {
     rootDir,
     Response: options.Response || global.Response
   })
-  const userAgent = createUserAgentPolicy({ app, settings })
+  const userAgent = createUserAgentPolicy({ app, settings, vault })
   const permissions = createPermissionManager({
     getTabIDFromWebContents: viewManager.getTabIDFromWebContents,
     ipc,
@@ -180,6 +202,7 @@ function createMainProcess (options = {}) {
   const proxy = createProxyPolicy({ settings, webContents: electron.webContents })
   const sessionPolicies = createSessionPolicies([
     protocol,
+    vault,
     filtering,
     userAgent,
     permissions,
