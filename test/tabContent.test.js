@@ -25,6 +25,7 @@ class RecordingWebContents extends EventEmitter {
       entries: [{ url: 'https://previous.example' }, { url: 'https://current.example' }],
       getActiveIndex: () => 1,
       getEntryAtIndex: index => this.navigationHistory.entries[index],
+      goToIndex: index => this.calls.push(['goToIndex', index]),
       length: () => this.navigationHistory.entries.length
     }
   }
@@ -158,7 +159,7 @@ test('Tab Content commands expose browser behavior without reflective dispatch',
   })
 
   assert.deepEqual(state, { canGoBack: true, canGoForward: false })
-  assert.deepEqual(view.webContents.calls.slice(-2), [['goBack'], ['reloadIgnoringCache']])
+  assert.deepEqual(view.webContents.calls.slice(-2), [['goToIndex', 0], ['reloadIgnoringCache']])
   await assert.rejects(
     fixture.manager.executeTabContentCommand(fixture.chrome, {
       id: 'tab-1',

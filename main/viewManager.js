@@ -509,23 +509,28 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         })
         return true
       case 'navigation.back':
-        if (vault && !await vault.navigate(webContents, webContents.navigationHistory.getEntryAtIndex(webContents.navigationHistory.getActiveIndex() - 1)?.url || '')) return false
-        webContents.goBack()
+      case 'navigation.forward': {
+        const history = webContents.navigationHistory
+        const index = history.getActiveIndex() + (operation === 'navigation.back' ? -1 : 1)
+        const destination = history.getEntryAtIndex(index)
+        if (!destination) return false
+        if (vault && !await vault.navigate(webContents, destination.url, { history: true })) return false
+        // Traverse exactly the entry we prepared, including script-created
+        // fragments that Chromium's goBack can otherwise skip.
+        history.goToIndex(index)
         return true
-      case 'navigation.forward':
-        if (vault && !await vault.navigate(webContents, webContents.navigationHistory.getEntryAtIndex(webContents.navigationHistory.getActiveIndex() + 1)?.url || '')) return false
-        webContents.goForward()
-        return true
+      }
       case 'navigation.back-skipping-internal': { // preserve Min's internal-page redirect behavior
         const history = getNavigationHistory(webContents)
         const currentURL = history.entries[history.activeIndex]?.url || ''
         const previousURL = history.entries[history.activeIndex - 1]?.url
         if (currentURL.startsWith('min://') && history.activeIndex > 1 && previousURL === getSourceURL(currentURL) && webContents.canGoToOffset(-2)) {
-          if (vault && !await vault.navigate(webContents, history.entries[history.activeIndex - 2].url)) return false
-          webContents.goToOffset(-2)
+          if (vault && !await vault.navigate(webContents, history.entries[history.activeIndex - 2].url, { history: true })) return false
+          webContents.navigationHistory.goToIndex(history.activeIndex - 2)
         } else {
-          if (vault && !await vault.navigate(webContents, previousURL || '')) return false
-          webContents.goBack()
+          if (!previousURL) return false
+          if (vault && !await vault.navigate(webContents, previousURL, { history: true })) return false
+          webContents.navigationHistory.goToIndex(history.activeIndex - 1)
         }
         return true
       }

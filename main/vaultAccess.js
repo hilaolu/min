@@ -22,17 +22,20 @@ function createVaultAccess ({ getRoot }) {
     }
   }
 
-  function associate (contents, { url, pageURL = null, kind = 'resource' }) {
+  function associate (contents, { url, pageURL = null, kind = 'resource', managed = false }) {
     const source = parseVaultURL(url).vaultURL
     revoke(contents)
-    const association = { contents, source, pageURL, kind, root: getRoot() }
+    const association = { contents, source, pageURL, kind, root: getRoot(), managed }
     associations.set(contents.id, association)
     if (!watched.has(contents)) {
       watched.add(contents)
       contents.once('destroyed', () => revoke(contents))
       contents.on('did-start-navigation', (event, url, inPlace, mainFrame) => {
         const current = associations.get(contents.id)
-        if (!mainFrame || inPlace || !current) return
+        // Managed tabs revoke on approved departure/commit, not on a start
+        // that will-navigate may cancel. Request checks still bind the frame,
+        // current page and source; retaining it grants no destination access.
+        if (!mainFrame || inPlace || !current || current.managed) return
         let source
         try { source = parseVaultURL(url).vaultURL } catch (_) {}
         if (url !== current.pageURL && source !== current.source) revoke(contents)

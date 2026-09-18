@@ -44,19 +44,12 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
     if (watched.has(contents)) return
     watched.add(contents)
     contents.once('destroyed', () => release(contents))
-    // History/reload do not pass through loadURLInView. Re-establish authority
-    // before Chromium issues the main-frame request, never for child frames.
-    contents.on('did-start-navigation', (event, url, inPlace, mainFrame) => {
-      if (!mainFrame || inPlace || changing) return
+    // did-start-navigation precedes will-navigate. The old document must keep
+    // its reservation and save authority while leave preparation can cancel.
+    // Approved loads/history establish destination authority in navigate().
+    contents.on('did-navigate', (event, url) => {
       const record = records.get(contents.id)
-      if (record && url.split('#')[0] === record.pageURL) {
-        access.associate(contents, record)
-      } else if (url.startsWith('vault://')) {
-        release(contents)
-        try { access.associate(contents, { url }) } catch (_) {}
-      } else {
-        release(contents)
-      }
+      if (record && url.split('#')[0] !== (record.pageURL || record.url)) release(contents)
     })
   }
 
@@ -180,8 +173,11 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
     }
   })
 
-  async function navigate (contents, url) {
+  async function navigate (contents, url, { history = false } = {}) {
     if (changing) return null
+    // History within this document neither unloads nor initializes the editor.
+    // In particular, do not replace its note/baseline or freeze its live buffer.
+    if (history && url.split('#')[0] === contents.getURL().split('#')[0]) return url
     const version = (navigationVersions.get(contents) || 0) + 1
     navigationVersions.set(contents, version)
     if (!(await prepareToLeave(contents))) return null
@@ -208,7 +204,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
       release(contents)
       if (identity) owners.set(identity, contents)
       const pageURL = pages[kind] ? pages[kind] + '?url=' + encodeURIComponent(file.vaultURL) : null
-      const record = { url: file.vaultURL, pageURL, kind, root: capturedRoot, identity }
+      const record = { url: file.vaultURL, pageURL, kind, root: capturedRoot, identity, managed: true }
       if (kind === 'markdown') record.note = createNote(capturedRoot, file.vaultURL)
       records.set(contents.id, record)
       access.associate(contents, record)
