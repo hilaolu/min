@@ -56,7 +56,7 @@ async function run () {
   await until(() => chrome.executeJavaScript("!!document.getElementById('command-palette-input')").catch(() => false), 'command palette input')
   await assertPaletteResult(chrome, '>m note', 'note.md')
   await assertPaletteResult(chrome, '>p Report', 'Report.pdf')
-  main.windows.send(win, 'addTab', { url: 'vault://local/note.md' })
+  main.windows.send(win, 'addTab', { url: 'vault://note.md' })
   const note = await until(() => webContents.getAllWebContents().find(c => c.getURL().startsWith('min://app/pages/markdown/index.html')), 'real tab routing')
   await until(() => note.executeJavaScript('typeof cherry !== "undefined" && !!cherry').catch(() => false), 'Cherry ready')
   await note.executeJavaScript("cherry.setMarkdown('# Dirty')")

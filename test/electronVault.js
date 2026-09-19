@@ -35,11 +35,12 @@ async function run () {
   const image = nativeImage.createFromBitmap(bitmap, { width: 4, height: 4 })
   const jpeg = image.toJPEG(90)
   fs.writeFileSync(path.join(root, 'test.jpg'), jpeg)
+  fs.writeFileSync(path.join(root, 'Example 雪#%.jpg'), jpeg)
   fs.writeFileSync(path.join(root, 'Projects/images/detail.jpg'), jpeg)
   fs.writeFileSync(path.join(root, 'assets/shared.png'), image.toPNG())
   fs.writeFileSync(path.join(root, 'Projects/note.md'), '# original source')
   const pageURL = 'min://app/test/vaultFixture.html'
-  const source = 'vault://local/Projects/note.md'
+  const source = 'vault://Projects/note.md'
   for (const partition of ['persist:vault-integration', 'vault-private-integration']) {
     const ses = session.fromPartition(partition)
     bundle.install(ses)
@@ -52,18 +53,18 @@ async function run () {
     win.webContents.on('console-message', (event) => console.log('renderer:', event.message))
     access.associate(win.webContents, { url: source, pageURL, kind: 'markdown' })
     await win.loadURL(pageURL)
-    for (const url of ['vault://local/test.jpg', 'vault://test.jpg']) {
+    for (const url of ['vault://test.jpg', 'vault://Example%20%E9%9B%AA%23%25.jpg']) {
       const result = await win.webContents.executeJavaScript(`fetch(${JSON.stringify(url)}, {credentials: 'omit'}).then(async r => ({status:r.status, mime:r.headers.get('content-type'), bytes:Array.from(new Uint8Array(await r.arrayBuffer()))}))`)
       assert.equal(result.status, 200)
       assert.equal(result.mime, 'image/jpeg')
       assert.deepEqual(Buffer.from(result.bytes), jpeg)
     }
-    const references = ['images/detail.jpg', '../assets/shared.png', '/test.jpg', 'vault://local/test.jpg', 'vault://test.jpg']
+    const references = ['images/detail.jpg', '../assets/shared.png', '/test.jpg', 'vault://test.jpg', 'vault://Example%20%E9%9B%AA%23%25.jpg']
     const urls = references.map(reference => resolveNoteReference(reference, source))
     const dimensions = await win.webContents.executeJavaScript(`Promise.all(${JSON.stringify(urls)}.map(url => new Promise(resolve => { const image = new Image(); image.onload = () => resolve([image.complete, image.naturalWidth, image.naturalHeight, image.src]); image.onerror = () => resolve([false, 0, 0, image.src]); image.src = url; document.body.append(image) })))`)
     for (const [complete, width, height, url] of dimensions) {
       assert.ok(complete && width > 0 && height > 0, url)
-      assert.ok(url.startsWith('vault://local/'))
+      assert.ok(url.startsWith('vault://'))
     }
     const raw = await win.webContents.executeJavaScript(`fetch('${source}').then(r => r.text())`)
     assert.equal(raw, '# original source')

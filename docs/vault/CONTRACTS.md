@@ -7,23 +7,16 @@ Revision 2. These behaviors are normative. Function/channel names are illustrati
 Canonical resource address:
 
 ```text
-vault://local/<vault-relative-path>
+vault://
+vault://example.md
+vault://Projects/note.md
 ```
 
-`local` is fixed and reserved. The root is `vault://local/`; emitted folder URLs end in `/`. Paths preserve filename case. Neither credentials nor ports are allowed. Query parameters may be ignored as cache-busting metadata; fragments are presentation-only. Neither selects a disk file or grants authority. No query parameter makes a read into a write or switches raw assets to HTML.
+The root is `vault://`; the sequence after `//` is the vault-relative path, including the component that generic URL APIs expose as an authority/host. It is not a network host. `vault://example.md` is a root file, `vault://Projects/note.md` is a nested file, and `vault://local/note.md` is the ordinary path `local/note.md`; `local` has no reserved meaning. Emitted folder URLs end in `/`.
 
-The user's literal root-file shorthand is supported:
+Preserve filename case and encoded Unicode across the entire serialized path, including the first component. The Electron scheme is deliberately registered as nonstandard so Chromium does not apply host lowercasing to that component. There is no separate shorthand or authority grammar. Credentials and ports are not path syntax and are rejected. Reject empty components where invalid, `.`/`..` input where it would underflow, separators hidden in a component, and malformed encoding. Query parameters may be ignored as cache-busting metadata; fragments are presentation-only. Neither selects a disk file or grants authority. No query parameter makes a read into a write or switches raw assets to HTML.
 
-```text
-vault://test.jpg       => vault-relative file test.jpg
-vault://reference.pdf  => vault-relative file reference.pdf
-```
-
-This is an explicit alias rule, not a network lookup. Accept a simple lowercase ASCII filename with an extension in the authority and an empty path or `/`, with no credentials/port. Reject `.`/`..`, separators, encoded separators, and non-filename authorities. At the raw handler, return the same file response directly, not a `file://` or viewer redirect. Apply the same authorization and confinement as canonical requests.
-
-All generated links and document bases use `vault://local/...`. A standard URL treats `test.jpg` as the authority in the short form; filenames with case-sensitive/Unicode/encoded components belong in the canonical path, not a hostname. [ARCHITECTURE.md, E6] Do not infer nested paths from arbitrary hosts: use `vault://local/assets/test.jpg`, not `vault://assets/test.jpg`. A root file literally named `local` is `vault://local/local`.
-
-Normalize aliases before resolving relative references. Strip query/fragment for canonical disk identity. Dedupe editor ownership by the resolved disk path, not raw URL spelling. Hard-link identity merging is not required in v1; platform canonical path/case behavior must be tested.
+Strip query/fragment for canonical disk identity. Dedupe editor ownership by the resolved disk path, not raw URL spelling. Hard-link identity merging is not required in v1; platform canonical path/case behavior must be tested.
 
 ## 2. One confined resolver
 
@@ -38,9 +31,9 @@ resolveVaultURL(input, capturedRoot) -> {
 }
 ```
 
-Parse the URL and normalize the allowed alias. Split URL path segments, then percent-decode each segment exactly once. URL parsing alone does not decode the pathname. Reject malformed encodings, NUL, decoded `/` or `\` in a segment, OS absolute/drive/UNC tricks, and platform-specific invalid components. Never perform another percent-decoding pass downstream. A literal `%2e` filename represented by `%252e` stays a literal filename.
+Parse the flat vault URL by taking the authority-shaped text as the first path component and appending the pathname components; never assign network-host semantics to the first component. Split the serialized path into segments, then percent-decode each segment exactly once. Preserve the original case and valid encoded Unicode throughout parsing and canonical serialization. URL parsing alone does not decode the pathname. Reject malformed encodings, NUL, decoded `/` or `\` in a segment, OS absolute/drive/UNC tricks, and platform-specific invalid components. Never perform another percent-decoding pass downstream. A literal `%2e` filename represented by `%252e` stays a literal filename.
 
-Root-relative `/assets/a.png` and safe `../assets/a.png` note references are supported. A note-reference helper resolves dot segments against the current document directory and rejects root underflow where observable before URL normalization. Browser normalization may erase dot segments before a protocol sees them; the invariant is that the final filesystem resolution can never escape the root, not that every original spelling remains observable. Do not reject all parent-relative references.
+Root-relative `/assets/a.png` and safe `../assets/a.png` note references are supported. For URL resolution only, prepend a fixed internal virtual authority to the entire vault-relative path, resolve against that hierarchical URL, verify that dot segments did not escape its root, and remove the virtual authority to emit the flat `vault://...` form. The virtual authority is never public and the first real component is never treated as a host. Browser normalization may erase dot segments before a protocol sees them; the invariant is that the final filesystem resolution can never escape the root, not that every original spelling remains observable. Do not reject all parent-relative references.
 
 Use `path.relative`/canonical path checks, not a string-prefix test. A configured root is canonicalized when selected; reject symlink traversal below it in v1. Revalidate relevant path components before each file operation and immediately before save replacement. No caller appends unchecked segments to a validated path. Symlink-swap races from an actively hostile local process need OS-level facilities for stronger guarantees; do not claim path checks alone are an OS sandbox.
 
@@ -67,7 +60,7 @@ Only navigation policy selects viewers. The handler must not open tabs, return C
 Implement `ses.protocol.handle('vault', handler)`. For an **authorized** file GET with no Range:
 
 ```text
-request URL: vault://local/test.jpg
+request URL: vault://test.jpg
 status:      200
 Content-Type: image/jpeg
 Content-Length: <file byte length>
@@ -76,7 +69,7 @@ X-Content-Type-Options: nosniff
 body: exact JPEG bytes from disk
 ```
 
-The same contract holds for `vault://test.jpg`. Do not include `Location: file://...`, substitute HTML/JSON, text-decode binary data, create a blob/data URL per image, or open another tab. A main-process backing read using `net.fetch(pathToFileURL(...))` is allowed, provided the outgoing protocol response still meets this contract.
+Do not include `Location: file://...`, substitute HTML/JSON, text-decode binary data, create a blob/data URL per image, or open another tab. A main-process backing read using `net.fetch(pathToFileURL(...))` is allowed, provided the outgoing protocol response still meets this contract.
 
 Use a reliable MIME lookup or a small correct tested mapping with fallback `application/octet-stream`. Required fixtures include:
 
@@ -109,7 +102,7 @@ Do not assert that file-backed `net.fetch` handles these automatically. Test the
 | Situation | Status / effect |
 | --- | --- |
 | No usable configured root | `503` |
-| Malformed URL/encoding, credentials, port, invalid shorthand | `400` |
+| Malformed URL/encoding, credentials, port, or invalid path syntax | `400` |
 | Caller denied, outside-root candidate, rejected symlink, permission denial | `403` |
 | Missing target | `404` |
 | Unsupported method | `405`, `Allow: GET, HEAD, OPTIONS` |
@@ -138,7 +131,7 @@ Conceptual helper:
 resolveNoteReference(reference, canonicalDocumentURL) -> safe URL or rejection
 ```
 
-Use the represented file URL returned by main, not the packaged page URL. Canonicalize the short form first. Respect encoded path segments, normalize safe dot segments, preserve fragment presentation, and apply root confinement. Relative and root-relative references must resolve to canonical `vault://local/...` URLs.
+Use the represented file URL returned by main, not the packaged page URL. Resolve through the internal virtual authority described in section 2, then emit a flat canonical `vault://...` URL. Respect case and encoded Unicode in every path segment, normalize safe dot segments, preserve fragment presentation, and apply root confinement.
 
 Apply resolution to rendered image/media URLs and note links using Cherry's supported hooks or equivalent narrowly scoped rendering logic. Do not rewrite Markdown source, globally change the page base, load image bytes with IPC, or replace assets with data/blob/file URLs. Packaged application scripts/styles remain app resources.
 
@@ -165,7 +158,7 @@ window.markdownFile.readCurrent()
 window.markdownFile.saveCurrent(markdown)
 // -> { ok: true } or a structured error
 window.markdownFile.open(vaultURL)
-// -> normal Min navigation/open-or-focus for a clicked local link
+// -> normal Min navigation/open-or-focus for a clicked vault link
 ```
 
 `readCurrent()` associates the actual opened disk snapshot with the editor's save baseline. It does not need to be replaced with a fetch merely because raw Markdown fetches are supported. There is deliberately no `save(path, text)`, generic `fs`, or image-byte bridge.
@@ -180,7 +173,7 @@ Per editor, main stores its canonical path, baseline text, and save queue. Withi
 
 The page captures `snapshot = cherry.getMarkdown()` before saving and sets `savedText = snapshot` only after success. It never marks a later buffer clean by reading Cherry again after the await. A failed queue operation must not poison subsequent retries. No-op saves/open-close cycles must not reformat or rewrite unchanged source.
 
-One canonical path has one pending/open editor application-wide. Reserve before async creation, focus the existing owner, roll back creation failures, and release on final close/disassociation. Canonical/shorthand/wrapper aliases and restored tabs use the same rule.
+One canonical path has one pending/open editor application-wide. Reserve before async creation, focus the existing owner, roll back creation failures, and release on final close/disassociation. Wrapper spellings and restored tabs use the same rule.
 
 Before close/reload/navigation/task-close/window-close/quit or view recreation, run one prepare-to-leave workflow **before** tab-state deletion/WebContents destruction. Wait for in-flight saves. Dirty notes offer Save/Discard/Cancel; failed/conflicting Save keeps the buffer/tab. Freeze edits during the final save-and-leave or recheck for newer edits before destruction. Async unload work after destruction is not a save guarantee.
 

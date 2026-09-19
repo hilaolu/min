@@ -61,7 +61,7 @@ test('pdf annotation IPC enforces the viewer, tab, frame, source, and session au
 
   await rejected(eventFor(sender(viewer, { kind: 'chrome' })))
 
-  await rejected(eventFor(sender('min://app/pages/pdfViewer/index.html?url=vault://local/document.pdf')), 'VAULT_CALLER_DENIED')
+  await rejected(eventFor(sender('min://app/pages/pdfViewer/index.html?url=vault://document.pdf')), 'VAULT_CALLER_DENIED')
   await rejected(eventFor(sender('min://app/pages/pdfViewer/index.html?url=VAULT://local/document.pdf')), 'VAULT_CALLER_DENIED')
 
   assert.deepEqual(await handler(eventFor(tab), 'load'), {
@@ -91,7 +91,7 @@ test('root change admits only the prepared PDF Save to the old vault before swit
   const pdf = Object.assign(new (require('node:events').EventEmitter)(), sender('about:blank'))
   pdf.getURL = () => pdf.mainFrame.url
   pdf.isDestroyed = () => false
-  pdf.mainFrame.url = await mode.navigate(pdf, 'vault://local/document.pdf')
+  pdf.mainFrame.url = await mode.navigate(pdf, 'vault://document.pdf')
   const call = (operation, payload) => handlers.get('pdf-annotations')(eventFor(pdf), operation, payload)
   assert.equal((await call('load')).ok, true)
   let saved = false

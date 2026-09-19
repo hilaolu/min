@@ -53,7 +53,7 @@ test('reapplying the same folder preserves open consumers and configuration', as
   fs.writeFileSync(config, original)
   const before = fs.statSync(config)
   const instance = settingsInstance(userDataPath)
-  const association = instance.mode.associate(instance.event.sender, { url: 'vault://local/note.md' })
+  const association = instance.mode.associate(instance.event.sender, { url: 'vault://note.md' })
   const result = await instance.handlers.get('vault:select-root')(instance.event, root + path.sep)
   assert.deepEqual(result, { ok: true, directory: root })
   assert.equal(instance.mode.getAssociation(instance.event.sender), association)

@@ -75,12 +75,13 @@ async function run () {
   fs.mkdirSync(path.join(root, 'assets'))
   const image = nativeImage.createFromBitmap(Buffer.alloc(64, 255), { width: 4, height: 4 })
   fs.writeFileSync(path.join(root, 'test.jpg'), image.toJPEG(90))
+  fs.writeFileSync(path.join(root, 'Example 雪#%.jpg'), image.toJPEG(90))
   fs.writeFileSync(path.join(root, 'Projects/images/detail.jpg'), image.toJPEG(90))
   fs.writeFileSync(path.join(root, 'assets/shared.png'), image.toPNG())
   fs.writeFileSync(path.join(root, 'a.txt'), 'alpha')
   fs.writeFileSync(path.join(root, 'b.txt'), 'beta')
   fs.writeFileSync(path.join(root, 'reference.pdf'), pdfFixture())
-  const source = '# Note\n\n' + ['images/detail.jpg', '../assets/shared.png', '/test.jpg', 'vault://local/test.jpg', 'vault://test.jpg'].map((url, i) => `![Image ${i}](${url})`).join('\n\n') + '\n'
+  const source = '# Note\n\n' + ['images/detail.jpg', '../assets/shared.png', '/test.jpg', 'vault://test.jpg', 'vault://Example%20%E9%9B%AA%23%25.jpg'].map((url, i) => `![Image ${i}](${url})`).join('\n\n') + '\n'
   for (const privateMode of [false, true]) {
     fs.writeFileSync(path.join(root, 'Projects/note.md'), source)
     const win = new BrowserWindow({ show: false, width: 1000, height: 800 })
@@ -95,7 +96,7 @@ async function run () {
       await command('navigation.load', { url })
       await until(async () => !contents.isLoading() && await evaluate(ready).catch(() => false), url)
     }
-    await load('vault://local/', "document.querySelectorAll('#files a').length > 0")
+    await load('vault://', "document.querySelectorAll('#files a').length > 0")
     await evaluate("Array.from(document.querySelectorAll('#files details')).find(d => d.querySelector('a').textContent === 'Projects').open = true")
     await until(() => evaluate("Array.from(document.querySelectorAll('#files a')).some(a => a.textContent === 'Projects/note.md')"), 'expand folder tree')
     await evaluate("document.getElementById('search').value = 'note'; document.getElementById('search').dispatchEvent(new Event('input'))")
@@ -105,11 +106,11 @@ async function run () {
     await until(() => evaluate("Array.from(document.querySelectorAll('.cherry-previewer img')).every(i => i.complete && i.naturalWidth > 0 && i.naturalHeight > 0)"), 'five Cherry images')
 
     const notePath = path.join(root, 'Projects/note.md')
-    const noteURL = 'vault://local/Projects/note.md'
+    const noteURL = 'vault://Projects/note.md'
     const editorReady = "typeof cherry !== 'undefined' && !!cherry && document.querySelectorAll('.cherry-previewer img').length === 5"
     const loadNoteFresh = async () => {
       answer = 1
-      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://a.txt', "document.body.innerText.includes('alpha')")
       await command('navigation.load', { url: noteURL })
       await until(() => contents.getURL().split('#')[0].includes('pages/markdown/index.html') && evaluate(editorReady).catch(() => false), 'fresh Cherry editor')
       await until(() => evaluate("document.querySelectorAll('.cherry-previewer img').length === 5 && Array.from(document.querySelectorAll('.cherry-previewer img')).every(i => i.complete && i.naturalWidth > 0 && i.naturalHeight > 0)"), 'fresh Cherry images')
@@ -229,7 +230,7 @@ async function run () {
     await setDirty(assignedSave)
     prompts = promptCount
     answer = 0
-    await evaluate("location.assign('vault://local/b.txt')")
+    await evaluate("location.assign('vault://b.txt')")
     await until(() => evaluate("document.body.innerText.includes('beta')"), 'will-navigate Save')
     assert.equal(promptCount, prompts + 1, 'will-navigate Save prompts once')
     assert.equal(fs.readFileSync(notePath, 'utf8'), assignedSave, 'will-navigate Save updates disk')
@@ -241,7 +242,7 @@ async function run () {
     await setDirty(assignedDiscard)
     prompts = promptCount
     answer = 1
-    await evaluate("location.assign('vault://local/b.txt')")
+    await evaluate("location.assign('vault://b.txt')")
     await until(() => evaluate("document.body.innerText.includes('beta')"), 'will-navigate Discard')
     assert.equal(promptCount, prompts + 1, 'will-navigate Discard prompts once')
     assert.equal(fs.readFileSync(notePath, 'utf8'), source, 'will-navigate Discard leaves disk unchanged')
@@ -263,7 +264,7 @@ async function run () {
     const cancelURL = contents.getURL()
     prompts = promptCount
     answer = 2
-    await evaluate("location.assign('vault://local/b.txt')")
+    await evaluate("location.assign('vault://b.txt')")
     await until(() => promptCount === prompts + 1 && evaluate('document.body.inert').then(inert => inert === false).catch(() => false), 'will-navigate Cancel')
     assert.equal(promptCount, prompts + 1, 'will-navigate Cancel prompts once')
     assert.equal(contents.getURL(), cancelURL, 'Cancel preserves page')
@@ -285,7 +286,7 @@ async function run () {
     await loadNoteFresh()
     assert.equal(await evaluate('cherry.getMarkdown()'), source)
     await evaluate("location.hash = 'note'")
-    assert.equal(await evaluate("fetch('vault://local/Projects/note.md').then(r => r.text())"), source)
+    assert.equal(await evaluate("fetch('vault://Projects/note.md').then(r => r.text())"), source)
     const count = views.size
     await evaluate("fetch('vault://test.jpg').then(r => r.arrayBuffer())")
     assert.equal(views.size, count)
@@ -312,31 +313,31 @@ async function run () {
     answer = 2
     assert.equal(await command('lifecycle.prepare'), false)
     assert.equal(await command('navigation.reload'), false)
-    assert.equal(await command('navigation.load', { url: 'vault://local/a.txt' }), false)
+    assert.equal(await command('navigation.load', { url: 'vault://a.txt' }), false)
     assert.equal(await manager.prepareWindow(win), false)
     assert.equal(await manager.prepareWindow(), false)
     const second = new BrowserWindow({ show: false })
     windows.push(second)
     const otherID = id + '-other'
     await manager.executeTabContentCommand(second.webContents, { id: otherID, operation: 'lifecycle.create', payload: { bounds: { x: 0, y: 0, width: 800, height: 600 } } })
-    await manager.executeTabContentCommand(second.webContents, { id: otherID, operation: 'navigation.load', payload: { url: 'vault://local/Projects/note.md?alias=1' } })
+    await manager.executeTabContentCommand(second.webContents, { id: otherID, operation: 'navigation.load', payload: { url: 'vault://Projects/note.md?alias=1' } })
     assert.equal(focused, id, 'cross-window canonical editor ownership')
     assert.equal(views.get(otherID).webContents.getURL(), '')
     answer = 1
-    await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
-    await load('vault://local/b.txt', "document.body.innerText.includes('beta')")
+    await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+    await load('vault://b.txt', "document.body.innerText.includes('beta')")
     await command('navigation.back')
     await until(() => evaluate("document.body.innerText.includes('alpha')"), 'history authorization')
     const pdfReady = "document.body.dataset.pdfReady === 'true'"
-    await load('vault://local/reference.pdf', pdfReady)
+    await load('vault://reference.pdf', pdfReady)
     await command('find.start', { text: 'Highlight', options: {} })
     assert.equal(messages.filter(message => message.type === 'find-result').at(-1).payload.result.matches, 1, 'browser Find searches PDF text through EmbedPDF')
     await command('find.stop', { action: 'clearSelection' })
     await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).some(img => { if (!img.complete || !img.naturalWidth) return false; const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0); const d = ctx.getImageData(0,0,c.width,c.height).data; return d.some((v,i) => i % 4 === 2 && v > d[i-2]) })"), 'actual EmbedPDF pixels')
-    assert.equal(await evaluate("fetch('vault://local/reference.pdf').then(r => r.status)"), 200)
-    assert.equal(await evaluate("fetch('vault://local/a.txt').then(r => r.status)"), 403, 'PDF consumer is source-scoped')
-    await load('min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent('vault://local/reference.pdf'), pdfReady)
-    assert.equal(await evaluate("fetch('vault://local/reference.pdf').then(r => r.headers.get('content-type'))"), 'application/pdf')
+    assert.equal(await evaluate("fetch('vault://reference.pdf').then(r => r.status)"), 200)
+    assert.equal(await evaluate("fetch('vault://a.txt').then(r => r.status)"), 403, 'PDF consumer is source-scoped')
+    await load('min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent('vault://reference.pdf'), pdfReady)
+    assert.equal(await evaluate("fetch('vault://reference.pdf').then(r => r.headers.get('content-type'))"), 'application/pdf')
     if (privateMode) {
       assert.equal(await evaluate("document.getElementById('highlight').disabled"), true)
       assert.match((await evaluate('window.pdfAnnotations.load()')).error, /private tabs/)
@@ -361,7 +362,7 @@ async function run () {
       await evaluate("document.getElementById('delete').click()")
       await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'selection highlight removed')
       const rect = { origin: { x: 20, y: 25 }, size: { width: 100, height: 12 } }
-      const legacy = '| Field | Value |\n| --- | --- |\n| Title | Reference |\n| URL | vault://local/reference.pdf |\n| Tags | #annotation |\n\n## Annotations\n\n' +
+      const legacy = '| Field | Value |\n| --- | --- |\n| Title | Reference |\n| URL | vault://reference.pdf |\n| Tags | #annotation |\n\n## Annotations\n\n' +
         '%% annotation: pdf-test-id | color: ffcd45 | sourceType: pdf | pageIndex: 0 %%\n<pre></pre>\n<pre>Test highlight</pre>\n<pre></pre>\n\n' +
         `%% annotation-rect: ${JSON.stringify(rect)} %%\n%% annotation-segments: ${JSON.stringify([rect])} %%\nOriginal note\n`
       await evaluate(`(() => { const input = document.getElementById('import'); const transfer = new DataTransfer(); transfer.items.add(new File([${JSON.stringify(legacy)}], 'legacy.md')); input.files = transfer.files; input.dispatchEvent(new Event('change')); })()`)
@@ -373,8 +374,8 @@ async function run () {
       await evaluate("document.getElementById('note').value = 'Edited note'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('color').value = '#33aa77'; document.getElementById('save').click()")
       await until(async () => (await evaluate('window.pdfAnnotations.load()')).annotations[0]?.data.notes === 'Edited note', 'PDF note and color save')
       await until(() => evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().some(a => a.object.id === 'pdf-test-id' && a.object.strokeColor === '#33aa77'); })()"), 'native highlight color updated without reopening')
-      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
-      await load('vault://local/reference.pdf', pdfReady)
+      await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://reference.pdf', pdfReady)
       assert.equal(await evaluate("document.getElementById('note').value"), 'Edited note')
       assert.equal(await evaluate("document.getElementById('color').value"), '#33aa77')
       const restored = await evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().filter(a => a.object.id === 'pdf-test-id').map(a => a.object); })()")
@@ -388,8 +389,8 @@ async function run () {
       assert.equal(await evaluate("document.getElementById('note').value"), 'Guarded note')
       assert.equal(await evaluate('document.body.inert'), false)
       answer = 0
-      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
-      await load('vault://local/reference.pdf', pdfReady)
+      await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://reference.pdf', pdfReady)
       assert.equal(await evaluate("document.getElementById('note').value"), 'Guarded note', 'Save-on-leave persists PDF note')
       const storagePath = path.join(root, '.min-annotations', fs.readdirSync(path.join(root, '.min-annotations'))[0])
       const external = JSON.parse(fs.readFileSync(storagePath, 'utf8'))
@@ -401,13 +402,13 @@ async function run () {
       answer = 0
       assert.equal(await command('lifecycle.destroy'), false, 'failed Save prevents PDF close')
       answer = 1
-      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
-      await load('vault://local/reference.pdf', pdfReady)
+      await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://reference.pdf', pdfReady)
       assert.equal(await evaluate("document.getElementById('note').value"), 'External note', 'conflicting disk change preserved')
       await evaluate("document.getElementById('delete').click()")
       await until(async () => (await evaluate('window.pdfAnnotations.load()')).annotations.length === 0, 'PDF deletion persistence')
-      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
-      await load('vault://local/reference.pdf', pdfReady)
+      await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://reference.pdf', pdfReady)
       assert.equal(await evaluate("document.getElementById('annotations').options.length"), 1)
       assert.equal(fs.readFileSync(path.join(root, 'reference.pdf'), 'utf8'), pdfFixture(), 'PDF bytes remain unchanged')
     }

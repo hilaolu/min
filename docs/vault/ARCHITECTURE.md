@@ -55,7 +55,7 @@ Use ordinary functions/factories and injected dependencies. No generic server, V
 
 ## 3. Register and install the real protocol
 
-Register `vault` **before app ready**, alongside `min` in the existing one-time scheme-registration call. Request `standard`, `secure`, `supportFetchAPI`, and `stream`; leave CSP bypass and service workers disabled and keep CORS enabled. The standard scheme is needed for hierarchical URL/resource behavior. [E1][E2]
+Register `vault` **before app ready**, alongside `min` in the existing one-time scheme-registration call. Request `secure`, `supportFetchAPI`, and `stream`, but deliberately leave `standard` disabled so Chromium does not apply host lowercasing to the first vault path component. Leave CSP bypass and service workers disabled and keep CORS enabled. Relative-reference hierarchy is implemented with the internal virtual-authority resolver, not by making the public scheme standard. [E1][E2]
 
 After readiness, install `ses.protocol.handle('vault', handler)` through Min's existing session-policy installer. Cover `persist:webcontent`, private partitions, and any actual session used by the editor/PDF consumer; installation is idempotent. Registration only on Electron's default session is insufficient. [E1]
 
@@ -85,7 +85,7 @@ One open-or-focus workflow handles typed/pasted addresses, tree/note links, rest
 
 Other regular files load at their canonical vault URL. Add `vault` to app-handled protocol checks so Min does not offer to launch an external application.
 
-Do not assume every navigation passes through `urlParser.parse()` or `webviews.update()`: inspect page-initiated links, history/back/forward, popups, and restore. Do not invent `request.resourceType` or `request.webContents` on a standard protocol Request; use documented navigation/webRequest metadata for the actual Electron version.
+Do not assume every navigation passes through `urlParser.parse()` or `webviews.update()`: inspect page-initiated links, history/back/forward, popups, and restore. Do not invent `request.resourceType` or `request.webContents` on a protocol Request; use documented navigation/webRequest metadata for the actual Electron version.
 
 **Compose with existing request listeners.** Min already installs filtering in `onBeforeRequest` and PDF/download handling in `onHeadersReceived`. Adding another independent listener can replace existing policy; Electron uses the last listener for a WebRequest event. [E4] Inject the narrow vault decision into the existing chain instead of replacing filtering or adding a general middleware framework.
 
@@ -94,15 +94,18 @@ Do not assume every navigation passes through `urlParser.parse()` or `webviews.u
 The packaged page receives its canonical document URL from `readCurrent()`. Use that address as the base for preview references. Do not use the wrapper's `location.href` as the base.
 
 ```text
-source:    vault://local/Projects/note.md
+source:    vault://Projects/note.md
 reference: images/detail.jpg
-resolved:  vault://local/Projects/images/detail.jpg
+resolved:  vault://Projects/images/detail.jpg
 
 reference: ../assets/shared.png
-resolved:  vault://local/assets/shared.png
+resolved:  vault://assets/shared.png
+
+reference: /test.jpg
+resolved:  vault://test.jpg
 ```
 
-Normalize the documented shorthand first. Validate relative references, then use normal URL resolution and the shared confinement policy. A small Cherry-supported URL/render hook may rewrite rendered `src`/`href` attributes; the original Markdown stays unchanged. Verify the hook against the pinned Cherry release. Do not regex-rewrite the entire Markdown document.
+For resolution only, map the entire represented path under a fixed virtual authority (for example, the equivalent of `vault-internal://root/Projects/note.md`), perform hierarchical URL resolution there, enforce confinement, then strip the virtual authority and emit the flat public URL. Never let `Projects` become a host. This is required for root-relative references and for preserving case and encoded Unicode in the first component. A small Cherry-supported URL/render hook may rewrite rendered `src`/`href` attributes; the original Markdown stays unchanged. Verify the hook against the pinned Cherry release. Do not regex-rewrite the entire Markdown document.
 
 Keep packaged script/style URLs pointing to bundled app assets. Prefer resolving only user-content links over a global `<base>` that could redirect editor JavaScript/CSS into the vault.
 
@@ -110,7 +113,7 @@ The renderer CSP must explicitly permit the required `vault:` images/media and s
 
 ## 7. Reuse PDF rendering, not file-URL delegation
 
-Keep `js/pdfViewer.js` and the existing PDF page. Its represented source is `vault://local/reference.pdf`; PDF.js fetches that resource through the new handler. An inline PDF subresource receives `application/pdf` bytes, never the PDF viewer's HTML.
+Keep `js/pdfViewer.js` and the existing PDF page. Its represented source is `vault://reference.pdf`; PDF.js fetches that resource through the new handler. An inline PDF subresource receives `application/pdf` bytes, never the PDF viewer's HTML.
 
 Integrate with Min's existing PDF-open event for top-level navigation only. Verify custom-scheme header handling in the actual Electron runtime; if necessary add a small explicit PDF-open path that preserves the vault source. Do not create a second PDF renderer or fall back to public `file://` navigation.
 
@@ -130,7 +133,7 @@ User-authored HTML/SVG is not executable app code. Apply restrictive CSP/sandbox
 
 ## 9. Root confinement, settings, and writes
 
-Use the single resolver specified in CONTRACTS.md for protocol reads, listing, Markdown reads/writes, aliases, and links. A selected root is canonicalized once; reject traversed symlinks below it. Allow legitimate parent-relative note references within the root, but never filesystem escape.
+Use the single resolver specified in CONTRACTS.md for protocol reads, listing, Markdown reads/writes, and links. A selected root is canonicalized once; reject traversed symlinks below it. Allow legitimate parent-relative note references within the root, but never filesystem escape.
 
 Keep one optional persisted root. Root-changing permission belongs to Settings and main, not Markdown. Existing generic settings handlers must not let an editor change the root behind open-note associations; protect that key/workflow explicitly and avoid broad path broadcasts.
 

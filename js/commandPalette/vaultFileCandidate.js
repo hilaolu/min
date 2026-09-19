@@ -15,7 +15,7 @@ function vaultFileCandidate (command, input, open) {
       icon: 'carbon:document'
     }
   }
-  const url = 'vault://local/' + segments.map(encodeURIComponent).join('/')
+  const url = 'vault://' + segments.map(encodeURIComponent).join('/')
   return {
     id: `vault-${command}-${url}`,
     title: `Open ${label}: ${path}`,

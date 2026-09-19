@@ -5,11 +5,11 @@ Revision 2. Build the real resource protocol first; rendering Markdown images is
 ## Stage 1 — root, URL resolver, and real protocol
 
 1. Inspect current composition, session creation, protocol registration, filtering/download WebRequest listeners, and actual Electron runtime versions.
-2. Add controlled Settings root selection/persistence and one confined resolver. Protect root mutation from generic untrusted settings writes. Canonical URLs are `vault://local/...`; implement the limited `vault://test.jpg` root-file alias as specified.
-3. Register `vault` with the existing one-time pre-ready scheme registration. Enable standard/secure/fetch/stream behavior without CSP bypass. Install a real `ses.protocol.handle('vault', ...)` for each relevant session.
+2. Add controlled Settings root selection/persistence and one confined resolver. Protect root mutation from generic untrusted settings writes. Canonical URLs are flat: `vault://`, `vault://example.md`, and `vault://Projects/note.md`. Treat `local` as an ordinary first path component; there is no special authority or shorthand.
+3. Register `vault` with the existing one-time pre-ready scheme registration. Keep the scheme nonstandard to prevent host lowercasing, while enabling secure/fetch/stream behavior without CSP bypass. Install a real `ses.protocol.handle('vault', ...)` for each relevant session.
 4. Serve authorized regular files as binary-safe responses. Implement/test MIME, GET, HEAD, single ranges, streaming/cancellation, `no-store`, errors, and unsupported methods.
 5. Compose read authorization with existing request policy. Do not replace Min's filtering or download listeners. Do not add an HTTP server, resource registry, `file://` redirect, or per-image IPC pipeline.
-6. Before building Cherry, prove an approved packaged fixture can render an actual JPEG `<img>` and fetch its bytes at `vault://local/test.jpg` and the literal shorthand. Prove an unrelated web fixture is denied.
+6. Before building Cherry, prove an approved packaged fixture can render an actual JPEG `<img>` and fetch its bytes at `vault://test.jpg`. Also prove case and encoded Unicode are preserved in both the first and later path components, and that an unrelated web fixture is denied.
 
 This stage cannot be replaced by merely teaching the address bar to rewrite vault URLs.
 
@@ -28,9 +28,9 @@ Keep UI inside normal tab pages. A watcher/database is unnecessary; a bounded as
 
 1. Package a pinned Cherry Markdown editor build separately from browser chrome and generic preload code. Verify the selected version's public API and hooks.
 2. Create the packaged Markdown page and main-owned file association. `readCurrent()` returns the Markdown snapshot and its canonical vault URL.
-3. Establish one-editor-per-canonical-path ownership across windows, including reservations, restore, aliases, failed creation, and close cleanup.
-4. Resolve image/media/link references against the represented note URL. Rewrite preview URLs only, never saved source or a global application asset base.
-5. Make relative, parent-relative, root-relative, canonical, and shorthand images render via the actual protocol. Configure CSP/CORS/request authorization without disabling security.
+3. Establish one-editor-per-canonical-path ownership across windows, including reservations, restore, wrapper spellings, failed creation, and close cleanup.
+4. Resolve image/media/link references against the represented note path by temporarily placing the entire path under an internal virtual authority. Never treat its first component as a host. Rewrite preview URLs only, never saved source or a global application asset base.
+5. Make relative, parent-relative, root-relative, and canonical images render via the actual protocol. Preserve case and encoded Unicode across the entire path. Configure CSP/CORS/request authorization without disabling security.
 6. Keep user HTML sanitized; disable unsupported raw-HTML URL forms rather than bypassing the resolver. Verify packaged editor assets still load from the application bundle.
 
 Do not defer images until after v1. A successful mock resolver or unit test is not proof that Chromium can load the image in the real viewer.
@@ -77,7 +77,7 @@ Use small licensed/generated fixtures; do not embed large media files in the rep
 
 | Area | Required assertions |
 | --- | --- |
-| URL/path | Canonical root/nested paths; literal root-file shorthand; query/fragment excluded from identity; case/encoding; valid `../` within root; no root escape, decoded separator bypass, drive/UNC/ADS trick, sibling-prefix error, or symlink traversal |
+| URL/path | Canonical root/root-file/nested paths; no special `local` component or shorthand; query/fragment excluded from identity; case and encoded Unicode preserved in first and later components; virtual-authority relative resolution; valid `../` within root; no root escape, decoded separator bypass, drive/UNC/ADS trick, sibling-prefix error, or symlink traversal |
 | Raw GET | JPEG/PNG/PDF/Markdown/unknown bytes exactly equal disk; correct MIME; no file redirect, HTML substitution, per-image IPC, or tab creation |
 | HTTP-style metadata | HEAD body empty and length correct; 206 range bytes correct; 416 bounds header; malformed range policy; no-store; 400/403/404/405/409/503; no read-side mutation |
 | Streaming | Large-file memory remains bounded; cancellation/error closes stream; single range does not require whole-file buffering |
@@ -86,7 +86,7 @@ Use small licensed/generated fixtures; do not embed large media files in the rep
 | Request context | Markdown GET fetch is raw text while top-level navigation opens Cherry; directory fetch is 409 while navigation opens tree; PDF subresource stays bytes |
 | Sessions | Protocol works in normal/private consumer sessions; duplicate install is safe; stale-root requests/associations cannot read new-root data |
 | PDF/media | PDF viewer source is canonical vault URL; PDF.js renders a page from protocol bytes; range fetch/media behavior works without `file://` fallback |
-| Open identity | Aliases/restore/double-open reserve one owner across windows; failed creation rolls back; close releases ownership |
+| Open identity | Wrapper/restore/double-open routes reserve one owner across windows; failed creation rolls back; close releases ownership |
 | Save | Exact source, canonical path, serialized compare/write, observed external-change rejection, retry after failure, typing during save remains dirty |
 | Leave | Clean/dirty/in-flight states; Save/Discard/Cancel; failed Save keeps tab; edits during final save not lost; reload/back/forward/task/window/quit guard |
 | Authorization | Web/file/child-frame fetches and embeds denied; no-Origin is not a bypass; spoofed headers/query cannot grant access; raw hostile HTML/SVG gets no bridge/scripts; scoped CORS and inert images both work |

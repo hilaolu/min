@@ -15,13 +15,14 @@ Root changes are controlled: stop admitting new vault work, resolve dirty notes,
 Canonical form:
 
 ```text
-vault://local/
-vault://local/Projects/
-vault://local/Projects/idea.md
-vault://local/assets/sketch.png
+vault://
+vault://example.md
+vault://Projects/
+vault://Projects/idea.md
+vault://assets/sketch.png
 ```
 
-`local` means the single configured vault, not a network host. All app-generated URLs use this canonical form, preserving filename case in the path. The literal `vault://test.jpg` is accepted as a root-file shorthand for `vault://local/test.jpg`; its intentionally limited syntax is specified in CONTRACTS.md.
+Everything after `vault://` is the vault-relative path. The first component is not a host or a special authority: `local` is an ordinary filename/directory component, so `vault://local/note.md` means `local/note.md`. All app-generated URLs use this form and preserve case and encoded Unicode across the entire path, including its first component. `vault://example.md` is the canonical address of a root file, not shorthand.
 
 Folder, Markdown, and PDF wrappers retain the canonical `vault://` source address. Other file navigation stays on its `vault://` resource; it must not be converted to `file://` or a per-file viewer URL.
 
@@ -40,7 +41,7 @@ Folder, Markdown, and PDF wrappers retain the canonical `vault://` source addres
 
 ## 4. Raw resource behavior
 
-A request to `vault://local/test.jpg` returns `200`, `Content-Type: image/jpeg`, and the exact disk bytes. The shorthand has the same file response, not a `Location: file://...` redirect. Direct image navigation, `<img src>`, and an authorized `fetch()` must all work.
+A request to `vault://test.jpg` returns `200`, `Content-Type: image/jpeg`, and the exact disk bytes, not a `Location: file://...` redirect. Direct image navigation, `<img src>`, and an authorized `fetch()` must all work.
 
 GET and HEAD are required, along with bounded streaming and single byte-range support for PDF/media consumers. Use useful MIME types, accurate byte lengths, explicit errors, and `Cache-Control: no-store` for v1. Do not manufacture an HTML wrapper for a successful binary request or decode binary data as text.
 
@@ -71,17 +72,17 @@ Projects/images/detail.jpg
 ![Sibling](images/detail.jpg)
 ![Parent](../assets/shared.png)
 ![Root](/test.jpg)
-![Canonical](vault://local/test.jpg)
-![Shorthand](vault://test.jpg)
+![Root canonical](vault://test.jpg)
+![Nested canonical](vault://Projects/images/detail.jpg)
 ```
 
-Resolve relative references against `vault://local/Projects/note.md`, **not** `min://app/pages/markdown/index.html`. Parent-relative paths that stay inside the vault are valid. Encoded filenames, spaces, Unicode, `%`, and `#` must round-trip correctly. Rendering an image must not open a new tab, call a per-image IPC byte loader, or replace the source with a blob/data/file URL.
+Resolve relative references against the represented path `vault://Projects/note.md`, **not** `min://app/pages/markdown/index.html`. Internally use a virtual authority so `Projects` remains the first path component rather than becoming a host; remove that virtual component when emitting the flat canonical URL. Parent-relative paths that stay inside the vault are valid. Case and encoded filenames, spaces, Unicode, `%`, and `#` must round-trip correctly across every component. Rendering an image must not open a new tab, call a per-image IPC byte loader, or replace the source with a blob/data/file URL.
 
 Relative Markdown links use the same resolver and open-or-focus rule. Image/PDF/media links keep vault resource URLs. Fragment-only note links remain within the note; external HTTP(S) links open ordinary web tabs. Keep unsafe executable links and unsanitized HTML out of the editor. Edit/preview/split controls may use Cherry's own modes.
 
 ## 7. One editor and safe saving
 
-At most one editable Min tab owns a canonical Markdown disk path application-wide. All navigation, tree/link clicks, aliases, and restore routes use one open-or-focus workflow. Reserve before async tab creation; release on failure or final close. This is not an external filesystem lock.
+At most one editable Min tab owns a canonical Markdown disk path application-wide. All navigation, tree/link clicks, wrapper routes, and restore routes use one open-or-focus workflow. Reserve before async tab creation; release on failure or final close. This is not an external filesystem lock.
 
 Main owns the file association. `saveCurrent(markdown)` accepts text, not a destination path. Serialize baseline comparison and atomic replacement in one per-note queue. An observed external change produces a conflict without overwriting the external file. A failed save preserves the dirty buffer. The baseline-check/write pair is not a race-proof compare-and-swap against unrelated applications.
 
@@ -103,7 +104,7 @@ Explicitly exclude vault-backed documents and wrappers, including PDFs represent
 4. Cmd/Ctrl+S atomically writes Markdown source to the original approved file.
 5. Failed saves and conflicts preserve the dirty buffer; newer edits stay dirty after an older save completes.
 6. Dirty close/reload/navigation/window-close/quit cannot silently discard edits.
-7. `vault://local/test.jpg` and `vault://test.jpg` serve byte-identical JPEG responses with the right MIME type, not `file://` redirects.
+7. `vault://test.jpg` serves a byte-identical JPEG response with the right MIME type, not a `file://` redirect; `vault://local/test.jpg` refers to `local/test.jpg` with no special handling.
 8. All five Markdown image examples above visibly render; assert image completion and nonzero natural dimensions in Electron.
 9. Preview URL resolution leaves saved Markdown references unchanged.
 10. An authorized fetch of a `.md` resource receives Markdown, not the Cherry page; resource requests never create tabs.

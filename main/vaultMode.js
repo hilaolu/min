@@ -128,7 +128,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
         } catch (_) { /* Inaccessible files and symlinks are not listed. */ }
       }
     }
-    await scan(query ? 'vault://local/' : directory, Boolean(query))
+    await scan(query ? 'vault://' : directory, Boolean(query))
     return { ok: true, url: record.url, entries }
   })
 

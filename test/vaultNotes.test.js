@@ -13,7 +13,7 @@ function temporaryVault (t) {
 }
 
 function noteURL (relativePath = 'note.md') {
-  return `vault://local/${relativePath}`
+  return `vault://${relativePath}`
 }
 
 test('read and no-op save preserve UTF-8 source bytes, BOM, CRLF, and relative references', async function (t) {

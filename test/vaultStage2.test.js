@@ -143,12 +143,12 @@ test('palette uses the default renderer export through preload IPC with the save
     results[0].action()
   }
   assert.deepEqual(calls, [['vault:search-files', 'm', 'READ ME'], ['vault:search-files', 'p', 'report']])
-  assert.deepEqual(opened, ['vault://local/Nested/Read%20me.md', 'vault://local/Report.pdf'])
+  assert.deepEqual(opened, ['vault://Nested/Read%20me.md', 'vault://Report.pdf'])
 })
 
 test('VaultFileStrategy exposes loading, empty, error, and open results', async () => {
   const opened = []
-  const entry = { url: 'vault://local/notes/Report.md', relativePath: 'notes/Report.md' }
+  const entry = { url: 'vault://notes/Report.md', relativePath: 'notes/Report.md' }
   const strategy = new VaultFileStrategy(
     async () => ({ ok: true, entries: [entry], truncated: false }),
     url => opened.push(url)
@@ -202,7 +202,7 @@ function strategyContext (value) {
 }
 
 function result (id) {
-  return { ok: true, entries: [{ url: `vault://local/${id}.md`, relativePath: `${id}.md` }], truncated: false }
+  return { ok: true, entries: [{ url: `vault://${id}.md`, relativePath: `${id}.md` }], truncated: false }
 }
 
 test('StrategyManager drops stale replies from the current strategy', async () => {
@@ -230,8 +230,8 @@ test('StrategyManager drops stale replies from the current strategy', async () =
   oldRequest.resolve(result('old'))
   await old
 
-  assert.equal(updates.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/old.md')), false)
-  assert.equal(updates.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/new.md')), true)
+  assert.equal(updates.some(candidates => candidates.some(candidate => candidate.id === 'vault://old.md')), false)
+  assert.equal(updates.some(candidates => candidates.some(candidate => candidate.id === 'vault://new.md')), true)
 })
 
 test('StrategyManager drops a stale reply after changing strategy', async () => {
@@ -257,6 +257,6 @@ test('StrategyManager drops a stale reply after changing strategy', async () => 
   firstPending.resolve(result('old'))
   await old
 
-  assert.equal(states.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/old.md')), false)
-  assert.equal(states.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/new.md')), true)
+  assert.equal(states.some(candidates => candidates.some(candidate => candidate.id === 'vault://old.md')), false)
+  assert.equal(states.some(candidates => candidates.some(candidate => candidate.id === 'vault://new.md')), true)
 })

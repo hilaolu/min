@@ -40,7 +40,7 @@ async function resolveVaultURL (input, root) {
   return {
     absolutePath,
     relativePath: parsed.segments.join('/'),
-    vaultURL: parsed.vaultURL.replace(/\/$/, '') + (kind === 'directory' ? '/' : ''),
+    vaultURL: parsed.segments.length ? parsed.vaultURL.replace(/\/$/, '') + (kind === 'directory' ? '/' : '') : 'vault://',
     kind,
     stat
   }

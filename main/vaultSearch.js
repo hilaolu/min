@@ -3,10 +3,10 @@ const { resolveVaultURL } = require('./vault.js')
 
 async function searchVaultFiles (root, kind, query, isCurrent = () => true) {
   const entries = []
-  const pending = [{ url: 'vault://local/', depth: 0 }]
+  const pending = [{ url: 'vault://', depth: 0 }]
   let visited = 0
   let truncated = false
-  await resolveVaultURL('vault://local/', root)
+  await resolveVaultURL('vault://', root)
   while (pending.length && !truncated) {
     if (!isCurrent()) throw new Error('Vault changed')
     const { url, depth } = pending.shift()

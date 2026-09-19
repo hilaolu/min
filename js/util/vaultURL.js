@@ -11,11 +11,9 @@ function parseVaultURL (input) {
   let url
   try { url = new URL(input) } catch (_) { invalid() }
   if (url.protocol !== 'vault:' || url.username || url.password || url.port) invalid()
-  let pathname = url.pathname
-  if (url.host !== 'local') {
-    if (!/^[a-z0-9_-]+(?:\.[a-z0-9_-]+)+$/.test(url.host) || !['', '/'].includes(pathname)) invalid()
-    pathname = '/' + url.host
-  }
+  // The entire part after vault:// is a vault-relative path, not a host.
+  // Read it verbatim so URL host parsing cannot change filename case.
+  const pathname = input.slice('vault://'.length).split(/[?#]/)[0]
   let segments
   try { segments = pathname.split('/').filter(Boolean).map(decodeURIComponent) } catch (_) { invalid() }
   for (const segment of segments) {
@@ -23,7 +21,7 @@ function parseVaultURL (input) {
     if (segment === '.' || segment === '..' || /[\x00-\x1f\x7f/\\:<>"|?*]/.test(segment) || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment)) invalid()
   }
   const suffix = pathname.endsWith('/') && segments.length ? '/' : ''
-  return { segments, vaultURL: 'vault://local/' + segments.map(encodeURIComponent).join('/') + suffix }
+  return { segments, vaultURL: 'vault://' + segments.map(encodeURIComponent).join('/') + suffix }
 }
 
 function resolveNoteReference (reference, documentURL) {
@@ -42,8 +40,10 @@ function resolveNoteReference (reference, documentURL) {
     try { segment = decodeURIComponent(encoded) } catch (_) { invalid() }
     if (segment === '..') { if (--depth < 0) invalid() } else if (segment && segment !== '.') depth++
   }
-  const resolved = new URL(reference, base)
-  return parseVaultURL(resolved.href).vaultURL + resolved.search + resolved.hash
+  // A temporary authority keeps the first filename component in the path
+  // while applying normal relative/root-relative URL resolution.
+  const resolved = new URL(reference, 'https://vault.invalid/' + base.slice('vault://'.length))
+  return parseVaultURL('vault://' + resolved.pathname.slice(1)).vaultURL + resolved.search + resolved.hash
 }
 
 if (typeof module !== 'undefined') module.exports = { parseVaultURL, resolveNoteReference }

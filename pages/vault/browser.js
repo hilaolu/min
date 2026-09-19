@@ -33,11 +33,11 @@ async function refresh () {
   if (!result.ok) return
   const breadcrumb = document.getElementById('breadcrumb')
   breadcrumb.replaceChildren()
-  const segments = new URL(result.url).pathname.split('/').filter(Boolean)
+  const segments = result.url.slice('vault://'.length).split('/').filter(Boolean)
   for (let i = 0; i <= segments.length; i++) {
     const button = document.createElement('button')
     button.textContent = i ? decodeURIComponent(segments[i - 1]) : 'Vault'
-    button.onclick = () => vaultPage.open('vault://local/' + segments.slice(0, i).join('/') + (i ? '/' : ''))
+    button.onclick = () => vaultPage.open('vault://' + segments.slice(0, i).join('/') + (i ? '/' : ''))
     breadcrumb.append(button)
   }
   const files = document.getElementById('files')

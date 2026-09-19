@@ -10,7 +10,7 @@ One configured on-disk directory is the vault. A **real, read-only Electron `vau
 
 **Revision 2 — 2026-09-18:** “Other files as is” means serving their bytes at `vault://`, including requests made by Markdown images. It does **not** mean converting navigation to `file://`, launching another tab for an image, or returning viewer HTML for every request. This revision supersedes the previous delegation-only design.
 
-For example, an authorized request to `vault://local/test.jpg` must return `200`, `Content-Type: image/jpeg`, and the JPEG bytes. The user's root-file shorthand `vault://test.jpg` is also supported as defined in [CONTRACTS.md](CONTRACTS.md). There is no HTTP server, listening port, or network upload: “HTTP-style response” means an Electron protocol `Response`.
+For example, an authorized request to `vault://example.md` must return `200`, `Content-Type: text/markdown; charset=utf-8`, and the Markdown bytes. `vault://Projects/note.md` identifies a nested file and `vault://` identifies the root; there is no special `local` authority or shorthand form. There is no HTTP server, listening port, or network upload: “HTTP-style response” means an Electron protocol `Response`.
 
 ## Keep two concerns separate
 

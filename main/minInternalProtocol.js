@@ -5,7 +5,9 @@ function createProtocolPolicy ({ net, path, protocol, rootDir, Response }) {
     {
       scheme: 'vault',
       privileges: {
-        standard: true,
+        // Vault URLs contain a case-sensitive relative path, not a hostname.
+        // A standard scheme would lowercase/normalize the first component.
+        standard: false,
         secure: true,
         supportFetchAPI: true,
         stream: true,

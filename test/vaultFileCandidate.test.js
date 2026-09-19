@@ -4,8 +4,9 @@ const candidate = require('../js/commandPalette/vaultFileCandidate.js')
 
 test('vault file commands encode literal paths and open only on selection', () => {
   for (const [command, path, expected] of [
-    ['m', 'notes/my #note%.md', 'vault://local/notes/my%20%23note%25.md'],
-    ['p', 'papers/中文.PDF', 'vault://local/papers/%E4%B8%AD%E6%96%87.PDF']
+    ['m', 'Example 雪#%.md', 'vault://Example%20%E9%9B%AA%23%25.md'],
+    ['m', 'notes/my #note%.md', 'vault://notes/my%20%23note%25.md'],
+    ['p', 'papers/中文.PDF', 'vault://papers/%E4%B8%AD%E6%96%87.PDF']
   ]) {
     const opened = []
     const result = candidate(command, path, url => opened.push(url))
