@@ -31,6 +31,9 @@ fs.writeFileSync(preload, `
     directories: Object.create(null),
     directoryCalls: [],
     deferred: Object.create(null),
+    fetchCalls: [],
+    fetchRejection: null,
+    fetchText: 'Mocked file contents',
     opens: [],
     listCalls: 0
   }
@@ -47,13 +50,16 @@ fs.writeFileSync(preload, `
   }
   window.__vaultTest = {
     clearDirectoryCalls: () => { state.directoryCalls.length = 0 },
+    clearFetchCalls: () => { state.fetchCalls.length = 0 },
     clearOpens: () => { state.opens.length = 0 },
     deferDirectory: url => { state.deferred[url] = [] },
     directoryCalls: () => state.directoryCalls.slice(),
+    fetchCalls: () => state.fetchCalls.slice(),
     listCalls: () => state.listCalls,
     opens: () => state.opens.slice(),
     pending: url => state.deferred[url] ? state.deferred[url].length : 0,
     rejectCurrent: message => { state.currentRejection = message },
+    rejectFetch: message => { state.fetchRejection = message },
     resolveDirectory: (url, result) => {
       const waiters = state.deferred[url] || []
       delete state.deferred[url]
@@ -63,7 +69,23 @@ fs.writeFileSync(preload, `
       state.current = result
       state.currentRejection = null
     },
-    setDirectory: (url, result) => { state.directories[url] = result }
+    setDirectory: (url, result) => { state.directories[url] = result },
+    setFetchText: text => {
+      state.fetchText = text
+      state.fetchRejection = null
+    }
+  }
+  window.fetch = async (url, options = {}) => {
+    const headers = options.headers
+    const range = headers && (typeof headers.get === 'function' ? headers.get('Range') : headers.Range || headers.range)
+    state.fetchCalls.push({ url: String(url), range: range || null })
+    if (state.fetchRejection !== null) throw new Error(state.fetchRejection)
+    return {
+      ok: state.fetchText !== '',
+      status: state.fetchText === '' ? 416 : 206,
+      headers: { get: name => name === 'Content-Range' && state.fetchText === '' ? 'bytes */0' : null },
+      arrayBuffer: async () => new TextEncoder().encode(state.fetchText).buffer
+    }
   }
   window.vaultPage = {
     listCurrent: async () => {
@@ -280,16 +302,103 @@ async function run () {
       { kind: 'file', name: 'newer.md', relativePath: 'Race/newer.md', url: 'vault://Race/newer.md' }
     ]
   }, `window.__vaultTest.pending(${JSON.stringify(slowURL)}) === 1`, 'deferred directory preview')
+  await evaluate("window.__vaultTest.setFetchText('Newest file contents')")
   await evaluate("document.querySelectorAll('#files .entry')[1].click()")
-  assert.equal(await evaluate("document.getElementById('preview').textContent"), 'newer.md — Enter to open')
+  await until(() => evaluate("document.querySelector('#preview .preview-text')?.textContent === 'Newest file contents'"), 'newer text preview')
+  assert.equal(await evaluate("document.getElementById('preview').textContent"), 'newer.md — Enter to openNewest file contents')
   await evaluate(`window.__vaultTest.resolveDirectory(${JSON.stringify(slowURL)}, {
     ok: true,
     entries: [{ kind: 'file', name: 'stale.md', relativePath: 'stale.md', url: 'vault://Race/Slow%20Folder/stale.md' }]
   })`)
   await sleep(50)
-  assert.equal(await evaluate("document.getElementById('preview').textContent"), 'newer.md — Enter to open')
+  assert.equal(await evaluate("document.getElementById('preview').textContent"), 'newer.md — Enter to openNewest file contents')
   assert.equal(await evaluate("Array.from(document.querySelectorAll('#preview .entry'), element => element.textContent).includes('· stale.md')"), false)
   console.log('PASS stale directory preview cannot replace a newer selection')
+
+  const literalHTML = '<img src=x onerror="window.__previewInjected=true"><script>window.__previewInjected=true</script>'
+  await evaluate(`window.__vaultTest.setFetchText(${JSON.stringify(literalHTML)}); window.__vaultTest.clearFetchCalls()`)
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'literal.html', relativePath: 'Previews/literal.html', url: 'vault://Previews/literal.html' }]
+  }, 'document.querySelector("#preview .preview-text") !== null', 'literal HTML text preview')
+  assert.deepEqual(await evaluate(`({
+    header: document.querySelector('#preview .placeholder').textContent,
+    text: document.querySelector('#preview .preview-text').textContent,
+    unsafeChildren: document.querySelectorAll('#preview img, #preview script').length,
+    injected: window.__previewInjected === true
+  })`), { header: 'literal.html — Enter to open', text: literalHTML, unsafeChildren: 0, injected: false })
+
+  await evaluate("window.__vaultTest.setFetchText('')")
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'empty.txt', relativePath: 'Previews/empty.txt', url: 'vault://Previews/empty.txt' }]
+  }, "document.querySelector('#preview .preview-text')?.textContent === '(Empty file)'", 'empty text preview')
+  assert.equal(await evaluate("document.getElementById('preview').textContent"), 'empty.txt — Enter to open(Empty file)')
+
+  await evaluate("window.__vaultTest.setFetchText('x'.repeat(64 * 1024) + 'tail'); window.__vaultTest.clearFetchCalls()")
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'large.log', relativePath: 'Previews/large.log', url: 'vault://Previews/large.log' }]
+  }, "document.querySelector('#preview .placeholder:last-child')?.textContent === 'Preview truncated at 64 KiB — Enter to open full file'", 'truncated text preview')
+  assert.deepEqual(await evaluate(`({
+    textLength: document.querySelector('#preview .preview-text').textContent.length,
+    allX: /^x+$/.test(document.querySelector('#preview .preview-text').textContent),
+    calls: window.__vaultTest.fetchCalls()
+  })`), {
+    textLength: 64 * 1024,
+    allX: true,
+    calls: [{ url: 'vault://Previews/large.log', range: 'bytes=0-65536' }]
+  })
+
+  await evaluate("window.__vaultTest.setFetchText('x'.repeat(65535) + '雪tail'); document.getElementById('preview').scrollTop = 100")
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'unicode.txt', url: 'vault://Previews/unicode.txt' }]
+  }, "document.querySelector('#preview .preview-text')?.textContent.length === 65535", 'UTF-8 truncation boundary')
+  assert.equal(await evaluate("document.querySelector('#preview .preview-text').textContent"), 'x'.repeat(65535))
+  assert.equal(await evaluate("document.getElementById('preview').scrollTop"), 0)
+
+  await evaluate("window.__vaultTest.setFetchText('text\\u0000binary')")
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'binary.md', relativePath: 'Previews/binary.md', url: 'vault://Previews/binary.md' }]
+  }, "document.getElementById('preview').textContent === 'Binary file — Enter to open'", 'binary text fallback')
+
+  await evaluate("window.__vaultTest.rejectFetch('Fixture fetch rejection')")
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'failed.txt', relativePath: 'Previews/failed.txt', url: 'vault://Previews/failed.txt' }]
+  }, "document.getElementById('preview').textContent === 'Could not preview file — Enter to open'", 'rejected fetch fallback')
+
+  await evaluate("window.__vaultTest.setFetchText('unused'); window.__vaultTest.clearFetchCalls()")
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'archive.zip', relativePath: 'Previews/archive.zip', url: 'vault://Previews/archive.zip' }]
+  }, "document.getElementById('preview').textContent === 'archive.zip — Enter to open'", 'unsupported file fallback')
+  assert.deepEqual(await evaluate('window.__vaultTest.fetchCalls()'), [])
+  console.log('PASS safe, empty, truncated, binary, rejected, and unsupported text preview states')
+
+  const imageURL = '../../icons/icon256.png'
+  await setCurrentAndRefresh({
+    ok: true,
+    url: 'vault://Previews/',
+    entries: [{ kind: 'file', name: 'icon.png', relativePath: 'Previews/icon.png', url: imageURL }]
+  }, 'document.querySelector("#preview img.preview-image") !== null', 'image preview')
+  assert.deepEqual(await evaluate(`({
+    src: document.querySelector('#preview img').getAttribute('src'),
+    alt: document.querySelector('#preview img').alt
+  })`), { src: imageURL, alt: 'icon.png' })
+  await evaluate("window.__previousPreviewImage = document.querySelector('#preview img')")
+  await setCurrentAndRefresh({ ok: true, url: 'vault://', entries: [] }, "document.getElementById('preview').textContent === 'No entry selected'", 'image preview cleanup')
+  assert.equal(await evaluate("window.__previousPreviewImage.hasAttribute('src')"), false)
+  console.log('PASS image preview uses the entry URL and filename')
 }
 
 async function finish () {

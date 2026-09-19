@@ -1,4 +1,4 @@
-/* global vaultPage */
+/* global vaultPage, AbortController */
 const files = document.getElementById('files')
 const status = document.getElementById('status')
 let entries = []
@@ -6,6 +6,7 @@ let selected = -1
 let parentURL = null
 let generation = 0
 let previewGeneration = 0
+let previewController = null
 let lastG = 0
 
 function sorted (items) {
@@ -28,7 +29,13 @@ function row (entry) {
 }
 
 function message (target, text) {
+  // Stop decoding/loading the previous image when the selection changes.
+  target.querySelectorAll('img').forEach(image => {
+    image.onerror = null
+    image.removeAttribute('src')
+  })
   target.replaceChildren()
+  target.scrollTop = 0
   const p = document.createElement('p')
   p.className = 'placeholder'
   p.textContent = text
@@ -37,9 +44,55 @@ function message (target, text) {
 
 async function preview (entry) {
   const mine = ++previewGeneration
+  if (previewController) previewController.abort()
+  previewController = null
   const target = document.getElementById('preview')
   message(target, entry ? (entry.kind === 'directory' ? 'Loading…' : entry.name + ' — Enter to open') : 'No entry selected')
-  if (!entry || entry.kind !== 'directory') return
+  if (!entry) return
+  if (entry.kind !== 'directory') {
+    const extension = entry.name.split('.').pop().toLowerCase()
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg'].includes(extension)) {
+      const image = document.createElement('img')
+      image.className = 'preview-image'
+      image.alt = entry.name
+      image.decoding = 'async'
+      image.onerror = () => {
+        if (mine === previewGeneration) message(target, 'Could not preview image — Enter to open')
+      }
+      image.src = entry.url
+      target.append(image)
+    } else if (['txt', 'md', 'markdown', 'json', 'csv', 'log', 'js', 'ts', 'css', 'html', 'xml', 'yaml', 'yml', 'toml', 'ini', 'sh', 'py', 'rs', 'c', 'h', 'cpp'].includes(extension)) {
+      const controller = new AbortController()
+      previewController = controller
+      try {
+        // The vault protocol supports ranges; never load an entire large text file.
+        const limit = 64 * 1024
+        const response = await fetch(entry.url, { headers: { Range: 'bytes=0-' + limit }, signal: controller.signal })
+        const empty = response.status === 416 && response.headers.get('Content-Range') === 'bytes */0'
+        if (!response.ok && !empty) throw new Error('Preview unavailable')
+        const bytes = empty ? new Uint8Array() : new Uint8Array(await response.arrayBuffer())
+        if (mine !== previewGeneration) return
+        if (bytes.includes(0)) return message(target, 'Binary file — Enter to open')
+        // Omit an incomplete UTF-8 character at the preview boundary.
+        const text = new TextDecoder().decode(bytes.slice(0, limit), { stream: bytes.length > limit })
+        const pre = document.createElement('pre')
+        pre.className = 'preview-text'
+        pre.textContent = text || '(Empty file)'
+        target.append(pre)
+        if (bytes.length > limit) {
+          const notice = document.createElement('p')
+          notice.className = 'placeholder'
+          notice.textContent = 'Preview truncated at 64 KiB — Enter to open full file'
+          target.append(notice)
+        }
+      } catch (_) {
+        if (mine === previewGeneration) message(target, 'Could not preview file — Enter to open')
+      } finally {
+        if (previewController === controller) previewController = null
+      }
+    }
+    return
+  }
   try {
     const result = await vaultPage.listDirectory(entry.url)
     if (mine !== previewGeneration) return
@@ -76,6 +129,8 @@ async function refresh () {
   const mine = ++generation
   const previous = entries[selected]?.url
   ++previewGeneration
+  if (previewController) previewController.abort()
+  previewController = null
   entries = []
   selected = -1
   parentURL = null
