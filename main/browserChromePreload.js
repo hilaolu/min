@@ -471,6 +471,9 @@ function createBrowserChromeHost (argv, ipc, utilities = {}) {
     presentCommandPalette: function (state) {
       return ipc.invoke('command-palette:present', state)
     },
+    searchVaultFiles: function (kind, query) {
+      return ipc.invoke('vault:search-files', kind, query)
+    },
     provideBrowserSessionSnapshot: function (snapshot) {
       ipc.send('return-tab-state', snapshot)
     },

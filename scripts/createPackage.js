@@ -75,6 +75,7 @@ module.exports = function (platform, extraOptions) {
       '!**/*.md',
       '!**/._*',
       '!**/icons/source',
+      '!tab-picker/**',
       '!dist/app',
       // this is copied during the build
       '!**/icons/icon.icns',
@@ -82,8 +83,6 @@ module.exports = function (platform, extraOptions) {
       // Main-process CommonJS Modules are loaded directly by main.build.js.
       // parts of modules that aren"t needed
       '!**/node_modules/@types/',
-      '!**/node_modules/pdfjs-dist/legacy',
-      '!**/node_modules/pdfjs-dist/lib',
       '!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}'
     ],
     linux: {

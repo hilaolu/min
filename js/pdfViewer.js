@@ -1,6 +1,6 @@
 const browserSession = require('tabState.js')
 const rendererHost = require('rendererHost.js')
-/* handles viewing pdf files using pdf.js. Recieves events from main.js will-download */
+/* Handles viewing PDF files using EmbedPDF. Receives will-download events. */
 
 const webviews = require('webviews.js')
 const urlParser = require('util/urlParser.js')

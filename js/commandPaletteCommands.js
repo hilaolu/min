@@ -5,6 +5,14 @@ const browserSession = require('tabState.js')
  */
 
 const availableCommands = [
+  ...['m', 'p'].map(id => ({
+    id,
+    title: id === 'm' ? 'Open vault Markdown' : 'Open vault PDF',
+    description: 'Search vault filenames or enter a vault-relative path',
+    shortcut: `>${id} [filename]`,
+    icon: 'carbon:document',
+    prefix: `>${id} `
+  })),
   {
     id: 'w',
     title: 'Close Tab',

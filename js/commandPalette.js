@@ -5,6 +5,7 @@ const TabSearchStrategy = require('./commandPalette/strategies/TabSearchStrategy
 const VimCommandStrategy = require('./commandPalette/strategies/VimCommandStrategy.js')
 const VimCommandWithArgsStrategy = require('./commandPalette/strategies/VimCommandWithArgsStrategy.js')
 const ReplStrategy = require('./commandPalette/strategies/ReplStrategy.js')
+const VaultFileStrategy = require('./commandPalette/strategies/VaultFileStrategy.js')
 
 // Constants for overlay communication
 const OVERLAY_CONSTANTS = {
@@ -21,6 +22,10 @@ function createCommandPalette (options) {
         new TabSearchStrategy(),
         new VimCommandStrategy(),
         new VimCommandWithArgsStrategy(),
+        new VaultFileStrategy(
+          (kind, query) => rendererHost.searchVaultFiles(kind, query),
+          url => new VimCommandWithArgsStrategy().executeURLAction(url, 'new-tab')
+        ),
         new ReplStrategy()
       ]
     },
@@ -231,6 +236,12 @@ function createCommandPalette (options) {
    */
     executeAction: async function (candidate) {
       if (!candidate) return
+      if (candidate.prefix) {
+        commandPalette.input.value = candidate.prefix
+        commandPalette.handleInput()
+        return
+      }
+      if (!candidate.action) return
 
       const context = commandPalette.getContext()
 
@@ -294,6 +305,7 @@ function createCommandPalette (options) {
       if (!commandPalette.isVisible) return
 
       commandPalette.isVisible = false
+      commandPalette.strategyManager.generation++
       commandPalette.input.blur()
 
       // Reset state
@@ -394,6 +406,7 @@ function createCommandPalette (options) {
    * @param {Object} event - Candidates update event data
    */
     handleCandidatesUpdate: function (event) {
+      commandPalette.selectedIndex = 0
       commandPalette.currentCandidates = event.candidates || []
       commandPalette.updateSelection()
 

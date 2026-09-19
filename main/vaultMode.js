@@ -6,13 +6,35 @@ const { canonicalRoot, resolveVaultURL } = require('./vault.js')
 const { parseVaultURL } = require('../js/util/vaultURL.js')
 const { createNote } = require('./vaultNotes.js')
 
-function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
+function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => false }) {
   // Deliberately not a generic setting: pages cannot mutate this through
   // settings:set, and the absolute root is never broadcast to other pages.
   const configPath = path.join(userDataPath, 'vault-root.json')
   let root = null
   let savedDirectory = ''
   let changing = false
+  let searchGeneration = 0
+  let annotationGeneration = 0
+  const searches = new WeakMap()
+  ipc.handle('vault:search-files', async (event, kind, query) => {
+    const allowed = () => isChrome(event.sender) && event.senderFrame === event.sender.mainFrame
+    if (!allowed()) return { ok: false, error: 'Caller denied' }
+    if (!['m', 'p'].includes(kind) || typeof query !== 'string' || query.length > 256) {
+      return { ok: false, error: 'Invalid vault search' }
+    }
+    const token = {}
+    searches.set(event.sender, token)
+    const generation = searchGeneration
+    const capturedRoot = root
+    const current = () => allowed() && !changing && root === capturedRoot &&
+      generation === searchGeneration && searches.get(event.sender) === token
+    try {
+      if (!current()) throw new Error('Vault changing')
+      return await require('./vaultSearch.js')(capturedRoot, kind, query.trim(), current)
+    } catch (_) {
+      return { ok: false, error: 'Vault unavailable or changed. Check vault Settings and retry.' }
+    }
+  })
   try {
     const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'))
     if (typeof saved.root === 'string' && path.isAbsolute(saved.root)) {
@@ -26,12 +48,28 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
   const owners = new Map()
   const watched = new WeakSet()
   const navigationVersions = new WeakMap()
+  const pdfPreparations = new WeakMap()
   let host = {}
   const pages = {
     markdown: 'min://app/pages/markdown/index.html',
     browser: 'min://app/pages/vault/index.html',
     pdf: 'min://app/pages/pdfViewer/index.html'
   }
+
+  require('./pdfAnnotations.js').installPdfAnnotations({
+    ipc,
+    context: (event, operation) => {
+      const preparingSave = operation === 'save' && pdfPreparations.has(event.sender)
+      if ((changing && !preparingSave) || !isTab(event.sender) || event.sender.isDestroyed?.() ||
+          event.senderFrame !== event.sender.mainFrame) throw new Error('Annotation caller denied')
+      const url = new URL(event.senderFrame.url)
+      if (url.protocol !== 'min:' || url.host !== 'app' || url.pathname !== '/pages/pdfViewer/index.html') throw new Error('Annotation caller denied')
+      const source = url.searchParams.get('url')
+      if (!source) throw new Error('Missing PDF source')
+      if (new URL(source).protocol === 'vault:') current(event, ['pdf'])
+      return { root, source, generation: annotationGeneration }
+    }
+  })
 
   function release (contents) {
     const record = records.get(contents.id)
@@ -95,11 +133,31 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
   })
 
   async function prepareToLeave (contents) {
+    if (contents.getURL?.().split('?')[0] === pages.pdf) {
+      if (!pdfPreparations.has(contents)) {
+        const preparation = preparePDF(contents).finally(() => pdfPreparations.delete(contents))
+        pdfPreparations.set(contents, preparation)
+      }
+      return pdfPreparations.get(contents)
+    }
     const record = records.get(contents.id)
     if (record?.preparing) return record.preparing
     if (!record) return true
     record.preparing = prepare(contents)
     try { return await record.preparing } finally { record.preparing = null }
+  }
+
+  async function preparePDF (contents) {
+    try {
+      const state = await contents.executeJavaScript('window.pdfHighlightsPrepare && window.pdfHighlightsPrepare()')
+      if (state?.dirty) {
+        const choice = await dialog.showMessageBox({ type: 'question', message: 'Save PDF highlight changes to the vault?', buttons: ['Save', 'Discard', 'Cancel'], defaultId: 0, cancelId: 2 })
+        if (choice.response === 2) { resume(contents); return false }
+        if (choice.response === 0 && !await contents.executeJavaScript('window.pdfHighlightsSave()')) { resume(contents); return false }
+      }
+      await contents.executeJavaScript('window.pdfHighlightsLeaving = true')
+      return true
+    } catch (_) { resume(contents); return false }
   }
 
   async function prepare (contents) {
@@ -124,6 +182,10 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
   }
 
   function resume (contents) {
+    if (contents.getURL?.().split('?')[0] === pages.pdf) {
+      contents.executeJavaScript('window.pdfHighlightsLeaving = false; document.body.inert = false').catch(() => {})
+      return
+    }
     const record = records.get(contents.id)
     if (record?.kind !== 'markdown') return
     record.leaving = false
@@ -144,6 +206,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
     if (!isSettings(event)) return { ok: false, error: 'Caller denied' }
     if (changing) return { ok: false, error: 'A vault folder change is already in progress.' }
     changing = true
+    searchGeneration++
     try {
       let selected
       try { selected = await canonicalRoot(directory) } catch (_) {
@@ -152,6 +215,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
       if (!isSettings(event)) return { ok: false, error: 'Vault selection canceled: Settings closed.' }
       // Reapplying the active folder must not close editors or rewrite config.
       if (selected === root) return { ok: true, directory: savedDirectory }
+      await require('./annotationStore.js').drain()
       const contents = access.getAssociations().map(association => association.contents)
       for (const tab of contents) {
         if (!await prepareToLeave(tab)) {
@@ -163,6 +227,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab }) {
       if (access.hasAssociations()) throw new Error('Vault tabs remain open')
       await writeFileAtomic(configPath, JSON.stringify({ root: selected }))
       root = selected
+      annotationGeneration++
       savedDirectory = selected
       return { ok: true, directory: selected }
     } catch (_) {

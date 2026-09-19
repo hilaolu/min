@@ -1,4 +1,14 @@
 // Only Settings gets configuration authority. Raw vault documents get no API.
+if (process.isMainFrame && window.location.href.split('?')[0] === 'min://app/pages/pdfViewer/index.html') {
+  const { contextBridge, ipcRenderer } = require('electron')
+  contextBridge.exposeInMainWorld('pdfAnnotations', {
+    readFile: () => ipcRenderer.invoke('pdf-annotations', 'read-file'),
+    load: () => ipcRenderer.invoke('pdf-annotations', 'load'),
+    save: payload => ipcRenderer.invoke('pdf-annotations', 'save', payload),
+    importLegacy: text => ipcRenderer.invoke('pdf-annotations', 'import', text)
+  })
+}
+
 if (process.isMainFrame && window.location.href === 'min://app/pages/settings/index.html') {
   require('electron').contextBridge.exposeInMainWorld('vaultSettings', {
     getRoot: () => require('electron').ipcRenderer.invoke('vault:get-root'),

@@ -44,13 +44,14 @@ async function until (fn, label) {
   throw new Error('Timed out: ' + label)
 }
 function pdfFixture () {
-  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> /Contents 4 0 R >>', '<< /Length 28 >>\nstream\n0 0 1 rg 20 20 100 100 re f\nendstream']
+  const stream = '0 0 1 rg 20 20 100 100 re f\n0 0 0 rg BT /F1 12 Tf 20 160 Td (Highlight this text) Tj ET\n'
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>', `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
   let text = '%PDF-1.4\n'
   const offsets = [0]
   objects.forEach((object, i) => { offsets.push(Buffer.byteLength(text)); text += `${i + 1} 0 obj\n${object}\nendobj\n` })
   const xref = Buffer.byteLength(text)
-  text += 'xref\n0 5\n0000000000 65535 f \n' + offsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('')
-  return text + `trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  text += 'xref\n0 6\n0000000000 65535 f \n' + offsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('')
+  return text + `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
 }
 
 async function run () {
@@ -326,12 +327,91 @@ async function run () {
     await load('vault://local/b.txt', "document.body.innerText.includes('beta')")
     await command('navigation.back')
     await until(() => evaluate("document.body.innerText.includes('alpha')"), 'history authorization')
-    await load('vault://local/reference.pdf', "document.querySelector('canvas')?.width > 0")
-    await until(() => evaluate("Array.from(document.querySelectorAll('canvas')).some(c => { const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; return d.some((v,i) => i % 4 === 2 && v > d[i-2]) })"), 'actual PDF pixels')
+    const pdfReady = "document.body.dataset.pdfReady === 'true'"
+    await load('vault://local/reference.pdf', pdfReady)
+    await command('find.start', { text: 'Highlight', options: {} })
+    assert.equal(messages.filter(message => message.type === 'find-result').at(-1).payload.result.matches, 1, 'browser Find searches PDF text through EmbedPDF')
+    await command('find.stop', { action: 'clearSelection' })
+    await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).some(img => { if (!img.complete || !img.naturalWidth) return false; const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0); const d = ctx.getImageData(0,0,c.width,c.height).data; return d.some((v,i) => i % 4 === 2 && v > d[i-2]) })"), 'actual EmbedPDF pixels')
     assert.equal(await evaluate("fetch('vault://local/reference.pdf').then(r => r.status)"), 200)
     assert.equal(await evaluate("fetch('vault://local/a.txt').then(r => r.status)"), 403, 'PDF consumer is source-scoped')
-    await load('min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent('vault://local/reference.pdf'), "document.querySelector('canvas')?.width > 0")
+    await load('min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent('vault://local/reference.pdf'), pdfReady)
     assert.equal(await evaluate("fetch('vault://local/reference.pdf').then(r => r.headers.get('content-type'))"), 'application/pdf')
+    if (privateMode) {
+      assert.equal(await evaluate("document.getElementById('highlight').disabled"), true)
+      assert.match((await evaluate('window.pdfAnnotations.load()')).error, /private tabs/)
+    } else {
+      await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).some(img => img.complete && img.naturalWidth > 100)"), 'PDF page image ready for selection')
+      const pageBox = await evaluate("(() => { const img = Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).find(img => img.naturalWidth > 100); const r = img.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()")
+      const startX = Math.round(pageBox.x + pageBox.width * 0.1)
+      const endX = Math.round(pageBox.x + pageBox.width * 0.62)
+      const textY = Math.round(pageBox.y + pageBox.height * 0.18)
+      contents.sendInputEvent({ type: 'mouseDown', x: startX, y: textY, button: 'left', clickCount: 1 })
+      await sleep(150)
+      for (let x = startX + 5; x <= endX; x += 5) {
+        contents.sendInputEvent({ type: 'mouseMove', x, y: textY, button: 'left', modifiers: ['leftButtonDown'] })
+        await sleep(5)
+      }
+      contents.sendInputEvent({ type: 'mouseUp', x: endX, y: textY, button: 'left', clickCount: 1 })
+      await until(() => evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('selection').provides().getFormattedSelection().length > 0; })()"), 'real PDF text selection')
+      await evaluate("document.getElementById('highlight').click()")
+      await until(async () => (await evaluate('window.pdfAnnotations.load()')).annotations.length === 1, 'selection highlight saved')
+      assert.match((await evaluate('window.pdfAnnotations.load()')).annotations[0].data.text, /Highlight/)
+      await until(() => evaluate("!document.getElementById('delete').disabled"), 'saved highlight controls')
+      await evaluate("document.getElementById('delete').click()")
+      await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'selection highlight removed')
+      const rect = { origin: { x: 20, y: 25 }, size: { width: 100, height: 12 } }
+      const legacy = '| Field | Value |\n| --- | --- |\n| Title | Reference |\n| URL | vault://local/reference.pdf |\n| Tags | #annotation |\n\n## Annotations\n\n' +
+        '%% annotation: pdf-test-id | color: ffcd45 | sourceType: pdf | pageIndex: 0 %%\n<pre></pre>\n<pre>Test highlight</pre>\n<pre></pre>\n\n' +
+        `%% annotation-rect: ${JSON.stringify(rect)} %%\n%% annotation-segments: ${JSON.stringify([rect])} %%\nOriginal note\n`
+      await evaluate(`(() => { const input = document.getElementById('import'); const transfer = new DataTransfer(); transfer.items.add(new File([${JSON.stringify(legacy)}], 'legacy.md')); input.files = transfer.files; input.dispatchEvent(new Event('change')); })()`)
+      await until(() => evaluate("document.getElementById('status').textContent === 'Saved to vault' && document.getElementById('annotations').value === 'pdf-test-id'"), 'legacy PDF import and save').catch(async error => { throw new Error(error.message + ': ' + await evaluate("document.getElementById('status').textContent")) })
+      assert.equal(await evaluate("document.getElementById('note').value"), 'Original note')
+      const loaded = await evaluate('window.pdfAnnotations.load()')
+      assert.equal(loaded.annotations.length, 1)
+      assert.deepEqual(loaded.annotations[0].data.segmentRects, [rect])
+      await evaluate("document.getElementById('note').value = 'Edited note'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('color').value = '#33aa77'; document.getElementById('save').click()")
+      await until(async () => (await evaluate('window.pdfAnnotations.load()')).annotations[0]?.data.notes === 'Edited note', 'PDF note and color save')
+      await until(() => evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().some(a => a.object.id === 'pdf-test-id' && a.object.strokeColor === '#33aa77'); })()"), 'native highlight color updated without reopening')
+      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://local/reference.pdf', pdfReady)
+      assert.equal(await evaluate("document.getElementById('note').value"), 'Edited note')
+      assert.equal(await evaluate("document.getElementById('color').value"), '#33aa77')
+      const restored = await evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().filter(a => a.object.id === 'pdf-test-id').map(a => a.object); })()")
+      assert.equal(restored.length, 1, 'highlight rehydrated into EmbedPDF, not just sidebar')
+      assert.deepEqual(restored[0].rect, rect)
+      await evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; r.getPlugin('rotate').provides().rotateForward(); r.getPlugin('zoom').provides().requestZoom(1.5); })()")
+      assert.deepEqual((await evaluate('window.pdfAnnotations.load()')).annotations[0].data.rect, rect, 'viewport changes never rewrite geometry')
+      await evaluate("document.getElementById('note').value = 'Guarded note'; document.getElementById('note').dispatchEvent(new Event('input'))")
+      answer = 2
+      assert.equal(await command('lifecycle.destroy'), false, 'Cancel keeps dirty PDF open')
+      assert.equal(await evaluate("document.getElementById('note').value"), 'Guarded note')
+      assert.equal(await evaluate('document.body.inert'), false)
+      answer = 0
+      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://local/reference.pdf', pdfReady)
+      assert.equal(await evaluate("document.getElementById('note').value"), 'Guarded note', 'Save-on-leave persists PDF note')
+      const storagePath = path.join(root, '.min-annotations', fs.readdirSync(path.join(root, '.min-annotations'))[0])
+      const external = JSON.parse(fs.readFileSync(storagePath, 'utf8'))
+      external.annotations[0].data.notes = 'External note'
+      fs.writeFileSync(storagePath, JSON.stringify(external))
+      await evaluate("document.getElementById('note').value = 'Recoverable conflict'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('save').click()")
+      await until(() => evaluate("document.getElementById('status').textContent.startsWith('Not saved:')"), 'visible PDF save conflict')
+      assert.equal(await evaluate("document.getElementById('note').value"), 'Recoverable conflict')
+      answer = 0
+      assert.equal(await command('lifecycle.destroy'), false, 'failed Save prevents PDF close')
+      answer = 1
+      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://local/reference.pdf', pdfReady)
+      assert.equal(await evaluate("document.getElementById('note').value"), 'External note', 'conflicting disk change preserved')
+      await evaluate("document.getElementById('delete').click()")
+      await until(async () => (await evaluate('window.pdfAnnotations.load()')).annotations.length === 0, 'PDF deletion persistence')
+      await load('vault://local/a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://local/reference.pdf', pdfReady)
+      assert.equal(await evaluate("document.getElementById('annotations').options.length"), 1)
+      assert.equal(fs.readFileSync(path.join(root, 'reference.pdf'), 'utf8'), pdfFixture(), 'PDF bytes remain unchanged')
+    }
+    await load('min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent(require('url').pathToFileURL(path.join(root, 'reference.pdf')).href), pdfReady)
     await command('lifecycle.destroy')
     await manager.executeTabContentCommand(second.webContents, { id: otherID, operation: 'lifecycle.destroy' })
     console.log('PASS production pages', id)

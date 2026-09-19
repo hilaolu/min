@@ -26,6 +26,7 @@ class StrategyManager {
     this.fallbackStrategy = null
 
     this.eventListeners = new Map()
+    this.generation = 0
   }
 
   /**
@@ -95,6 +96,7 @@ class StrategyManager {
    * @returns {Promise<boolean>} True if state changed, false otherwise
    */
   async processInput (input, context) {
+    const generation = ++this.generation
     const transition = this.findMatchingStrategy(input)
 
     if (!transition) {
@@ -110,7 +112,9 @@ class StrategyManager {
 
     // Same strategy, just update UI with new data
     try {
+      if (this.currentStrategy.loadingCandidates) this.emit('candidates-updated', { candidates: this.currentStrategy.loadingCandidates() })
       const candidates = await this.currentStrategy.updateUI(input, transition.data, context)
+      if (generation !== this.generation) return false
       this.emit('candidates-updated', { candidates })
       return false
     } catch (error) {
@@ -126,6 +130,7 @@ class StrategyManager {
    * @param {Object} context - Command palette context
    */
   async transitionTo (newStrategy, data, context) {
+    const generation = ++this.generation
     const previousStrategy = this.currentStrategy
 
     // Exit current strategy
@@ -146,7 +151,9 @@ class StrategyManager {
       newStrategy.onEnter(context, data)
 
       // Update UI
+      if (newStrategy.loadingCandidates) this.emit('candidates-updated', { candidates: newStrategy.loadingCandidates() })
       const candidates = await newStrategy.updateUI(context.input.value, data, context)
+      if (generation !== this.generation) return
 
       // No direct DOM styling; overlay handles all visuals
 

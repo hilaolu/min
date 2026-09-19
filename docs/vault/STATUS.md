@@ -1,5 +1,14 @@
 # Implementation status
 
+## PDF backend/annotation stage update
+
+The PDF wrapper now uses local EmbedPDF/PDFium 2.14.2 instead of PDF.js.
+Vault-backed PDF highlights, notes, color edits, deletion and reopen loading
+are implemented, with read-only legacy Markdown import and JSON backups.
+See [TAB_PICKER_PORT.md](TAB_PICKER_PORT.md) for the storage/security contract,
+specific automated coverage and remaining gaps. Web highlights are still
+pending. References to the previous PDF.js tests below are historical.
+
 Revision 2 now includes production pages and navigation, not only transport. **Full SPEC acceptance is not yet claimed**: the verification gaps below must not be inferred to pass. SPEC.md and CONTRACTS.md have not been weakened.
 
 ## Implemented

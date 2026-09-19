@@ -56,6 +56,7 @@ const HOST_OPERATIONS = [
   'requestPlaces',
   'saveBrowserSession',
   'savePage',
+  'searchVaultFiles',
   'setUserScriptsWatching',
   'setHandoffURL',
   'sendPlacesMessage',

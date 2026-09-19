@@ -2,68 +2,28 @@
 <html lang="en-US">
   <head>
     <meta charset="UTF-8" />
-    <meta name="theme-color" id="meta-theme" />
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' vault: https: http: file:; font-src 'self' data:; object-src 'none'" />
 
-    <link rel="stylesheet" href="viewer.css" />
-    <link rel="stylesheet" href="../../ext/icons/iconfont.css" />
-    <link rel="stylesheet" href="../settingsDropdown.css" />
+    <link rel="stylesheet" href="annotations.css" />
   </head>
 
   <body>
-    <div id="progress-bar" class="viewer-ui"></div>
-
-    <div class="side-gutter" id="side-gutter-left">
-      <div id="page-counter" class="viewer-ui hidden">
-        page <input type="text" /> of <span id="total"></span>
-      </div>
-    </div>
-    <div class="side-gutter" id="side-gutter-right">
-      <button
-        id="download-button"
-        class="i carbon:download viewer-ui hidden"
-      ></button>
-
-      <button
-        id="settings-button"
-        class="i carbon:settings-adjust viewer-ui hidden"
-        title="View Settings"
-        aria-label="View Settings"
-      ></button>
-
-      <div id="settings-dropdown" class="viewer-ui" hidden>
-        <div class="setting-section theme-circles">
-          <button
-            class="theme-circle selected"
-            data-theme="light"
-            title="Light"
-            aria-label="Light"
-          ></button>
-          <button
-            class="theme-circle"
-            data-theme="sepia"
-            title="Sepia"
-            aria-label="Sepia"
-          ></button>
-          <button
-            class="theme-circle"
-            data-theme="dark"
-            title="Dark"
-            aria-label="Dark"
-          ></button>
-        </div>
-        <div class="setting-section" id="invert-pdf-section">
-          <input type="checkbox" id="invert-pdf-checkbox" /><label
-            for="invert-pdf-checkbox"
-            >Invert page colors</label
-          >
-        </div>
-      </div>
-    </div>
-    <script src="../../js/util/settings/settingsCache.js"></script>
-    <script src="../../js/util/settings/settingsContent.js"></script>
-    <script src="../../js/util/theme.js"></script>
-    <script type="module" src="viewer.js"></script>
-    <script src="pdfThemeSelector.js"></script>
+    <main id="viewer" aria-label="PDF viewer"></main>
+    <aside aria-label="Vault highlights">
+      <h1>Vault highlights</h1>
+      <p id="status" role="status">Loading PDF…</p>
+      <button id="highlight" disabled>Highlight selection</button>
+      <label>Highlight <select id="annotations"><option value="">Select a highlight</option></select></label>
+      <label>Note <textarea id="note" rows="5" maxlength="100000"></textarea></label>
+      <label>Color <input id="color" type="color" value="#ffcd45"></label>
+      <button id="save" disabled>Save note / color</button>
+      <button id="delete" disabled>Delete highlight</button>
+      <button id="retry" disabled>Retry unsaved change</button>
+      <button id="export">Export highlights / unsaved change</button>
+      <label>Import tab-picker Markdown / backup JSON <input id="import" type="file" accept=".md,.json,text/markdown,application/json" disabled></label>
+      <button id="download">Download original PDF</button>
+      <p>Highlights are saved separately in the configured vault; the original PDF is unchanged. Private tabs cannot access saved highlights.</p>
+    </aside>
+    <script type="module" src="embedViewer.js"></script>
   </body>
 </html>

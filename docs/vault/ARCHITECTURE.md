@@ -154,7 +154,7 @@ Source locations inspected on 2026-09-18; re-read them before patching:
 | `main/index.js`, `main/sessionPolicies.js`, `main/main.js` | Feature composition, per-session install, session-created handling |
 | `main/filtering.js`, `main/download.js` | Existing WebRequest callbacks, PDF response path, scoped response policy |
 | `main/viewManager.js`, `js/webviews.js` (plus proposed `js/vault.js`) | Main-frame routing, protocol allowlist, lifetime/ownership |
-| `js/pdfViewer.js`, `pages/pdfViewer/viewer.js` | Vault source passed to PDF.js, no raw-asset redirect |
+| `js/pdfViewer.js`, `pages/pdfViewer/embedViewer.js` | Vault source passed to EmbedPDF/PDFium, no raw-asset redirect; see TAB_PICKER_PORT.md for annotation storage |
 | `js/util/urlParser.js`, `js/navbar/tabEditor.js` | Canonical/source address presentation |
 | Settings schema/page, `scripts/buildPreload.js`, `js/menuRenderer.js` | Root selection, gated bridge, Save command |
 | `js/places/historyPolicy.js`, `js/userscripts.js` | Vault-backed content exclusions |

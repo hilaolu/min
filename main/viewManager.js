@@ -312,7 +312,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         }
       })
       view.webContents.on('will-navigate', (event, url) => {
-        if (url.startsWith('vault:') || vault.getAssociation(view.webContents)?.kind === 'markdown') {
+        if (url.startsWith('vault:') || vault.getAssociation(view.webContents)?.kind === 'markdown' || view.webContents.getURL().split('?')[0] === 'min://app/pages/pdfViewer/index.html') {
           event.preventDefault()
           loadURLInView(id, url)
         }
@@ -568,8 +568,17 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       case 'fullscreen.exit':
         return webContents.executeJavaScript('if (document.webkitIsFullScreen) document.webkitExitFullscreen()')
       case 'find.start':
+        if (webContents.getURL().split('?')[0] === 'min://app/pages/pdfViewer/index.html') {
+          const result = await webContents.executeJavaScript(`window.parentProcessActions.findPDF(${JSON.stringify(payload.text)}, ${JSON.stringify(payload.options || {})})`)
+          if (result) sendTabContentEvent(viewMap[id], id, 'find-result', { result })
+          return true
+        }
         return webContents.findInPage(payload.text, payload.options)
       case 'find.stop':
+        if (webContents.getURL().split('?')[0] === 'min://app/pages/pdfViewer/index.html') {
+          await webContents.executeJavaScript('window.parentProcessActions.endFindInPage()')
+          return true
+        }
         webContents.stopFindInPage(payload.action)
         return true
       case 'zoom.get':

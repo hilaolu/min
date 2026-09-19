@@ -1,0 +1,214 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const test = require('node:test')
+const EventEmitter = require('node:events')
+const searchVaultFiles = require('../main/vaultSearch.js')
+const createVaultMode = require('../main/vaultMode.js')
+const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
+const StrategyManager = require('../js/commandPalette/StrategyManager.js')
+
+function profile (t, prefix = 'min-stage2-') {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  return directory
+}
+
+function write (file, contents = '') {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, contents)
+}
+
+test('vault search finds nested markdown and PDF files with encoded names', async t => {
+  const root = profile(t, 'min-vault-search-')
+  write(path.join(root, 'nested', 'Encoded name.md'))
+  write(path.join(root, 'nested', 'Quarterly REPORT.PDF'))
+  write(path.join(root, 'nested', 'other.txt'))
+  write(path.join(root, 'top.MD'))
+  fs.symlinkSync(path.join(root, 'nested', 'Encoded name.md'), path.join(root, 'linked.md'))
+
+  const markdown = await searchVaultFiles(root, 'm', 'ENCODED NAME')
+  assert.equal(markdown.ok, true)
+  assert.deepEqual(markdown.entries.map(entry => entry.relativePath), ['nested/Encoded name.md'])
+  assert.match(markdown.entries[0].url, /nested\/Encoded%20name\.md$/)
+
+  const pdf = await searchVaultFiles(root, 'p', 'report')
+  assert.deepEqual(pdf.entries.map(entry => entry.relativePath), ['nested/Quarterly REPORT.PDF'])
+
+  const symlink = await searchVaultFiles(root, 'm', 'linked')
+  assert.deepEqual(symlink.entries, [])
+})
+
+test('vault search reports a missing root and honors its result limit', async t => {
+  const root = profile(t, 'min-vault-search-')
+  await assert.rejects(searchVaultFiles(path.join(root, 'missing'), 'm', ''), /Vault resource unavailable/)
+  for (let index = 0; index < 21; index++) {
+    write(path.join(root, 'limited', `limit-target-${String(index).padStart(2, '0')}.md`))
+  }
+
+  const result = await searchVaultFiles(root, 'm', 'LIMIT-TARGET')
+  assert.equal(result.entries.length, 20)
+  assert.equal(result.truncated, true)
+  assert.equal(result.entries.every(entry => /^limited\/limit-target-\d\d\.md$/.test(entry.relativePath)), true)
+  assert.equal(new Set(result.entries.map(entry => entry.relativePath)).size, 20)
+})
+
+test('vault search cancels when its generation is no longer current', async t => {
+  const root = profile(t, 'min-vault-search-')
+  write(path.join(root, 'cancel.md'))
+  let checks = 0
+  await assert.rejects(
+    searchVaultFiles(root, 'm', '', () => ++checks < 2),
+    /Vault changed/
+  )
+})
+
+function searchMode (userDataPath, root) {
+  const handlers = new Map()
+  const frame = { url: 'min://app/pages/settings/index.html' }
+  const chrome = Object.assign(new EventEmitter(), { id: 1, mainFrame: frame })
+  fs.writeFileSync(path.join(userDataPath, 'vault-root.json'), JSON.stringify({ root }))
+  const mode = createVaultMode({
+    userDataPath,
+    ipc: { handle: (name, handler) => handlers.set(name, handler) },
+    dialog: {},
+    isTab: contents => contents === chrome,
+    isChrome: contents => contents === chrome
+  })
+  return { handlers, chrome, frame, mode }
+}
+
+test('vault search IPC validates frames and parameters before allowing chrome', async t => {
+  const userDataPath = profile(t, 'min-vault-ipc-')
+  const root = path.join(userDataPath, 'vault')
+  write(path.join(root, 'Nested', 'Read me.md'))
+  const instance = searchMode(userDataPath, fs.realpathSync(root))
+  const search = instance.handlers.get('vault:search-files')
+  const mainEvent = { sender: instance.chrome, senderFrame: instance.frame }
+
+  assert.deepEqual(await search({ sender: {}, senderFrame: instance.frame }, 'm', ''), { ok: false, error: 'Caller denied' })
+  assert.deepEqual(await search({ sender: instance.chrome, senderFrame: {} }, 'm', ''), { ok: false, error: 'Caller denied' })
+  assert.deepEqual(await search(mainEvent, 'x', ''), { ok: false, error: 'Invalid vault search' })
+  assert.deepEqual(await search(mainEvent, 'm', 42), { ok: false, error: 'Invalid vault search' })
+  assert.deepEqual(await search(mainEvent, 'm', 'x'.repeat(257)), { ok: false, error: 'Invalid vault search' })
+
+  const allowed = await search(mainEvent, 'm', 'READ ME')
+  assert.equal(allowed.ok, true)
+  assert.deepEqual(allowed.entries.map(entry => entry.relativePath), ['Nested/Read me.md'])
+})
+
+test('VaultFileStrategy exposes loading, empty, error, and open results', async () => {
+  const opened = []
+  const entry = { url: 'vault://local/notes/Report.md', relativePath: 'notes/Report.md' }
+  const strategy = new VaultFileStrategy(
+    async () => ({ ok: true, entries: [entry], truncated: false }),
+    url => opened.push(url)
+  )
+
+  assert.deepEqual(strategy.loadingCandidates(), [{ id: 'vault-loading', title: 'Searching vault…', icon: 'carbon:search' }])
+  const results = await strategy.updateUI('>m report', { command: 'm', query: 'report' })
+  const report = results.find(candidate => candidate.title === entry.relativePath)
+  assert.ok(report)
+  report.action()
+  assert.deepEqual(opened, [entry.url])
+
+  const empty = new VaultFileStrategy(async () => ({ ok: true, entries: [], truncated: false }), () => {})
+  assert.deepEqual(await empty.updateUI('>m', { command: 'm', query: '' }), [
+    { id: 'vault-empty', title: 'No matching vault files', icon: 'carbon:search' }
+  ])
+
+  const failed = new VaultFileStrategy(async () => { throw new Error('offline') }, () => {})
+  assert.deepEqual(await failed.updateUI('>m report', { command: 'm', query: 'report' }), [
+    { id: 'vault-error', title: 'Vault search failed. Check vault Settings and retry.', icon: 'carbon:warning' }
+  ])
+})
+
+test('changing the vault invalidates an in-flight search and subsequent searches use the new root', async t => {
+  const profileDir = profile(t)
+  const first = path.join(profileDir, 'first')
+  const second = path.join(profileDir, 'second')
+  write(path.join(first, 'old.md'))
+  write(path.join(second, 'new.md'))
+  const instance = searchMode(profileDir, first)
+  const event = { sender: instance.chrome, senderFrame: instance.frame }
+  const search = instance.handlers.get('vault:search-files')
+  const pending = search(event, 'm', '')
+  assert.equal((await instance.handlers.get('vault:select-root')(event, second)).ok, true)
+  assert.equal((await pending).ok, false)
+  assert.deepEqual((await search(event, 'm', '')).entries.map(entry => entry.relativePath), ['new.md'])
+})
+
+function deferred () {
+  let resolvePromise
+  let rejectPromise
+  const promise = new Promise((resolve, reject) => {
+    resolvePromise = resolve
+    rejectPromise = reject
+  })
+  return { promise, resolve: resolvePromise, reject: rejectPromise }
+}
+
+function strategyContext (value) {
+  return { input: { value } }
+}
+
+function result (id) {
+  return { ok: true, entries: [{ url: `vault://local/${id}.md`, relativePath: `${id}.md` }], truncated: false }
+}
+
+test('StrategyManager drops stale replies from the current strategy', async () => {
+  const pending = []
+  const strategy = new VaultFileStrategy((command, query) => {
+    const request = deferred()
+    pending.push({ query, request })
+    return request.promise
+  }, () => {})
+  const manager = new StrategyManager()
+  manager.registerStrategy(strategy)
+  const updates = []
+  manager.on('candidates-updated', event => updates.push(event.candidates))
+
+  const initial = manager.processInput('>m initial', strategyContext('>m initial'))
+  pending.shift().request.resolve(result('initial'))
+  await initial
+
+  const old = manager.processInput('>m old', strategyContext('>m old'))
+  const newer = manager.processInput('>m new', strategyContext('>m new'))
+  const oldRequest = pending.find(request => request.query === 'old').request
+  const newRequest = pending.find(request => request.query === 'new').request
+  newRequest.resolve(result('new'))
+  await newer
+  oldRequest.resolve(result('old'))
+  await old
+
+  assert.equal(updates.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/old.md')), false)
+  assert.equal(updates.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/new.md')), true)
+})
+
+test('StrategyManager drops a stale reply after changing strategy', async () => {
+  const firstPending = deferred()
+  const secondPending = deferred()
+  const first = new VaultFileStrategy(async () => firstPending.promise, () => {})
+  const second = new VaultFileStrategy(async () => secondPending.promise, () => {})
+  first.stateName = 'FIRST'
+  second.stateName = 'SECOND'
+  first.matches = input => ({ matches: input.startsWith('>m'), data: { command: 'm', query: input.slice(3) } })
+  second.matches = input => ({ matches: input.startsWith('>p'), data: { command: 'p', query: input.slice(3) } })
+
+  const manager = new StrategyManager()
+  manager.registerStrategy(first)
+  manager.registerStrategy(second)
+  const states = []
+  manager.on('state-changed', event => states.push(event.candidates))
+
+  const old = manager.processInput('>m old', strategyContext('>m old'))
+  const newer = manager.processInput('>p new', strategyContext('>p new'))
+  secondPending.resolve(result('new'))
+  await newer
+  firstPending.resolve(result('old'))
+  await old
+
+  assert.equal(states.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/old.md')), false)
+  assert.equal(states.some(candidates => candidates.some(candidate => candidate.id === 'vault://local/new.md')), true)
+})

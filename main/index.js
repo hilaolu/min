@@ -116,6 +116,7 @@ function createMainProcess (options = {}) {
     userDataPath: app.getPath('userData'),
     ipc,
     dialog: electron.dialog,
+    isChrome: contents => windows.getAll().some(window => windows.getChromeContents(window) === contents),
     isTab: contents => Boolean(viewManagerRef.current?.getTabIDFromWebContents(contents))
   })
 

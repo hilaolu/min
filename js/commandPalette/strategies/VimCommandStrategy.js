@@ -38,13 +38,14 @@ class VimCommandStrategy extends CommandStateStrategy {
       // Get available commands
       const availableCommands = require('../../commandPaletteCommands.js')
 
-      // Limit to 10 commands for keyboard shortcuts (0-9)
-      const candidates = availableCommands.slice(0, 10).map(cmd => ({
+      // The first ten retain numeric shortcuts; others use arrow navigation.
+      const candidates = availableCommands.map(cmd => ({
         id: cmd.id,
         title: cmd.title,
         description: cmd.description,
         icon: cmd.icon,
         shortcut: cmd.shortcut,
+        prefix: cmd.prefix,
         action: cmd.action
       }))
 

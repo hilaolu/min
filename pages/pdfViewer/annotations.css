@@ -1,0 +1,13 @@
+html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; }
+body { display: flex; background: #fff; color: #222; }
+#viewer { flex: 1; min-width: 0; height: 100%; }
+aside { width: 230px; padding: 12px; overflow: auto; border-left: 1px solid #aaa; }
+h1 { font-size: 17px; }
+label { display: block; margin: 12px 0; }
+textarea, select { box-sizing: border-box; display: block; width: 100%; }
+button { margin: 4px 0; }
+#status { overflow-wrap: anywhere; }
+input[type=file] { width: 100%; }
+@media (prefers-color-scheme: dark) {
+  body { background: #252525; color: #eee; }
+}
