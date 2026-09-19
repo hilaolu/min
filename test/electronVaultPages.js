@@ -106,6 +106,17 @@ async function run () {
     await until(() => evaluate("Array.from(document.querySelectorAll('.cherry-previewer img')).every(i => i.complete && i.naturalWidth > 0 && i.naturalHeight > 0)"), 'five Cherry images')
 
     const notePath = path.join(root, 'Projects/note.md')
+    assert.equal(await evaluate('document.documentElement.lang'), 'en')
+    assert.equal(await evaluate('cherry.options.locale'), 'en_US')
+    await until(() => evaluate("cherry.editor.editor.currentKeyMap === 'vim'"), 'Vim keymap')
+    await evaluate("cherry.getCodeMirror().dispatch({ changes: { from: 0, insert: 'Autosave test\\n' } }); window.dispatchEvent(new Event('blur'))")
+    await until(() => fs.readFileSync(notePath, 'utf8') === 'Autosave test\n' + source, 'blur autosave')
+    await evaluate("document.querySelector('[data-mode=previewOnly]').click()")
+    assert.equal(await evaluate("document.querySelector('[data-mode=previewOnly]').getAttribute('aria-pressed')"), 'true')
+    await evaluate("document.querySelector('[data-mode=editOnly]').click()")
+    assert.equal(await evaluate("document.querySelector('[data-mode=editOnly]').getAttribute('aria-pressed')"), 'true')
+    await evaluate(`cherry.setMarkdown(${JSON.stringify(source)}); document.querySelector('[data-mode="edit&preview"]').click()`)
+    await until(() => fs.readFileSync(notePath, 'utf8') === source, 'mode switch autosave')
     const noteURL = 'vault://Projects/note.md'
     const editorReady = "typeof cherry !== 'undefined' && !!cherry && document.querySelectorAll('.cherry-previewer img').length === 5"
     const loadNoteFresh = async () => {

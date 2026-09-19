@@ -1,1 +1,10 @@
-body { margin: 0; font-family: sans-serif; } header { height: 40px; display: flex; gap: 16px; align-items: center; padding: 0 12px; } #editor { height: calc(100vh - 40px); } #status { white-space: pre-wrap; }
+body { margin: 0; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; color: #24292f; }
+header { min-height: 48px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 16px; background: #f6f8fa; border-bottom: 1px solid #d0d7de; }
+#path { flex: 1; min-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+#editor { flex: 1; min-height: 0; }
+#status { white-space: pre-wrap; font-size: 13px; }
+#modes { display: flex; gap: 4px; }
+header button { padding: 6px 12px; border: 1px solid #d0d7de; border-radius: 6px; background: white; color: inherit; cursor: pointer; }
+header button[aria-pressed="true"] { background: #0969da; border-color: #0969da; color: white; }
+header button:focus-visible { outline: 2px solid #0969da; outline-offset: 2px; }
+header button:disabled { opacity: .5; cursor: default; }
