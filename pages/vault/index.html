@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Vault</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src 'none'">
-<link rel="stylesheet" href="../pagebase.css"></head>
-<body><nav id="breadcrumb"></nav><h1>Vault</h1><input id="search" type="search" placeholder="Search filenames and paths in the entire vault"><button id="refresh">Refresh</button><p id="status" role="status"></p><ul id="files"></ul><script src="browser.js"></script></body></html>
+<link rel="stylesheet" href="browser.css"></head>
+<body>
+<header><strong>VAULT</strong><nav id="breadcrumb" aria-label="Current directory"></nav><button id="refresh" title="Refresh directory" aria-label="Refresh directory">↻</button></header>
+<main>
+<section class="parent-pane" aria-label="Parent directory"><h2>Parent</h2><div id="parent" class="listing"></div></section>
+<section aria-label="Current directory"><h2>Files</h2><div id="files" class="listing" role="listbox" aria-label="Files" aria-describedby="navigation-help" tabindex="0"></div></section>
+<section class="preview-pane" aria-label="Selected entry"><h2>Preview</h2><div id="preview" class="listing"></div></section>
+</main>
+<p id="status" role="status"></p>
+<footer id="navigation-help"><span><kbd>j/k</kbd> move</span><span><kbd>h</kbd> parent</span><span><kbd>l / Enter</kbd> open</span><span><kbd>gg / G</kbd> first / last</span><span id="position"></span></footer>
+<script src="browser.js"></script></body></html>

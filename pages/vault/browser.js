@@ -1,49 +1,171 @@
 /* global vaultPage */
+const files = document.getElementById('files')
+const status = document.getElementById('status')
+let entries = []
+let selected = -1
+let parentURL = null
 let generation = 0
-function renderEntries (entries, target) {
-  entries.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'directory' ? -1 : 1).forEach(entry => {
-    const li = document.createElement('li')
-    const link = document.createElement('a')
-    link.href = entry.url
-    link.textContent = entry.relativePath
-    link.onclick = event => { event.preventDefault(); vaultPage.open(entry.url) }
-    if (entry.kind === 'directory') {
-      const details = document.createElement('details')
-      const summary = document.createElement('summary')
-      summary.append(link)
-      const children = document.createElement('ul')
-      details.append(summary, children)
-      details.ontoggle = async () => {
-        if (!details.open) return
-        const result = await vaultPage.listDirectory(entry.url)
-        children.replaceChildren()
-        if (result.ok) renderEntries(result.entries, children)
-        else children.textContent = result.error
-      }
-      li.append(details)
-    } else li.append(link)
-    target.append(li)
-  })
+let previewGeneration = 0
+let lastG = 0
+
+function sorted (items) {
+  return items.slice().sort((a, b) => Number(b.kind === 'directory') - Number(a.kind === 'directory') || a.name.localeCompare(b.name))
 }
+
+async function open (url) {
+  try {
+    const result = await vaultPage.open(url)
+    if (result && result.ok === false) status.textContent = result.error
+  } catch (_) { status.textContent = 'Could not open this entry.' }
+}
+
+function row (entry) {
+  const element = document.createElement('button')
+  element.className = 'entry ' + (entry.kind === 'directory' ? 'directory' : 'file')
+  element.textContent = (entry.kind === 'directory' ? '▸ ' : '· ') + entry.name + (entry.kind === 'directory' ? '/' : '')
+  element.title = entry.relativePath || entry.name
+  return element
+}
+
+function message (target, text) {
+  target.replaceChildren()
+  const p = document.createElement('p')
+  p.className = 'placeholder'
+  p.textContent = text
+  target.append(p)
+}
+
+async function preview (entry) {
+  const mine = ++previewGeneration
+  const target = document.getElementById('preview')
+  message(target, entry ? (entry.kind === 'directory' ? 'Loading…' : entry.name + ' — Enter to open') : 'No entry selected')
+  if (!entry || entry.kind !== 'directory') return
+  try {
+    const result = await vaultPage.listDirectory(entry.url)
+    if (mine !== previewGeneration) return
+    if (!result.ok) return message(target, result.error)
+    target.replaceChildren()
+    sorted(result.entries).forEach(child => {
+      const element = row(child)
+      element.onclick = () => open(child.url)
+      target.append(element)
+    })
+    if (!result.entries.length) message(target, 'Empty directory')
+  } catch (_) {
+    if (mine === previewGeneration) message(target, 'Could not read directory.')
+  }
+}
+
+function select (index) {
+  const next = entries.length ? Math.max(0, Math.min(entries.length - 1, index)) : -1
+  const changed = next !== selected
+  selected = next
+  Array.from(files.children).forEach((element, i) => {
+    element.classList.toggle('selected', i === selected)
+    element.setAttribute('aria-selected', String(i === selected))
+  })
+  if (selected >= 0) {
+    files.setAttribute('aria-activedescendant', 'entry-' + selected)
+    files.children[selected].scrollIntoView({ block: 'nearest' })
+  } else files.removeAttribute('aria-activedescendant')
+  document.getElementById('position').textContent = (selected + 1) + ' / ' + entries.length
+  if (changed || selected === -1) preview(entries[selected])
+}
+
 async function refresh () {
   const mine = ++generation
-  const result = await vaultPage.listCurrent(document.getElementById('search').value)
-  if (mine !== generation) return
-  document.getElementById('status').textContent = result.ok ? '' : result.error
-  if (!result.ok) return
-  const breadcrumb = document.getElementById('breadcrumb')
-  breadcrumb.replaceChildren()
-  const segments = result.url.slice('vault://'.length).split('/').filter(Boolean)
-  for (let i = 0; i <= segments.length; i++) {
-    const button = document.createElement('button')
-    button.textContent = i ? decodeURIComponent(segments[i - 1]) : 'Vault'
-    button.onclick = () => vaultPage.open('vault://' + segments.slice(0, i).join('/') + (i ? '/' : ''))
-    breadcrumb.append(button)
-  }
-  const files = document.getElementById('files')
+  const previous = entries[selected]?.url
+  ++previewGeneration
+  entries = []
+  selected = -1
+  parentURL = null
+  lastG = 0
+  files.setAttribute('aria-busy', 'true')
   files.replaceChildren()
-  renderEntries(result.entries, files)
+  files.removeAttribute('aria-activedescendant')
+  document.getElementById('parent').replaceChildren()
+  message(document.getElementById('preview'), 'Loading…')
+  document.getElementById('position').textContent = ''
+  status.textContent = 'Loading…'
+  try {
+    const result = await vaultPage.listCurrent('')
+    if (mine !== generation) return
+    files.setAttribute('aria-busy', 'false')
+    if (!result.ok) {
+      message(document.getElementById('preview'), 'Directory unavailable')
+      status.textContent = result.error
+      return
+    }
+    const segments = result.url.slice('vault://'.length).split('/').filter(Boolean)
+    const urlAt = i => 'vault://' + segments.slice(0, i).join('/') + (i ? '/' : '')
+    parentURL = segments.length ? urlAt(segments.length - 1) : null
+    const breadcrumb = document.getElementById('breadcrumb')
+    breadcrumb.replaceChildren()
+    for (let i = 0; i <= segments.length; i++) {
+      const button = document.createElement('button')
+      button.textContent = i ? decodeURIComponent(segments[i - 1]) + '/' : 'vault://'
+      if (i === segments.length) button.setAttribute('aria-current', 'page')
+      button.onclick = () => open(urlAt(i))
+      breadcrumb.append(button)
+    }
+    breadcrumb.title = result.url
+    breadcrumb.scrollLeft = breadcrumb.scrollWidth
+    document.title = (segments.length ? decodeURIComponent(segments[segments.length - 1]) + ' — ' : '') + 'Vault'
+    entries = sorted(result.entries)
+    entries.forEach((entry, i) => {
+      const element = row(entry)
+      element.id = 'entry-' + i
+      element.tabIndex = -1
+      element.setAttribute('role', 'option')
+      element.onclick = () => { select(i); files.focus() }
+      element.ondblclick = () => open(entry.url)
+      files.append(element)
+    })
+    status.textContent = entries.length ? '' : 'Empty directory'
+    select(Math.max(0, entries.findIndex(entry => entry.url === previous)))
+    files.focus()
+    const parent = document.getElementById('parent')
+    if (!parentURL) return message(parent, 'Vault root')
+    const siblings = await vaultPage.listDirectory(parentURL)
+    if (mine !== generation) return
+    if (!siblings.ok) return message(parent, siblings.error)
+    sorted(siblings.entries).forEach(entry => {
+      const element = row(entry)
+      element.classList.toggle('current', entry.url === result.url)
+      element.onclick = () => open(entry.url)
+      parent.append(element)
+    })
+    const current = parent.querySelector('.current')
+    if (current) current.scrollIntoView({ block: 'nearest' })
+  } catch (_) {
+    if (mine === generation) {
+      files.setAttribute('aria-busy', 'false')
+      status.textContent = 'Could not read directory. Try refreshing.'
+      if (!entries.length) message(document.getElementById('preview'), 'Directory unavailable')
+    }
+  }
 }
+
+document.addEventListener('keydown', event => {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return
+  if (event.key === 'Enter' && event.target.closest('button')) return
+  const key = event.key
+  if (!['j', 'k', 'h', 'l', 'g', 'G', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(key)) {
+    lastG = 0
+    return
+  }
+  event.preventDefault()
+  files.focus({ preventScroll: true })
+  if (key !== 'g') lastG = 0
+  if (key === 'j' || key === 'ArrowDown') select(selected + 1)
+  if (key === 'k' || key === 'ArrowUp') select(selected - 1)
+  if (key === 'h' || key === 'ArrowLeft') { if (parentURL) open(parentURL) }
+  if (key === 'l' || key === 'ArrowRight' || key === 'Enter') { if (entries[selected]) open(entries[selected].url) }
+  if (key === 'G' || key === 'End') select(entries.length - 1)
+  if (key === 'Home') select(0)
+  if (key === 'g') {
+    if (lastG && Date.now() - lastG < 700) { select(0); lastG = 0 } else lastG = Date.now()
+  }
+})
 document.getElementById('refresh').onclick = refresh
-document.getElementById('search').oninput = refresh
 refresh()
