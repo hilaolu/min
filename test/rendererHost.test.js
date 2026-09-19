@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
+const fs = require('node:fs')
+const vm = require('node:vm')
+const { createRequire } = require('node:module')
 
 const { createBrowserChromeHost, installBrowserChromeHost } = require('../main/browserChromePreload.js')
 const { createRuntimeArgument, readRuntimeArgument } = require('../main/browserChromeRuntime.js')
@@ -48,6 +51,44 @@ test('production and in-memory Renderer Host Adapters share one contract', funct
 
   assertRendererHostContract(createRendererHost(preloadAdapter))
   assertRendererHostContract(createInMemoryRendererHost(runtimeConfiguration))
+})
+
+test('default Renderer Host exports every adapter operation used by browser chrome', function () {
+  const rendererHost = require('../js/rendererHost.js')
+  const adapter = createInMemoryRendererHost(runtimeConfiguration)
+  for (const operation of Object.keys(adapter)) {
+    assert.equal(typeof rendererHost[operation], 'function', `Missing default host operation: ${operation}`)
+  }
+})
+
+test('default Renderer Host resolves lazily and forwards arguments and return values unchanged', function () {
+  const filename = require.resolve('../js/rendererHost.js')
+  const context = { module: { exports: {} }, require: createRequire(filename) }
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context, { filename })
+  const host = context.module.exports
+  assert.throws(() => host.searchVaultFiles('m', ''), { code: 'BROWSER_CHROME_HOST_UNAVAILABLE' })
+
+  const args = ['m', 'query', { marker: true }]
+  const result = Promise.resolve({ ok: true })
+  const calls = []
+  const adapter = { getRuntimeConfiguration: () => runtimeConfiguration }
+  for (const operation of Object.keys(createInMemoryRendererHost(runtimeConfiguration))) {
+    if (operation === 'getRuntimeConfiguration') continue
+    adapter[operation] = function (...received) {
+      assert.equal(this, adapter)
+      assert.deepEqual(received, args)
+      calls.push(operation)
+      return result
+    }
+  }
+  // A call before preload availability must not poison later initialization.
+  context.window = { browserChromeHost: adapter }
+  for (const operation of Object.keys(adapter)) {
+    if (operation === 'getRuntimeConfiguration') continue
+    assert.equal(host[operation](...args), result)
+  }
+  assert.deepEqual(calls, Object.keys(adapter).filter(operation => operation !== 'getRuntimeConfiguration'))
+  assert.deepEqual(host.getRuntimeConfiguration(), runtimeConfiguration)
 })
 
 test('Browser Chrome preload supports the current and future isolated worlds', function () {

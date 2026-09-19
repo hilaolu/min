@@ -10,7 +10,9 @@ const nextRoot = path.join(temp, 'next')
 fs.mkdirSync(root)
 fs.mkdirSync(nextRoot)
 fs.writeFileSync(path.join(root, 'note.md'), '# Initial\n')
+fs.writeFileSync(path.join(root, 'Report.pdf'), '')
 fs.writeFileSync(path.join(nextRoot, 'note.md'), '# Other vault\n')
+fs.writeFileSync(path.join(nextRoot, 'next-root-only.md'), '# Next root\n')
 fs.writeFileSync(path.join(temp, 'vault-root.json'), JSON.stringify({ root }))
 app.setPath('userData', temp)
 app.disableHardwareAcceleration()
@@ -25,12 +27,35 @@ async function until (fn, label) {
   for (let i = 0; i < 300; i++) { const value = await fn(); if (value) return value; await sleep(50) }
   throw new Error('Timed out: ' + label)
 }
+async function assertPaletteResult (chrome, query, expected) {
+  chrome.focus()
+  chrome.sendInputEvent({ type: 'keyDown', keyCode: '.', modifiers: ['control'] })
+  chrome.sendInputEvent({ type: 'keyUp', keyCode: '.', modifiers: ['control'] })
+  await chrome.executeJavaScript(`(() => {
+    const input = document.getElementById('command-palette-input')
+    if (!input) throw new Error('Command palette input not found')
+    input.value = ${JSON.stringify(query)}
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  const overlay = await until(() => webContents.getAllWebContents().find(c => c.getURL() === 'min://app/pages/commandPalette/overlay.html'), 'command palette overlay')
+  for (let i = 0; i < 200; i++) {
+    const candidates = await overlay.executeJavaScript("Array.from(document.querySelectorAll('.command-suggestion'), element => ({ id: element.dataset.key, title: element.querySelector('.command-suggestion-title')?.textContent }))")
+    const error = candidates.find(candidate => candidate.id === 'vault-error')
+    if (error) throw new Error(`Command palette search failed for ${query}: ${error.title}`)
+    if (candidates.some(candidate => candidate.title === expected)) return
+    await sleep(50)
+  }
+  throw new Error(`Timed out waiting for command palette result ${expected} from ${query}`)
+}
 const deadline = setTimeout(() => { console.error('App acceptance timeout'); app.exit(1) }, 90000)
 async function run () {
   await app.whenReady()
   const win = await until(() => main.windows.getAll()[0], 'browser window')
   const chrome = main.windows.getChromeContents(win)
   await until(() => !chrome.isLoading(), 'browser chrome')
+  await until(() => chrome.executeJavaScript("!!document.getElementById('command-palette-input')").catch(() => false), 'command palette input')
+  await assertPaletteResult(chrome, '>m note', 'note.md')
+  await assertPaletteResult(chrome, '>p Report', 'Report.pdf')
   main.windows.send(win, 'addTab', { url: 'vault://local/note.md' })
   const note = await until(() => webContents.getAllWebContents().find(c => c.getURL().startsWith('min://app/pages/markdown/index.html')), 'real tab routing')
   await until(() => note.executeJavaScript('typeof cherry !== "undefined" && !!cherry').catch(() => false), 'Cherry ready')
@@ -99,12 +124,13 @@ async function run () {
   assert.equal(fs.readFileSync(path.join(root, 'note.md'), 'utf8'), '# Root change buffer')
   assert.equal(fs.readFileSync(path.join(nextRoot, 'note.md'), 'utf8'), '# Other vault\n')
   assert.equal(JSON.parse(fs.readFileSync(path.join(temp, 'vault-root.json'))).root, nextRoot)
+  await assertPaletteResult(chrome, '>m next-root-only', 'next-root-only.md')
   await main.viewManager.executeTabContentCommand(chrome, { id: main.viewManager.getTabIDFromWebContents(settings), operation: 'lifecycle.destroy' })
   main.windows.send(win, 'addTab', { url: 'min://app/pages/settings/index.html' })
   const reopened = await until(() => webContents.getAllWebContents().find(c => c !== settings && c.getURL() === 'min://app/pages/settings/index.html'), 'reopened Settings')
   await until(() => !reopened.isLoading(), 'reopened Settings loaded')
   await until(() => reopened.executeJavaScript(`document.getElementById('vault-root-path')?.value === ${JSON.stringify(nextRoot)}`).catch(() => false), 'saved directory visible after reopening Settings')
-  console.log('PASS full app: production tabs, Ctrl+S, native window-close/quit cancellation, reload guard, Settings root Save/Cancel/close-before-commit')
+  console.log('PASS full app: bundled palette vault search, production tabs, Ctrl+S, native window-close/quit cancellation, reload guard, Settings root Save/Cancel/close-before-commit')
 }
 run().then(() => finish(0), error => { console.error(error); finish(1) })
 function finish (code) {

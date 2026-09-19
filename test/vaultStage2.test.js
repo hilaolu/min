@@ -4,6 +4,10 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 const EventEmitter = require('node:events')
+const vm = require('node:vm')
+const { createRequire } = require('node:module')
+const { createBrowserChromeHost } = require('../main/browserChromePreload.js')
+const { createRuntimeArgument } = require('../main/browserChromeRuntime.js')
 const searchVaultFiles = require('../main/vaultSearch.js')
 const createVaultMode = require('../main/vaultMode.js')
 const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
@@ -96,6 +100,50 @@ test('vault search IPC validates frames and parameters before allowing chrome', 
   const allowed = await search(mainEvent, 'm', 'READ ME')
   assert.equal(allowed.ok, true)
   assert.deepEqual(allowed.entries.map(entry => entry.relativePath), ['Nested/Read me.md'])
+})
+
+test('palette uses the default renderer export through preload IPC with the saved root on first search', async t => {
+  const userDataPath = profile(t, 'min-vault-bridge-')
+  const root = path.join(userDataPath, 'vault')
+  write(path.join(root, 'Nested', 'Read me.md'))
+  write(path.join(root, 'Report.pdf'))
+  const { handlers, chrome, frame } = searchMode(userDataPath, fs.realpathSync(root))
+  const calls = []
+  const ipc = {
+    invoke: (channel, ...args) => {
+      calls.push([channel, ...args])
+      return handlers.get(channel)({ sender: chrome, senderFrame: frame }, ...args)
+    }
+  }
+  const runtime = createRuntimeArgument({
+    appName: 'Min',
+    appVersion: '1.39.11',
+    platform: 'linux',
+    windowId: 'test',
+    developmentMode: false,
+    initialTask: '',
+    initialWindow: true,
+    launchWindow: true
+  })
+  // Load the same module facade the production palette receives, not a
+  // createRendererHost() instance (which previously hid a missing export).
+  const filename = require.resolve('../js/rendererHost.js')
+  const context = {
+    module: { exports: {} },
+    require: createRequire(filename),
+    window: { browserChromeHost: createBrowserChromeHost(['electron', runtime], ipc) }
+  }
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context, { filename })
+  const host = context.module.exports
+  const opened = []
+  const strategy = new VaultFileStrategy((kind, query) => host.searchVaultFiles(kind, query), url => opened.push(url))
+  for (const [command, query, expected] of [['m', 'READ ME', 'Nested/Read me.md'], ['p', 'report', 'Report.pdf']]) {
+    const results = await strategy.updateUI(`>${command} ${query}`, { command, query })
+    assert.deepEqual(results.map(result => result.title), [expected])
+    results[0].action()
+  }
+  assert.deepEqual(calls, [['vault:search-files', 'm', 'READ ME'], ['vault:search-files', 'p', 'report']])
+  assert.deepEqual(opened, ['vault://local/Nested/Read%20me.md', 'vault://local/Report.pdf'])
 })
 
 test('VaultFileStrategy exposes loading, empty, error, and open results', async () => {
