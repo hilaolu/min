@@ -26,7 +26,20 @@ h2 { margin: 0; padding: 10px 16px; color: var(--muted); font-size: 11px; text-t
 .preview-text { margin: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; tab-size: 4; }
 mark { background: #ffe08a; color: #241b00; border-radius: 2px; }
 .result-snippet { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
-#fuzzy-form { padding: 8px 16px; border-bottom: 1px solid var(--line); }
+#search-open { align-self: flex-start; margin: 8px 16px; color: var(--accent); }
+#fuzzy-dialog { width: min(480px, calc(100% - 32px)); padding: 16px; border: 1px solid var(--accent); border-radius: 0; background: var(--bg); color: var(--fg); font: inherit; box-shadow: none; }
+#fuzzy-dialog::backdrop { background: transparent; }
+#fuzzy-title { padding: 0 0 10px; color: var(--accent); }
+#fuzzy-help { margin: 12px 0; color: var(--muted); font-size: 12px; }
+#fuzzy-query { display: block; width: 100%; margin: 6px 0 12px; padding: 5px 8px; }
+#fuzzy-form input, #fuzzy-form select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 0; }
+.search-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.search-options label:first-child { margin-right: auto; }
+.search-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); }
+.search-actions button { padding: 4px 8px; border: 0; border-radius: 0; }
+.search-actions button::before { content: '[ '; }
+.search-actions button::after { content: ' ]'; }
+.search-actions button[type="submit"] { background: var(--selection); color: var(--accent); }
 .preview-image { display: block; max-width: 100%; max-height: 65vh; object-fit: contain; margin: 10px auto; }
 #status { margin: 0; padding: 0 16px; color: var(--muted); }
 #status:not(:empty) { padding-top: 8px; padding-bottom: 8px; border-top: 1px solid var(--line); }

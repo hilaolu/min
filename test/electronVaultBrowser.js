@@ -437,9 +437,30 @@ async function run () {
     document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }))
   `)
   assert.equal(await evaluate('document.activeElement.id'), 'fuzzy-query')
+  assert.equal(await evaluate("document.getElementById('fuzzy-dialog').matches(':modal')"), true)
+  assert.deepEqual(await evaluate(`({
+    backdrop: getComputedStyle(document.getElementById('fuzzy-dialog'), '::backdrop').backgroundColor,
+    radius: getComputedStyle(document.getElementById('fuzzy-dialog')).borderRadius,
+    shadow: getComputedStyle(document.getElementById('fuzzy-dialog')).boxShadow
+  })`), { backdrop: 'rgba(0, 0, 0, 0)', radius: '0px', shadow: 'none' })
+  await sendKey('Escape')
+  assert.equal(await evaluate("document.getElementById('fuzzy-dialog').open"), false)
+  assert.equal(await evaluate("document.querySelectorAll('#files .entry').length"), 4)
+  await evaluate("document.getElementById('search-open').focus(); document.getElementById('search-open').click()")
+  assert.equal(await evaluate('document.activeElement.id'), 'fuzzy-query')
+  await evaluate("document.getElementById('fuzzy-query').value = '   '; document.getElementById('fuzzy-form').requestSubmit()")
+  assert.equal(await evaluate("document.getElementById('fuzzy-dialog').open"), true)
+  assert.equal(await evaluate('window.__vaultTest.searchCalls().length'), 0)
+  await evaluate("document.getElementById('fuzzy-close').focus()")
+  await sendKey('j')
+  assert.equal(await evaluate('document.activeElement.id'), 'fuzzy-close', 'dialog keys do not navigate files')
+  await evaluate("document.getElementById('fuzzy-close').click()")
+  assert.equal(await evaluate('document.activeElement.id'), 'search-open', 'cancel restores focus')
+  await evaluate("document.getElementById('search-open').click()")
   await evaluate("document.getElementById('fuzzy-query').value = 'needle'; document.getElementById('fuzzy-exact').checked = true; document.getElementById('fuzzy-limit').value = '25'; document.getElementById('fuzzy-form').requestSubmit()")
   await until(() => evaluate("document.querySelector('#preview mark')?.textContent === 'NEEDLE' && document.getElementById('status').textContent === 'Showing 2 of 2 matching files'"), 'content result preview')
   assert.deepEqual(await evaluate('window.__vaultTest.searchCalls().pop()'), { query: 'needle', options: { exact: true, limit: 25 } })
+  assert.equal(await evaluate("document.getElementById('fuzzy-dialog').open"), false)
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#files .entry'), row => row.title)"), [
     initial.entries[0].relativePath,
     initial.entries[2].relativePath
@@ -485,7 +506,7 @@ async function run () {
   await evaluate("document.getElementById('fuzzy-query').value = 'error'; document.getElementById('fuzzy-form').requestSubmit()")
   await until(() => evaluate("document.getElementById('status').textContent === 'Content search failed.'"), 'content search error')
   await sendKey('Escape')
-  await until(() => evaluate("document.getElementById('fuzzy-form').hidden && document.querySelectorAll('#files .entry').length === 4 && document.getElementById('files').getAttribute('aria-busy') === 'false'"), 'close content search and restore listing')
+  await until(() => evaluate("!document.getElementById('fuzzy-dialog').open && document.querySelectorAll('#files .entry').length === 4 && document.getElementById('files').getAttribute('aria-busy') === 'false'"), 'close content search and restore listing')
   assert.equal(await evaluate("document.querySelector('#files .result-snippet')"), null)
   const cancellations = await evaluate('window.__vaultTest.cancellations()')
   await evaluate(`

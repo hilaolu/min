@@ -4,10 +4,15 @@
 <link rel="stylesheet" href="browser.css"></head>
 <body>
 <header><strong>VAULT</strong><nav id="breadcrumb" aria-label="Current directory"></nav><button id="refresh" title="Refresh directory" aria-label="Refresh directory">↻</button></header>
-<form id="fuzzy-form" hidden><label for="fuzzy-query">Find in file contents /</label> <input id="fuzzy-query" type="text" maxlength="256" autocomplete="off" spellcheck="false" placeholder="Type a query and press Enter">
+<button id="search-open" type="button" aria-haspopup="dialog">Search file contents /</button>
+<dialog id="fuzzy-dialog" aria-labelledby="fuzzy-title" aria-describedby="fuzzy-help">
+<form id="fuzzy-form"><h2 id="fuzzy-title">Search file contents</h2>
+<p id="fuzzy-help">Search files in this directory and its subfolders.</p>
+<label for="fuzzy-query">Search query</label> <input id="fuzzy-query" type="text" required maxlength="256" autocomplete="off" spellcheck="false" placeholder="Enter text to find" autofocus>
+<div class="search-options">
 <label title="Require a contiguous phrase instead of scattered fuzzy characters"><input id="fuzzy-exact" type="checkbox">Exact phrase</label>
-<label for="fuzzy-limit">Top</label><select id="fuzzy-limit"><option>25</option><option selected>50</option><option>100</option><option>500</option></select>
-<button type="submit">Find</button><button id="fuzzy-close" type="button">Close (Esc)</button></form>
+<label for="fuzzy-limit">Top results</label><select id="fuzzy-limit"><option>25</option><option selected>50</option><option>100</option><option>500</option></select></div>
+<div class="search-actions"><button id="fuzzy-close" type="button">Cancel</button><button type="submit">Search</button></div></form></dialog>
 <main>
 <section class="parent-pane" aria-label="Parent directory"><h2>Parent</h2><div id="parent" class="listing"></div></section>
 <section aria-label="Current directory"><h2>Files</h2><div id="files" class="listing" role="listbox" aria-label="Files" aria-describedby="navigation-help" tabindex="0"></div></section>

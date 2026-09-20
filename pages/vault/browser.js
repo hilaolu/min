@@ -10,6 +10,18 @@ let previewController = null
 let lastG = 0
 const fuzzyForm = document.getElementById('fuzzy-form')
 const fuzzyQuery = document.getElementById('fuzzy-query')
+const fuzzyDialog = document.getElementById('fuzzy-dialog')
+// Search results can remain active after the input dialog closes.
+let searchActive = false
+
+function showSearch () {
+  lastG = 0
+  fuzzyDialog.showModal()
+  fuzzyQuery.focus()
+  fuzzyQuery.select()
+}
+
+document.getElementById('search-open').onclick = showSearch
 
 function renderEntries (items, previous, fuzzy = false) {
   entries = items
@@ -35,6 +47,10 @@ function renderEntries (items, previous, fuzzy = false) {
 
 fuzzyForm.addEventListener('submit', async event => {
   event.preventDefault()
+  if (!fuzzyQuery.value.trim()) { fuzzyQuery.focus(); return }
+  searchActive = true
+  fuzzyDialog.close()
+  files.focus()
   const mine = ++generation
   const query = fuzzyQuery.value
   const options = { exact: document.getElementById('fuzzy-exact').checked, limit: Number(document.getElementById('fuzzy-limit').value) }
@@ -57,13 +73,7 @@ fuzzyForm.addEventListener('submit', async event => {
     if (mine === generation) files.setAttribute('aria-busy', 'false')
   }
 })
-document.getElementById('fuzzy-close').onclick = () => refresh()
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !fuzzyForm.hidden) {
-    event.preventDefault()
-    refresh()
-  }
-})
+document.getElementById('fuzzy-close').onclick = () => fuzzyDialog.close()
 
 function sorted (items) {
   return items.slice().sort((a, b) => Number(b.kind === 'directory') - Number(a.kind === 'directory') || a.name.localeCompare(b.name))
@@ -204,8 +214,9 @@ function select (index) {
 }
 
 async function refresh () {
-  if (!fuzzyForm.hidden) vaultPage.cancelContentSearch().catch(() => {})
-  fuzzyForm.hidden = true
+  if (searchActive) vaultPage.cancelContentSearch().catch(() => {})
+  searchActive = false
+  fuzzyDialog.close()
   const mine = ++generation
   const previous = entries[selected]?.url
   ++previewGeneration
@@ -272,15 +283,19 @@ async function refresh () {
 }
 
 document.addEventListener('keydown', event => {
+  // Let the native dialog handle focus trapping and Escape to cancel input.
+  if (fuzzyDialog.open) return
+  if (event.key === 'Escape' && searchActive) {
+    event.preventDefault()
+    refresh()
+    return
+  }
   if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return
   if (event.key === 'Enter' && event.target.closest('button')) return
   const key = event.key
   if (key === '/') {
     event.preventDefault()
-    lastG = 0
-    fuzzyForm.hidden = false
-    fuzzyQuery.focus()
-    fuzzyQuery.select()
+    showSearch()
     return
   }
   if (!['j', 'k', 'h', 'l', 'g', 'G', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(key)) {
