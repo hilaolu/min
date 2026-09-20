@@ -7,6 +7,7 @@ const { app, webContents, dialog } = electron
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'min-vault-app-'))
 const root = path.join(temp, 'vault')
 const nextRoot = path.join(temp, 'next')
+const pdfSource = 'https://example.com/Report.pdf?version=2'
 fs.mkdirSync(root)
 fs.mkdirSync(nextRoot)
 fs.writeFileSync(path.join(root, 'note.md'), '# Initial\n')
@@ -49,13 +50,38 @@ async function assertPaletteResult (chrome, query, expected) {
 }
 const deadline = setTimeout(() => { console.error('App acceptance timeout'); app.exit(1) }, 90000)
 async function run () {
+  const rect = { origin: { x: 1, y: 2 }, size: { width: 3, height: 4 } }
+  await require('../main/annotationStore.js').createStore(root, pdfSource).save([{
+    uid: 'pdf-id', sourceType: 'pdf', data: { color: '#ffeb3b', text: 'quote', notes: '', textBefore: '', textAfter: '', pageIndex: 0, rect, segmentRects: [rect] }
+  }], null)
+  const webNote = title => `| Field | Value |
+| --- | --- |
+| Title | ${title} |
+| URL | https://example.com/article?version=2 |
+| Tags | #reading |
+
+## Annotations
+
+%% annotation: web-id | color: ffeb3b %%
+<pre></pre>
+<pre>quote</pre>
+<pre></pre>
+`
+  fs.writeFileSync(path.join(root, 'article.md'), webNote('Article'))
   await app.whenReady()
   const win = await until(() => main.windows.getAll()[0], 'browser window')
   const chrome = main.windows.getChromeContents(win)
   await until(() => !chrome.isLoading(), 'browser chrome')
   await until(() => chrome.executeJavaScript("!!document.getElementById('command-palette-input')").catch(() => false), 'command palette input')
   await assertPaletteResult(chrome, '>m note', 'note.md')
-  await assertPaletteResult(chrome, '>p Report', 'Report.pdf')
+  await assertPaletteResult(chrome, '>p Report', pdfSource)
+  await assertPaletteResult(chrome, '>a reading', 'Article')
+  fs.writeFileSync(path.join(root, 'article.md'), webNote('Updated article'))
+  // The watcher updates the next search, not a result list already displayed.
+  await sleep(300)
+  await assertPaletteResult(chrome, '>a reading', 'Updated article')
+  console.log('PASS bundled indexed >m, >p and >a; external Markdown metadata update')
+  if (process.argv.includes('--picker-only')) return
   main.windows.send(win, 'addTab', { url: 'vault://note.md' })
   const note = await until(() => webContents.getAllWebContents().find(c => c.getURL().startsWith('min://app/pages/markdown/index.html')), 'real tab routing')
   await until(() => note.executeJavaScript('typeof cherry !== "undefined" && !!cherry').catch(() => false), 'Cherry ready')

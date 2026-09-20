@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const atomic = require('write-file-atomic')
+const annotationMarkdown = require('./annotationMarkdown.js')
 
 const maximumBytes = 1024 * 1024
 const queues = new Map()
@@ -46,7 +47,9 @@ function validateAnnotations (items) {
 
 function createStore (root, source) {
   const directory = path.join(root, '.min-annotations')
-  const filename = path.join(directory, digest(source) + '.json')
+  const basename = path.join(directory, digest(source))
+  const markdownFilename = basename + '.md'
+  const jsonFilename = basename + '.json'
   async function checkDirectory (create) {
     const rootStat = await fs.promises.lstat(root).catch(() => { throw new Error('Vault unavailable') })
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Vault unavailable')
@@ -54,55 +57,76 @@ function createStore (root, source) {
     const stat = await fs.promises.lstat(directory)
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Unsafe annotation directory')
   }
-  async function read () {
+  async function readFile (filename) {
+    const stat = await fs.promises.lstat(filename)
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maximumBytes) throw new Error('Unsafe annotation file')
+    const handle = await fs.promises.open(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    try {
+      const opened = await handle.stat()
+      if (!opened.isFile() || opened.size > maximumBytes) throw new Error('Unsafe annotation file')
+      // Bound the read itself, including a file that grows after stat().
+      const bytes = Buffer.alloc(maximumBytes + 1)
+      let offset = 0
+      while (offset < bytes.length) {
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset)
+        if (!bytesRead) break
+        offset += bytesRead
+      }
+      if (offset > maximumBytes) throw new Error('Annotation size limit exceeded')
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, offset))
+    } finally { await handle.close() }
+  }
+  async function readRecord () {
     try {
       await checkDirectory(false)
-      const stat = await fs.promises.lstat(filename)
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maximumBytes) throw new Error('Unsafe annotation file')
-      const handle = await fs.promises.open(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
       let text
+      let format
       try {
-        const opened = await handle.stat()
-        if (!opened.isFile() || opened.size > maximumBytes) throw new Error('Unsafe annotation file')
-        // Bound the read itself, including a file that grows after stat().
-        const bytes = Buffer.alloc(maximumBytes + 1)
-        let offset = 0
-        while (offset < bytes.length) {
-          const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset)
-          if (!bytesRead) break
-          offset += bytesRead
-        }
-        if (offset > maximumBytes) throw new Error('Annotation size limit exceeded')
-        text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, offset))
-      } finally { await handle.close() }
-      const data = JSON.parse(text)
+        text = await readFile(markdownFilename)
+        format = 'markdown'
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+        text = await readFile(jsonFilename)
+        format = 'json'
+      }
+      const data = format === 'markdown' ? annotationMarkdown.parse(text) : JSON.parse(text)
       if (data.version !== 1 || data.source !== source) throw new Error('Annotation source or version mismatch')
-      return { revision: digest(text), annotations: validateAnnotations(data.annotations) }
+      return { revision: digest(text), annotations: validateAnnotations(data.annotations), format }
     } catch (error) {
-      if (error.code === 'ENOENT') return { revision: null, annotations: [] }
+      if (error.code === 'ENOENT') return { revision: null, annotations: [], format: null }
       throw error
     }
+  }
+  async function read () {
+    const { revision, annotations } = await readRecord()
+    return { revision, annotations }
   }
   return {
     read,
     save (annotations, revision, current = () => true) {
       const validated = validateAnnotations(annotations)
-      const text = JSON.stringify({ version: 1, source, annotations: validated }, null, 2) + '\n'
+      let text
+      try {
+        text = annotationMarkdown.stringify({ version: 1, source, annotations: validated })
+      } catch (error) {
+        if (/size limit/.test(error.message)) return Promise.reject(error)
+        throw error
+      }
       if (Buffer.byteLength(text) > maximumBytes) return Promise.reject(new Error('Annotation size limit exceeded'))
-      const result = (queues.get(filename) || Promise.resolve()).then(async () => {
+      const result = (queues.get(markdownFilename) || Promise.resolve()).then(async () => {
         if (!current()) throw new Error('Document or vault changed')
-        const before = await read()
+        const before = await readRecord()
         if (before.revision !== revision) throw new Error('Annotations changed on disk. Export your edits before reloading.')
         if (!current()) throw new Error('Document or vault changed')
-        if (before.revision === digest(text)) return { revision: before.revision, annotations: validated }
+        if (before.format === 'markdown' && before.revision === digest(text)) return { revision: before.revision, annotations: validated }
         await checkDirectory(true)
         if (!current()) throw new Error('Document or vault changed')
-        await atomic(filename, text, { encoding: 'utf8', mode: 0o600 })
+        await atomic(markdownFilename, text, { encoding: 'utf8', mode: 0o600 })
         return { revision: digest(text), annotations: validated }
       })
       const tail = result.catch(() => {})
-      queues.set(filename, tail)
-      tail.then(() => { if (queues.get(filename) === tail) queues.delete(filename) })
+      queues.set(markdownFilename, tail)
+      tail.then(() => { if (queues.get(markdownFilename) === tail) queues.delete(markdownFilename) })
       return result
     }
   }

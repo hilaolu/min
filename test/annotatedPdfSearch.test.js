@@ -2,9 +2,11 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
+const crypto = require('node:crypto')
 const test = require('node:test')
-const { search, discover } = require('../main/annotatedPdfSearch.js')
+const { search, discover, rank, checkSource } = require('../main/annotatedPdfSearch.js')
 const { createStore } = require('../main/annotationStore.js')
+const annotationMarkdown = require('../main/annotationMarkdown.js')
 const { installPdfAnnotations } = require('../main/pdfAnnotations.js')
 const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
 
@@ -32,6 +34,27 @@ function legacy (url = source, title = 'Research paper') {
 %% annotation-rect: ${JSON.stringify(rect)} %%
 %% annotation-segments: ${JSON.stringify([rect])} %%
 `
+}
+function webpageLegacy (url = 'https://example.com/article', title = 'Web research', color = '00AA00') {
+  return `| Field | Value |
+| --- | --- |
+| Title | ${title} |
+| URL | ${url} |
+| Tags | #web |
+
+## Annotations
+
+%% annotation: web-id | color: ${color} %%
+<pre>before</pre>
+<pre>selected text</pre>
+<pre>after</pre>
+
+Useful note
+`
+}
+function nativeFile (root, nativeSource = source, extension = 'md') {
+  const digest = crypto.createHash('sha256').update(nativeSource).digest('hex')
+  return path.join(root, '.min-annotations', `${digest}.${extension}`)
 }
 function fixture (t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'min-annotated-search-'))
@@ -62,6 +85,45 @@ test('discovers archived legacy annotations, not raw PDFs, and opens the PDF wra
   assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
 })
 
+test('discovers and ranks webpage annotations separately, opens original URLs, and routes mixed records to PDF', async t => {
+  const { root } = fixture(t)
+  const webpageSource = 'https://example.com/article'
+  fs.writeFileSync(path.join(root, 'web.md'), webpageLegacy(webpageSource))
+  const mixedSource = 'https://example.com/mixed'
+  const pdfBlock = legacy(mixedSource).slice(legacy(mixedSource).indexOf('%% annotation:'))
+  fs.writeFileSync(path.join(root, 'mixed.md'), webpageLegacy(mixedSource, 'Mixed highlights').trimEnd() + '\n\n' + pdfBlock)
+  fs.writeFileSync(path.join(root, 'web-empty.md'), webpageLegacy('https://example.com/empty').split('%% annotation:')[0])
+
+  const discovered = await discover(root)
+  const webpage = discovered.resources.find(resource => resource.source === webpageSource)
+  const mixed = discovered.resources.find(resource => resource.source === mixedSource)
+  assert.equal(webpage.sourceType, 'webpage')
+  assert.equal(webpage.annotations[0].sourceType, 'webpage')
+  assert.equal(mixed.sourceType, 'pdf')
+  assert.deepEqual(mixed.annotations.map(item => item.sourceType), ['pdf'])
+
+  const webResult = rank(discovered, 'web research', 'a')
+  assert.equal(webResult.entries.length, 1)
+  assert.equal(webResult.entries[0].url, webpageSource)
+  assert.deepEqual(rank(discovered, 'mixed', 'a').entries, [])
+  assert.equal(new URL(rank(discovered, 'mixed').entries[0].url).searchParams.get('url'), mixedSource)
+  assert.deepEqual((await search(root, 'web research')).entries, [])
+})
+
+test('rejects unsafe or invalid webpage records without treating plain notes as errors', async t => {
+  const { root, filename } = fixture(t)
+  fs.unlinkSync(filename)
+  fs.writeFileSync(path.join(root, 'plain.md'), 'Just a note')
+  fs.writeFileSync(path.join(root, 'script.md'), webpageLegacy('javascript:alert(1)', 'Script page'))
+  fs.writeFileSync(path.join(root, 'credentials.md'), webpageLegacy('https://user:secret@example.com/', 'Credential page'))
+  fs.writeFileSync(path.join(root, 'local.md'), webpageLegacy('file:///tmp/page.html', 'Local page'))
+  fs.writeFileSync(path.join(root, 'color.md'), webpageLegacy('https://example.com/color', 'Bad color', 'red'))
+  const result = await discover(root)
+  assert.deepEqual(result.resources, [])
+  assert.equal(result.errors, 4)
+  await assert.rejects(checkSource('javascript:alert(1)', root), /Unsupported PDF source/)
+})
+
 test('legacy annotations hydrate through IPC; native edits and empty stores override legacy', async t => {
   const { root, filename } = fixture(t)
   let handler
@@ -85,6 +147,31 @@ test('native annotations are discoverable without legacy records; stale scans fa
   await createStore(root, source).save([annotation], null)
   assert.equal((await search(root, 'download')).entries.length, 1)
   await assert.rejects(discover(root, () => false), /Vault changed/)
+})
+
+test('legacy native JSON remains discoverable, while Markdown is authoritative even when empty or malformed', async t => {
+  const { root, filename } = fixture(t)
+  fs.unlinkSync(filename)
+  const directory = path.join(root, '.min-annotations')
+  fs.mkdirSync(directory)
+  const jsonFile = nativeFile(root, source, 'json')
+  const markdownFile = nativeFile(root)
+  const jsonText = JSON.stringify({ version: 1, source, annotations: [annotation] })
+  fs.writeFileSync(jsonFile, jsonText)
+  assert.equal((await search(root, '')).entries.length, 1)
+
+  fs.writeFileSync(markdownFile, annotationMarkdown.stringify({ version: 1, source, annotations: [] }))
+  assert.deepEqual((await search(root, '')).entries, [])
+  fs.writeFileSync(markdownFile, '# PDF annotations\n\nmalformed\n')
+  const malformedMarkdown = await search(root, '')
+  assert.deepEqual(malformedMarkdown.entries, [])
+  assert.equal(malformedMarkdown.errors, 1)
+
+  fs.unlinkSync(markdownFile)
+  fs.writeFileSync(jsonFile, '{ malformed JSON')
+  const malformedJSON = await search(root, '')
+  assert.deepEqual(malformedJSON.entries, [])
+  assert.equal(malformedJSON.errors, 1)
 })
 
 test('rejects ambiguous records, invalid geometry, unsafe sources and symlinks without modifying them', async t => {
@@ -118,6 +205,7 @@ test('local native PDF records open through vault routing, and result limits are
   fs.unlinkSync(filename)
   fs.writeFileSync(path.join(root, 'local.pdf'), '%PDF-')
   await createStore(root, 'vault://local.pdf').save([annotation], null)
+  await checkSource('vault://local.pdf', root)
   assert.equal((await search(root, 'local')).entries[0].url, 'vault://local.pdf')
   for (let index = 0; index < 21; index++) {
     fs.writeFileSync(path.join(root, `${index}.md`), legacy(`https://example.com/${String(index).padStart(2, '0')}`, 'Same title'))
@@ -151,15 +239,34 @@ test('depth truncation does not discard other queued directories', async t => {
   assert.equal(result.entries[0].source, source)
 })
 
+test('optional snapshots resolve inventory files, exclude private components, and have no directory scan cap', async t => {
+  const { root } = fixture(t)
+  fs.writeFileSync(path.join(root, 'plain.md'), 'ordinary note')
+  fs.mkdirSync(path.join(root, '.git'))
+  fs.writeFileSync(path.join(root, '.git', 'ignored.md'), webpageLegacy('https://example.com/ignored', 'Ignored page'))
+  const repeated = Array.from({ length: 20001 }, (_, version) => ({ relativePath: 'plain.md', url: 'vault://plain.md', version }))
+  const snapshot = repeated.concat([
+    { relativePath: '.git/ignored.md', url: 'vault://.git/ignored.md', version: 1 },
+    { relativePath: 'Archives/Annotations/resource.md', url: 'vault://Archives/Annotations/resource.md', version: 1 }
+  ])
+  const result = await discover(root, () => true, snapshot)
+  assert.equal(result.truncated, false)
+  assert.equal(result.errors, 0)
+  assert.deepEqual(result.resources.map(resource => resource.source), [source])
+})
+
 test('reports native records with mismatched source filenames or versions', async t => {
   const { root, filename } = fixture(t)
   fs.unlinkSync(filename)
   await createStore(root, source).save([annotation], null)
-  const directory = path.join(root, '.min-annotations')
-  const nativeFile = path.join(directory, fs.readdirSync(directory)[0])
-  const data = JSON.parse(fs.readFileSync(nativeFile, 'utf8'))
-  for (const invalid of [{ ...data, source: 'https://example.com/other' }, { ...data, version: 2 }]) {
-    fs.writeFileSync(nativeFile, JSON.stringify(invalid))
+  const file = nativeFile(root)
+  const text = fs.readFileSync(file, 'utf8')
+  const data = annotationMarkdown.parse(text)
+  for (const invalid of [
+    annotationMarkdown.stringify({ ...data, source: 'https://example.com/other' }),
+    text.replace('"version":1', '"version":2')
+  ]) {
+    fs.writeFileSync(file, invalid)
     const result = await search(root, '')
     assert.deepEqual(result.entries, [])
     assert.equal(result.errors, 1)

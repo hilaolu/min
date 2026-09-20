@@ -4,6 +4,7 @@ const { createHash } = require('crypto')
 const { fileURLToPath } = require('url')
 const { resolveVaultURL } = require('./vault.js')
 const { createStore, validateAnnotations, maximumBytes } = require('./annotationStore.js')
+const annotationMarkdown = require('./annotationMarkdown.js')
 const parseLegacy = require('./annotationLegacy.js')
 
 const MAX_VISITED_ENTRIES = 20000
@@ -20,6 +21,7 @@ function sourceIdentity (input) {
 }
 
 async function checkSource (source, root) {
+  source = sourceIdentity(source)
   const url = new URL(source)
   if (url.protocol === 'file:' || url.protocol === 'vault:') {
     let target = source
@@ -31,6 +33,30 @@ async function checkSource (source, root) {
     const file = await resolveVaultURL(target, root)
     if (!file.stat.isFile() || !/\.pdf$/i.test(file.relativePath)) throw new Error('Unavailable local PDF')
   }
+}
+
+function checkWebSource (source) {
+  const url = new URL(source)
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported webpage source')
+}
+
+function validateWebAnnotations (items) {
+  if (!Array.isArray(items) || items.length > 1000 || Buffer.byteLength(JSON.stringify(items)) > maximumBytes) throw new Error('Annotation size limit exceeded')
+  const ids = new Set()
+  return items.map(item => {
+    if (!item || item.sourceType !== 'webpage' || typeof item.uid !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(item.uid) || ids.has(item.uid)) throw new Error('Invalid or duplicate annotation')
+    ids.add(item.uid)
+    const data = item.data
+    if (!data || !/^#[0-9a-f]{6}$/i.test(data.color)) throw new Error('Invalid webpage annotation')
+    for (const key of ['text', 'notes', 'textBefore', 'textAfter']) {
+      if (typeof data[key] !== 'string' || data[key].length > 100000) throw new Error('Invalid annotation text')
+    }
+    return {
+      uid: item.uid,
+      sourceType: 'webpage',
+      data: { color: data.color, text: data.text, notes: data.notes, textBefore: data.textBefore, textAfter: data.textAfter }
+    }
+  })
 }
 
 async function readRecord (file) {
@@ -50,77 +76,125 @@ async function readRecord (file) {
   } finally { await handle.close() }
 }
 
+function excluded (relativePath) {
+  return relativePath.split('/').some(component => EXCLUDED_DIRECTORIES.has(component))
+}
+
 // No writes or network requests. Legacy Markdown may live in a moved archive,
 // not just the plugin's default Annotations folder.
-async function discover (root, isCurrent = () => true) {
+async function discover (root, isCurrent = () => true, snapshot) {
   await resolveVaultURL('vault://', root)
+  if (snapshot !== undefined && !Array.isArray(snapshot)) throw new TypeError('Invalid vault snapshot')
   const resources = new Map()
   const ambiguous = new Set()
   const invalidSources = new Set()
   const nativeSources = new Set()
+  const invalidMarkdownDigests = new Set()
   const diagnostics = []
-  const pending = [{ url: 'vault://', depth: 0 }]
-  let visited = 0
   let truncated = false
-  // Reaching the depth limit must not discard other queued directories.
-  while (pending.length && visited <= MAX_VISITED_ENTRIES) {
-    if (!isCurrent()) throw new Error('Vault changed')
-    const { url, depth } = pending.shift()
-    let directory
+
+  async function inspect (file, diagnostic) {
+    let recordSource
+    const nativeMatch = file.relativePath.match(/^\.min-annotations\/([a-f0-9]{64})\.(md|json)$/)
     try {
-      directory = await fs.promises.opendir((await resolveVaultURL(url, root)).absolutePath)
-    } catch (_) { diagnostics.push(url); continue }
-    for await (const item of directory) {
-      if (!isCurrent()) throw new Error('Vault changed')
-      if (++visited > MAX_VISITED_ENTRIES) { truncated = true; break }
-      if (item.isSymbolicLink()) continue
-      let recordSource
-      try {
-        const file = await resolveVaultURL(url + encodeURIComponent(item.name), root)
-        if (file.kind === 'directory') {
-          if (EXCLUDED_DIRECTORIES.has(item.name)) continue
-          if (depth >= MAX_DEPTH) truncated = true
-          else pending.push({ url: file.vaultURL, depth: depth + 1 })
-          continue
-        }
-        const native = /^\.min-annotations\/[a-f0-9]{64}\.json$/.test(file.relativePath)
-        if (!file.stat.isFile() || (!native && !/\.md$/i.test(item.name))) continue
-        const text = await readRecord(file)
-        if (native) {
-          const data = JSON.parse(text)
-          recordSource = sourceIdentity(data.source)
-          const digest = createHash('sha256').update(recordSource).digest('hex')
-          if (data.version !== 1 || item.name !== digest + '.json') throw new Error('Annotation source or version mismatch')
-          nativeSources.add(recordSource)
-          continue
-        }
-        if (!/sourceType:\s*pdf/.test(text)) continue
-        const declaredSource = text.match(/^\|\s*URL\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim()
-        if (declaredSource) recordSource = sourceIdentity(declaredSource)
-        const parsed = parseLegacy(text)
-        const source = sourceIdentity(parsed.source)
+      if (!file.stat.isFile() || (!nativeMatch && !/\.md$/i.test(file.relativePath))) return
+      const text = await readRecord(file)
+      if (nativeMatch) {
+        const data = nativeMatch[2] === 'md' ? annotationMarkdown.parse(text) : JSON.parse(text)
+        recordSource = sourceIdentity(data.source)
+        const digest = createHash('sha256').update(recordSource).digest('hex')
+        if (data.version !== 1 || nativeMatch[1] !== digest) throw new Error('Annotation source or version mismatch')
+        nativeSources.add(recordSource)
+        return
+      }
+      const portable = annotationMarkdown.isMarkdown(text)
+      if (!portable && !/%% annotation:/m.test(text)) return
+      const declaredSource = text.match(/^\|\s*URL\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim()
+      if (declaredSource) recordSource = sourceIdentity(declaredSource)
+      const parsed = portable ? annotationMarkdown.parse(text) : parseLegacy(text)
+      const source = sourceIdentity(parsed.source)
+      recordSource = source
+      const pdfAnnotations = parsed.annotations.filter(annotation => annotation.sourceType === 'pdf')
+      let annotations
+      let sourceType
+      if (portable || pdfAnnotations.length) {
         await checkSource(source, root)
-        const annotations = validateAnnotations(parsed.annotations)
-        if (!annotations.length) continue
-        if (resources.has(source)) { ambiguous.add(source); diagnostics.push(file.relativePath); continue }
-        const tags = text.match(/^\|\s*Tags\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim() || ''
-        resources.set(source, { source, title: parsed.title, tags, annotations })
-      } catch (_) {
-        if (recordSource) invalidSources.add(recordSource)
-        diagnostics.push(url + encodeURIComponent(item.name))
+        annotations = validateAnnotations(pdfAnnotations)
+        sourceType = 'pdf'
+      } else {
+        checkWebSource(source)
+        annotations = validateWebAnnotations(parsed.annotations)
+        sourceType = 'webpage'
+      }
+      if (!annotations.length && !portable) return
+      if (resources.has(source)) { ambiguous.add(source); diagnostics.push(file.relativePath); return }
+      const tags = text.match(/^\|\s*Tags\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim() || ''
+      resources.set(source, { source, sourceType, title: parsed.title || source, tags, annotations })
+    } catch (_) {
+      if (recordSource) invalidSources.add(recordSource)
+      if (nativeMatch?.[2] === 'md') invalidMarkdownDigests.add(nativeMatch[1])
+      diagnostics.push(diagnostic)
+    }
+  }
+
+  if (snapshot !== undefined) {
+    const seen = new Set()
+    for (const entry of snapshot) {
+      if (!isCurrent()) throw new Error('Vault changed')
+      const diagnostic = entry && typeof entry.url === 'string' ? entry.url : 'Vault snapshot entry'
+      try {
+        if (!entry || typeof entry.relativePath !== 'string' || typeof entry.url !== 'string') throw new Error('Invalid vault snapshot entry')
+        const file = await resolveVaultURL(entry.url, root)
+        if (file.relativePath !== entry.relativePath) throw new Error('Vault snapshot path mismatch')
+        if (excluded(file.relativePath) || seen.has(file.relativePath)) continue
+        seen.add(file.relativePath)
+        await inspect(file, diagnostic)
+      } catch (_) { diagnostics.push(diagnostic) }
+    }
+  } else {
+    const pending = [{ url: 'vault://', depth: 0 }]
+    let visited = 0
+    // Reaching the depth limit must not discard other queued directories.
+    while (pending.length && visited <= MAX_VISITED_ENTRIES) {
+      if (!isCurrent()) throw new Error('Vault changed')
+      const { url, depth } = pending.shift()
+      let directory
+      try {
+        directory = await fs.promises.opendir((await resolveVaultURL(url, root)).absolutePath)
+      } catch (_) { diagnostics.push(url); continue }
+      for await (const item of directory) {
+        if (!isCurrent()) throw new Error('Vault changed')
+        if (++visited > MAX_VISITED_ENTRIES) { truncated = true; break }
+        if (item.isSymbolicLink()) continue
+        const diagnostic = url + encodeURIComponent(item.name)
+        try {
+          const file = await resolveVaultURL(diagnostic, root)
+          if (file.kind === 'directory') {
+            if (EXCLUDED_DIRECTORIES.has(item.name)) continue
+            if (depth >= MAX_DEPTH) truncated = true
+            else pending.push({ url: file.vaultURL, depth: depth + 1 })
+          } else await inspect(file, diagnostic)
+        } catch (_) { diagnostics.push(diagnostic) }
       }
     }
   }
+
   // A native store (even an empty one) takes precedence over legacy records.
   // This prevents deleted legacy highlights reappearing after reopening.
   for (const source of new Set([...resources.keys(), ...nativeSources])) {
     if (!isCurrent()) throw new Error('Vault changed')
+    const digest = createHash('sha256').update(source).digest('hex')
+    if (invalidMarkdownDigests.has(digest)) {
+      resources.delete(source)
+      invalidSources.add(source)
+      continue
+    }
     try {
       const stored = await createStore(root, source).read()
       if (stored.revision !== null) {
         await checkSource(source, root)
         const previous = resources.get(source)
-        resources.set(source, { source, title: previous?.title || source, tags: previous?.tags || '', annotations: stored.annotations })
+        resources.set(source, { source, sourceType: 'pdf', title: previous?.title || source, tags: previous?.tags || '', annotations: stored.annotations })
         ambiguous.delete(source)
         invalidSources.delete(source)
       }
@@ -158,10 +232,11 @@ function score (text, query) {
   return 0
 }
 
-async function search (root, query, isCurrent) {
-  const result = await discover(root, isCurrent)
+function rank (result, query, kind = 'p') {
+  const sourceType = kind === 'a' ? 'webpage' : 'pdf'
+  const resources = result.resources.filter(resource => resource.sourceType === sourceType)
   const lowerQuery = query.toLowerCase()
-  const matches = result.resources.map(resource => ({ resource, score: score([resource.title, resource.source, resource.tags].join(' '), lowerQuery) }))
+  const matches = resources.map(resource => ({ resource, score: score([resource.title, resource.source, resource.tags].join(' '), lowerQuery) }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score || compare(a.resource.title.toLowerCase(), b.resource.title.toLowerCase()) || compare(a.resource.source, b.resource.source))
   return {
@@ -169,14 +244,18 @@ async function search (root, query, isCurrent) {
     entries: matches.slice(0, MAX_RESULTS).map(({ resource }) => ({
       title: resource.title,
       source: resource.source,
-      annotationCount: resource.annotations.length,
-      url: resource.source.startsWith('vault:') ? resource.source : 'min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent(resource.source)
+      annotationCount: resource.annotationCount === undefined ? resource.annotations.length : resource.annotationCount,
+      url: resource.sourceType === 'webpage' || resource.source.startsWith('vault:') ? resource.source : 'min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent(resource.source)
     })),
-    total: result.resources.length,
+    total: resources.length,
     truncated: result.truncated || matches.length > MAX_RESULTS,
     errors: result.errors,
     diagnostics: result.diagnostics
   }
 }
 
-module.exports = { discover, search, sourceIdentity }
+async function search (root, query, isCurrent) {
+  return rank(await discover(root, isCurrent), query)
+}
+
+module.exports = { discover, search, rank, checkSource, sourceIdentity }

@@ -6,6 +6,7 @@ const path = require('node:path')
 const test = require('node:test')
 
 const { createStore, maximumBytes, validateAnnotations } = require('../main/annotationStore.js')
+const annotationMarkdown = require('../main/annotationMarkdown.js')
 
 const source = 'https://example.com/document.pdf'
 
@@ -33,9 +34,9 @@ function annotation (uid = 'annotation-1', changes = {}) {
   return { uid, sourceType: 'pdf', ...changes, data }
 }
 
-function annotationFile (root, pdfSource = source) {
+function annotationFile (root, pdfSource = source, extension = 'md') {
   const digest = crypto.createHash('sha256').update(pdfSource).digest('hex')
-  return path.join(root, '.min-annotations', `${digest}.json`)
+  return path.join(root, '.min-annotations', `${digest}.${extension}`)
 }
 
 test('saves and loads PDF geometry, text, notes, colors, and IDs', async t => {
@@ -68,7 +69,7 @@ test('persists an empty deletion snapshot instead of resurrecting annotations', 
 
   await store.save([], saved.revision)
   assert.deepEqual((await store.read()).annotations, [])
-  assert.deepEqual(JSON.parse(fs.readFileSync(annotationFile(root), 'utf8')).annotations, [])
+  assert.deepEqual(annotationMarkdown.parse(fs.readFileSync(annotationFile(root), 'utf8')).annotations, [])
 })
 
 test('serializes concurrent writers and rejects the writer with the stale snapshot', async t => {
@@ -104,6 +105,10 @@ test('enforces annotation count, encoded-size, and field-length schema limits', 
   })
   const oneThousand = Array.from({ length: 1000 }, (_, index) => smallAnnotation(index))
   await store.save(oneThousand, null)
+  await assert.rejects(
+    store.save(oneThousand.map(item => ({ ...item, data: { ...item.data, text: 'x'.repeat(700) } })), null),
+    /Annotation size limit exceeded/
+  )
   assert.throws(
     () => store.save([...oneThousand, annotation('one-too-many')], null),
     /Annotation size limit exceeded|Invalid or duplicate annotation/
@@ -141,7 +146,7 @@ test('denies symlinked annotation directories and files', async t => {
   fs.mkdirSync(fileDirectory)
   const target = path.join(outside, 'target.json')
   fs.writeFileSync(target, '{}')
-  fs.symlinkSync(target, annotationFile(fileRoot))
+  fs.symlinkSync(target, annotationFile(fileRoot, source, 'json'))
   const fileStore = createStore(fileRoot, source)
   await assert.rejects(fileStore.read(), /Unsafe annotation file/)
 })
@@ -149,7 +154,7 @@ test('denies symlinked annotation directories and files', async t => {
 test('rejects a source-mismatched record without rewriting it', async t => {
   const root = profile(t)
   fs.mkdirSync(path.join(root, '.min-annotations'))
-  const file = annotationFile(root)
+  const file = annotationFile(root, source, 'json')
   const original = JSON.stringify({ version: 1, source: 'https://other.example/file.pdf', annotations: [] })
   fs.writeFileSync(file, original)
   const store = createStore(root, source)
@@ -157,6 +162,45 @@ test('rejects a source-mismatched record without rewriting it', async t => {
   await assert.rejects(store.read(), /Annotation source or version mismatch/)
   await assert.rejects(store.save([], null), /Annotation source or version mismatch/)
   assert.equal(fs.readFileSync(file, 'utf8'), original)
+})
+
+test('migrates an unchanged legacy JSON revision to Markdown without changing JSON bytes', async t => {
+  const root = profile(t)
+  const directory = path.join(root, '.min-annotations')
+  const jsonFile = annotationFile(root, source, 'json')
+  const markdownFile = annotationFile(root)
+  const items = [annotation('legacy-id')]
+  const original = JSON.stringify({ version: 1, source, annotations: items }, null, 2) + '\n'
+  fs.mkdirSync(directory)
+  fs.writeFileSync(jsonFile, original)
+  const store = createStore(root, source)
+
+  const legacy = await store.read()
+  assert.deepEqual(legacy.annotations, items)
+  const migrated = await store.save(items, legacy.revision)
+  assert.deepEqual(annotationMarkdown.parse(fs.readFileSync(markdownFile, 'utf8')).annotations, items)
+  assert.equal(fs.readFileSync(jsonFile, 'utf8'), original)
+  assert.equal(migrated.revision, (await store.read()).revision)
+})
+
+test('an empty Markdown record wins over JSON and makes the JSON revision stale', async t => {
+  const root = profile(t)
+  const directory = path.join(root, '.min-annotations')
+  const jsonFile = annotationFile(root, source, 'json')
+  const markdownFile = annotationFile(root)
+  const jsonText = JSON.stringify({ version: 1, source, annotations: [annotation('legacy-id')] })
+  fs.mkdirSync(directory)
+  fs.writeFileSync(jsonFile, jsonText)
+  const store = createStore(root, source)
+  const jsonRevision = (await store.read()).revision
+  const markdownText = annotationMarkdown.stringify({ version: 1, source, annotations: [] })
+  fs.writeFileSync(markdownFile, markdownText)
+
+  const authoritative = await store.read()
+  assert.deepEqual(authoritative.annotations, [])
+  await assert.rejects(store.save([annotation('conflict')], jsonRevision), /Annotations changed on disk/)
+  assert.equal(fs.readFileSync(jsonFile, 'utf8'), jsonText)
+  assert.equal(fs.readFileSync(markdownFile, 'utf8'), markdownText)
 })
 
 test('cancels before writing when current returns false, including after an await', async t => {
@@ -176,7 +220,7 @@ test('cancels before writing when current returns false, including after an awai
 test('preserves malformed on-disk data on read and attempted save', async t => {
   const root = profile(t)
   fs.mkdirSync(path.join(root, '.min-annotations'))
-  const file = annotationFile(root)
+  const file = annotationFile(root, source, 'json')
   const original = '{ this is not JSON\n'
   fs.writeFileSync(file, original)
   const store = createStore(root, source)
@@ -197,7 +241,7 @@ test('missing vault is an error, while missing annotation storage is empty', asy
 test('rejects invalid UTF-8 and oversized files without replacing their bytes', async t => {
   const root = profile(t)
   fs.mkdirSync(path.join(root, '.min-annotations'))
-  const file = annotationFile(root)
+  const file = annotationFile(root, source, 'json')
   const store = createStore(root, source)
   const text = JSON.stringify({ version: 1, source, annotations: [annotation('utf8')] })
   const invalid = Buffer.from(text)

@@ -4,6 +4,25 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 const createIndex = require('../main/vaultFileIndex.js')
+const { createStore } = require('../main/annotationStore.js')
+
+function webNote (title = 'Article', source = 'https://example.com/article?version=2') {
+  return `| Field | Value |
+| --- | --- |
+| Title | ${title} |
+| URL | ${source} |
+| Tags | #reading |
+
+## Annotations
+
+%% annotation: web-id | color: ffeb3b %%
+<pre>before</pre>
+<pre>quote</pre>
+<pre>after</pre>
+
+My note
+`
+}
 
 async function fixture (t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'min-file-index-'))
@@ -74,4 +93,65 @@ test('missing roots fail and closing during initialization settles pending searc
   const pending = assert.rejects(index.search(''), /Vault changed/)
   await index.close()
   await pending
+})
+
+test('shared index tracks webpage metadata edits, renames and deletion without rereading on queries', async t => {
+  const { root, index } = await fixture(t)
+  const filename = path.join(root, 'article.md')
+  await fs.writeFile(filename, webNote())
+  await eventually(async () => assert.equal((await index.searchAnnotations('a', 'Article')).entries.length, 1))
+  assert.deepEqual((await index.searchAnnotations('p', '')).entries, [])
+  assert.equal((await index.search('article')).entries.length, 1)
+  // A warm query must not reopen annotation records or enumerate directories.
+  const originalOpen = fs.open
+  const originalOpendir = fs.opendir
+  fs.open = async () => { throw new Error('Unexpected annotation read') }
+  fs.opendir = async () => { throw new Error('Unexpected directory scan') }
+  try {
+    const result = await index.searchAnnotations('a', 'reading')
+    assert.equal(result.entries.length, 1)
+    assert.equal(result.entries[0].url, 'https://example.com/article?version=2')
+  } finally {
+    fs.open = originalOpen
+    fs.opendir = originalOpendir
+  }
+  await fs.writeFile(filename, webNote('Changed title'))
+  await eventually(async () => assert.equal((await index.searchAnnotations('a', 'Changed title')).entries.length, 1))
+  await fs.rename(filename, path.join(root, 'renamed.md'))
+  await eventually(async () => assert.equal((await index.search('renamed')).entries.length, 1))
+  assert.equal((await index.searchAnnotations('a', '')).entries.length, 1)
+  await fs.unlink(path.join(root, 'renamed.md'))
+  await eventually(async () => assert.deepEqual((await index.searchAnnotations('a', '')).entries, []))
+  await assert.rejects(index.searchAnnotations('a', '', () => false), /Vault changed/)
+})
+
+test('PDF index observes JSON migration, Markdown saves and empty deletion authority', async t => {
+  const { root, index } = await fixture(t)
+  const source = 'https://example.com/download?id=42'
+  const rect = { origin: { x: 1, y: 2 }, size: { width: 3, height: 4 } }
+  const annotations = [{ uid: 'pdf-id', sourceType: 'pdf', data: { text: 'quote', notes: '', textBefore: '', textAfter: '', color: '#ffeb3b', pageIndex: 0, rect, segmentRects: [rect] } }]
+  assert.deepEqual((await index.searchAnnotations('p', '')).entries, [])
+  const directory = path.join(root, '.min-annotations')
+  await fs.mkdir(directory)
+  const jsonFile = path.join(directory, require('crypto').createHash('sha256').update(source).digest('hex') + '.json')
+  const json = JSON.stringify({ version: 1, source, annotations })
+  await fs.writeFile(jsonFile, json)
+  await eventually(async () => {
+    const result = await index.searchAnnotations('p', 'id=42')
+    assert.equal(result.entries.length, 1)
+    assert.equal(new URL(result.entries[0].url).searchParams.get('url'), source)
+  })
+  const store = createStore(root, source)
+  const loaded = await store.read()
+  await store.save([], loaded.revision)
+  await eventually(async () => assert.deepEqual((await index.searchAnnotations('p', '')).entries, []))
+  assert.equal(await fs.readFile(jsonFile, 'utf8'), json)
+  assert.equal((await index.search('')).entries.length, 1)
+  assert.deepEqual((await index.searchAnnotations('a', '')).entries, [])
+  const empty = await store.read()
+  await store.save(annotations, empty.revision)
+  await fs.unlink(jsonFile)
+  const markdownFile = jsonFile.replace(/\.json$/, '.md')
+  await fs.rename(markdownFile, path.join(root, 'moved-record.md'))
+  await eventually(async () => assert.equal((await index.searchAnnotations('p', '')).entries.length, 1))
 })

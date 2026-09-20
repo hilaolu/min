@@ -1,5 +1,6 @@
 const { createStore, validateAnnotations } = require('./annotationStore.js')
 const parseLegacy = require('./annotationLegacy.js')
+const annotationMarkdown = require('./annotationMarkdown.js')
 const fs = require('fs')
 const { fileURLToPath } = require('url')
 
@@ -53,14 +54,14 @@ function installPdfAnnotations ({ ipc, context }) {
         if (!current()) throw new Error('Document or vault changed')
         if (result.revision === null) {
           const legacy = await discover(captured.root, current)
-          const resource = legacy.resources.find(item => item.source === source)
+          const resource = legacy.resources.find(item => item.source === source && item.sourceType === 'pdf')
           if (resource) result.annotations = resource.annotations
           else if (legacy.truncated || legacy.invalidSources.has(source)) throw new Error('Annotation discovery incomplete; check legacy records in the vault')
         }
       } else if (operation === 'save') result = await store.save(payload?.annotations, payload?.revision, current)
       else if (operation === 'import') {
         if (typeof payload !== 'string' || Buffer.byteLength(payload) > 1024 * 1024) throw new Error('Import size limit exceeded')
-        const legacy = payload.trim().startsWith('{') ? JSON.parse(payload) : parseLegacy(payload)
+        const legacy = annotationMarkdown.isMarkdown(payload) ? annotationMarkdown.parse(payload) : payload.trim().startsWith('{') ? JSON.parse(payload) : parseLegacy(payload)
         if (payload.trim().startsWith('{') && legacy.version !== 1) throw new Error('Unsupported annotation version')
         if (sourceIdentity(legacy.source) !== source) throw new Error('Legacy annotation URL does not match this PDF')
         result = { annotations: validateAnnotations(legacy.annotations) }

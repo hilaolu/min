@@ -88,6 +88,7 @@ test('vault search IPC validates frames and parameters before allowing chrome', 
   const root = path.join(userDataPath, 'vault')
   write(path.join(root, 'Nested', 'Read me.md'))
   const instance = searchMode(userDataPath, fs.realpathSync(root))
+  t.after(() => instance.mode.destroy())
   const search = instance.handlers.get('vault:search-files')
   const mainEvent = { sender: instance.chrome, senderFrame: instance.frame }
 
@@ -107,7 +108,8 @@ test('palette uses the default renderer export through preload IPC with the save
   const root = path.join(userDataPath, 'vault')
   write(path.join(root, 'Nested', 'Read me.md'))
   write(path.join(root, 'Report.pdf'))
-  const { handlers, chrome, frame } = searchMode(userDataPath, fs.realpathSync(root))
+  const { handlers, chrome, frame, mode } = searchMode(userDataPath, fs.realpathSync(root))
+  t.after(() => mode.destroy())
   const calls = []
   const ipc = {
     invoke: (channel, ...args) => {
@@ -182,12 +184,27 @@ test('changing the vault invalidates an in-flight search and subsequent searches
   write(path.join(first, 'old.md'))
   write(path.join(second, 'new.md'))
   const instance = searchMode(profileDir, first)
+  t.after(() => instance.mode.destroy())
   const event = { sender: instance.chrome, senderFrame: instance.frame }
   const search = instance.handlers.get('vault:search-files')
   const pending = search(event, 'm', '')
   assert.equal((await instance.handlers.get('vault:select-root')(event, second)).ok, true)
   assert.equal((await pending).ok, false)
   assert.deepEqual((await search(event, 'm', '')).entries.map(entry => entry.relativePath), ['new.md'])
+  assert.equal((await search(event, 'a', '')).ok, true)
+  assert.equal((await search(event, 'p', '')).ok, true)
+})
+
+test('web annotation picker uses its own command, opens the source, and has no URL fallback', async () => {
+  const opened = []
+  const strategy = new VaultFileStrategy(async () => ({ ok: true, entries: [{ title: 'Article', source: 'https://example.com/a?b=1', url: 'https://example.com/a?b=1', annotationCount: 1 }] }), url => opened.push(url))
+  assert.equal(strategy.matches('>A reading').data.command, 'a')
+  assert.equal(strategy.matches('>article').matches, false)
+  const rows = await strategy.updateUI('>a reading', { command: 'a', query: 'reading' })
+  rows[0].action()
+  assert.deepEqual(opened, ['https://example.com/a?b=1'])
+  const empty = new VaultFileStrategy(async () => ({ ok: true, entries: [], total: 0 }), () => {})
+  assert.equal((await empty.updateUI('>a https://unknown.test', { command: 'a', query: 'https://unknown.test' })).some(row => row.action), false)
 })
 
 function deferred () {

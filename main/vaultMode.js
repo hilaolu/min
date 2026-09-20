@@ -25,7 +25,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
   ipc.handle('vault:search-files', async (event, kind, query) => {
     const allowed = () => isChrome(event.sender) && event.senderFrame === event.sender.mainFrame
     if (!allowed()) return { ok: false, error: 'Caller denied' }
-    if (!['m', 'p'].includes(kind) || typeof query !== 'string' || query.length > 256) {
+    if (!['m', 'p', 'a'].includes(kind) || typeof query !== 'string' || query.length > 256) {
       return { ok: false, error: 'Invalid vault search' }
     }
     const token = {}
@@ -36,13 +36,12 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       generation === searchGeneration && searches.get(event.sender) === token
     try {
       if (!current()) throw new Error('Vault changing')
-      if (kind === 'm') {
-        if (fileIndex?.failed) await closeFileIndex()
-        if (!current()) throw new Error('Vault changing')
-        if (!fileIndex) fileIndex = require('./vaultFileIndex.js')(capturedRoot)
-        return await fileIndex.search(query.trim(), current)
-      }
-      return await require('./vaultSearch.js')(capturedRoot, kind, query.trim(), current)
+      if (fileIndex?.failed) await closeFileIndex()
+      if (!current()) throw new Error('Vault changing')
+      if (!fileIndex) fileIndex = require('./vaultFileIndex.js')(capturedRoot)
+      return kind === 'm'
+        ? await fileIndex.search(query.trim(), current)
+        : await fileIndex.searchAnnotations(kind, query.trim(), current)
     } catch (_) {
       return { ok: false, error: 'Vault unavailable or changed. Check vault Settings and retry.' }
     }

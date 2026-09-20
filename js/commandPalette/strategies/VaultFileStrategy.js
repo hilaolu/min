@@ -9,7 +9,7 @@ class VaultFileStrategy extends CommandStateStrategy {
   }
 
   matches (input) {
-    const match = input.trim().match(/^>(m|p)(?:\s+(.*))?$/i)
+    const match = input.trim().match(/^>(m|p|a)(?:\s+(.*))?$/i)
     return { matches: Boolean(match), data: match ? { command: match[1].toLowerCase(), query: match[2] || '' } : {} }
   }
 
@@ -26,15 +26,16 @@ class VaultFileStrategy extends CommandStateStrategy {
     const candidates = result.entries.map(entry => ({
       id: entry.url,
       title: entry.title || entry.relativePath,
-      description: command === 'p' ? `${entry.annotationCount} PDF annotations · ${entry.source}` : 'Open from vault',
+      description: command !== 'm' ? `${entry.annotationCount} ${command === 'p' ? 'PDF' : 'webpage'} annotations · ${entry.source}` : 'Open from vault',
       icon: 'carbon:document',
       action: () => this.open(entry.url)
     }))
     const direct = command === 'm' ? vaultFileCandidate(command, query, this.open) : {}
     if (direct.action && !result.entries.some(entry => entry.url === direct.id.substring(`vault-${command}-`.length))) candidates.unshift(direct)
-    if (!candidates.length) candidates.push({ id: 'vault-empty', title: command === 'p' ? (result.total ? 'No matching annotated PDFs' : 'No annotated PDFs found') : 'No matching vault files', icon: 'carbon:search' })
+    const resources = command === 'p' ? 'PDFs' : 'web pages'
+    if (!candidates.length) candidates.push({ id: 'vault-empty', title: command !== 'm' ? (result.total ? `No matching annotated ${resources}` : `No annotated ${resources} found`) : 'No matching vault files', icon: 'carbon:search' })
     if (result.errors) candidates.push({ id: 'vault-errors', title: 'Some annotation records could not be read or validated', description: result.diagnostics?.slice(0, 3).join(' · '), icon: 'carbon:warning' })
-    if (result.truncated) candidates.push({ id: 'vault-limit', title: command === 'p' ? 'Results limited; refine your query (vault scan may be incomplete)' : 'Search limit reached; use an exact vault-relative path', icon: 'carbon:search' })
+    if (result.truncated) candidates.push({ id: 'vault-limit', title: command !== 'm' ? 'Results limited; refine your query (vault scan may be incomplete)' : 'Search limit reached; use an exact vault-relative path', icon: 'carbon:search' })
     return candidates
   }
 }

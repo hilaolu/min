@@ -5,10 +5,10 @@ const browserSession = require('tabState.js')
  */
 
 const availableCommands = [
-  ...['m', 'p'].map(id => ({
+  ...['m', 'p', 'a'].map(id => ({
     id,
-    title: id === 'm' ? 'Open vault Markdown' : 'Open annotated PDF',
-    description: id === 'm' ? 'Search vault filenames or enter a vault-relative path' : 'Search saved PDF annotations by title, source or tags',
+    title: id === 'm' ? 'Open vault Markdown' : id === 'p' ? 'Open annotated PDF' : 'Open annotated web page',
+    description: id === 'm' ? 'Search vault filenames or enter a vault-relative path' : 'Search saved annotations by title, source or tags',
     shortcut: `>${id} [query]`,
     icon: 'carbon:document',
     prefix: `>${id} `
