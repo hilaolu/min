@@ -116,6 +116,66 @@ test('initial index has no scan budget, limits results, and honors cancellation 
   await assert.rejects(index.search(''), /Vault changed/)
 })
 
+test('cached filename searches retain all broad matches and reset for changed queries', async t => {
+  const { root, index } = await fixture(t)
+  const filenames = Array.from({ length: 25 }, (_, i) => `broad-${String(i).padStart(2, '0')}${i === 24 ? '-needle' : ''}.md`)
+  filenames.push('replacement-only.md')
+  await Promise.all(filenames.map(filename => fs.writeFile(path.join(root, filename), '')))
+
+  await eventually(async () => {
+    const broad = await index.search('broad-')
+    assert.equal(broad.entries.length, 20)
+    assert.equal(broad.truncated, true)
+  })
+
+  assert.deepEqual((await index.search('broad-24-needle')).entries.map(entry => entry.relativePath), ['broad-24-needle.md'])
+
+  const backspace = await index.search('broad-')
+  assert.deepEqual(backspace.entries.map(entry => entry.relativePath), filenames.slice(0, 20))
+  assert.equal(backspace.truncated, true)
+
+  assert.deepEqual((await index.search('replacement')).entries.map(entry => entry.relativePath), ['replacement-only.md'])
+  assert.deepEqual((await index.search('RePlAcEmEnT-OnLy')).entries.map(entry => entry.relativePath), ['replacement-only.md'])
+
+  const empty = await index.search('')
+  assert.deepEqual(empty.entries.map(entry => entry.relativePath), filenames.slice().sort((a, b) => a.localeCompare(b)).slice(0, 20))
+  assert.equal(empty.truncated, true)
+})
+
+test('watcher changes invalidate a warm filename search cache', async t => {
+  const { root, index } = await fixture(t)
+  const original = path.join(root, 'cached-original.md')
+  const created = path.join(root, 'cached-created.md')
+  const renamed = path.join(root, 'renamed-result.md')
+
+  await fs.writeFile(original, '')
+  await eventually(async () => {
+    assert.deepEqual((await index.search('cached')).entries.map(entry => entry.relativePath), ['cached-original.md'])
+  })
+  await index.search('cached')
+
+  await fs.writeFile(created, '')
+  await eventually(async () => {
+    assert.deepEqual((await index.search('cached')).entries.map(entry => entry.relativePath), [
+      'cached-created.md',
+      'cached-original.md'
+    ])
+  })
+  await index.search('cached-created')
+
+  await fs.rename(created, renamed)
+  await eventually(async () => {
+    assert.deepEqual((await index.search('renamed')).entries.map(entry => entry.relativePath), ['renamed-result.md'])
+    assert.deepEqual((await index.search('cached')).entries.map(entry => entry.relativePath), ['cached-original.md'])
+  })
+  await index.search('renamed')
+
+  await fs.unlink(renamed)
+  await eventually(async () => {
+    assert.deepEqual((await index.search('renamed')).entries, [])
+  })
+})
+
 test('missing roots fail and closing during initialization settles pending searches', async t => {
   const { root } = await fixture(t)
   const missing = createIndex(path.join(root, 'missing'))

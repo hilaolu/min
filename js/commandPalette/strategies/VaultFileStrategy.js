@@ -6,6 +6,9 @@ class VaultFileStrategy extends CommandStateStrategy {
     super('VAULT_FILES', 90)
     this.search = search
     this.open = open
+    this.searchGeneration = 0
+    this.pendingSearch = null
+    this.retainCandidatesWhileSearching = true
   }
 
   matches (input) {
@@ -14,15 +17,41 @@ class VaultFileStrategy extends CommandStateStrategy {
   }
 
   loadingCandidates () {
-    // Clear stale actions while searching, without displaying a loading row.
+    // Clear rows on entry from another strategy; refinements retain their rows.
     return []
   }
 
+  cancelSearch () {
+    this.searchGeneration++
+    if (this.pendingSearch) {
+      clearTimeout(this.pendingSearch.timer)
+      this.pendingSearch.resolve(false)
+      this.pendingSearch = null
+    }
+  }
+
+  onExit () {
+    this.cancelSearch()
+  }
+
   async updateUI (input, { command, query }) {
+    this.cancelSearch()
+    const generation = this.searchGeneration
+    if (command === 'm') {
+      const proceed = await new Promise(resolve => {
+        const timer = setTimeout(() => {
+          this.pendingSearch = null
+          resolve(true)
+        }, 120)
+        this.pendingSearch = { timer, resolve }
+      })
+      if (!proceed || generation !== this.searchGeneration) return []
+    }
     let result
     try { result = await this.search(command, query) } catch (_) {
       result = { ok: false, error: 'Vault search failed. Check vault Settings and retry.' }
     }
+    if (generation !== this.searchGeneration) return []
     if (!result.ok) return [{ id: 'vault-error', title: result.error, icon: 'carbon:warning' }]
     const candidates = result.entries.map(entry => ({
       id: entry.url,

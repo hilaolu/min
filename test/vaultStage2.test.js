@@ -170,6 +170,7 @@ test('VaultFileStrategy loads silently and exposes empty, error, and open result
     url => opened.push(url)
   )
 
+  assert.equal(strategy.retainCandidatesWhileSearching, true)
   assert.deepEqual(strategy.loadingCandidates(), [])
   const results = await strategy.updateUI('>m report', { command: 'm', query: 'report' })
   const report = results.find(candidate => candidate.title === entry.relativePath)
@@ -236,7 +237,7 @@ function result (id) {
   return { ok: true, entries: [{ url: `vault://${id}.md`, relativePath: `${id}.md` }], truncated: false }
 }
 
-test('all vault picker modes clear stale candidates without a loading placeholder', async () => {
+test('all vault picker modes retain rows while reporting pending searches', async () => {
   for (const command of ['m', 'p', 'a']) {
     const pending = []
     const strategy = new VaultFileStrategy(() => {
@@ -247,24 +248,75 @@ test('all vault picker modes clear stale candidates without a loading placeholde
     const manager = new StrategyManager()
     manager.registerStrategy(strategy)
     const updates = []
-    manager.on('candidates-updated', event => updates.push(event.candidates))
+    const events = []
+    manager.on('candidates-pending', () => events.push({ type: 'pending' }))
+    manager.on('candidates-updated', event => {
+      events.push({ type: 'updated', event })
+      updates.push(event.candidates)
+    })
     manager.on('state-changed', event => updates.push(event.candidates))
 
     const initialInput = `>${command} initial`
     const initial = manager.processInput(initialInput, strategyContext(initialInput))
     assert.deepEqual(updates, [[]], command + ' enters silently')
+    if (command === 'm') await new Promise(resolve => setTimeout(resolve, 150))
     pending.shift().resolve(result('initial'))
     await initial
     assert.equal(updates[updates.length - 1][0].title, 'initial.md')
 
     const nextInput = `>${command} next`
+    events.length = 0
     const next = manager.processInput(nextInput, strategyContext(nextInput))
-    assert.deepEqual(updates[updates.length - 1], [], command + ' clears stale actions')
+    assert.deepEqual(events, [{ type: 'pending' }])
+    assert.equal(updates[updates.length - 1][0].title, 'initial.md', command + ' retains rows')
+    if (command === 'm') await new Promise(resolve => setTimeout(resolve, 150))
     pending.shift().resolve(result('next'))
     await next
     assert.equal(updates[updates.length - 1][0].title, 'next.md')
+    assert.equal(events[events.length - 1].type, 'updated')
+    assert.equal(events[events.length - 1].event.preserveSelection, true)
     assert.equal(updates.flat().some(candidate => candidate.id === 'vault-loading'), false)
   }
+})
+
+test('StrategyManager finishes retained pending searches with empty and error updates', async () => {
+  let result = [{ id: 'initial', title: 'initial' }]
+  const strategy = new VaultFileStrategy(async () => ({ ok: true, entries: [] }), () => {})
+  strategy.updateUI = async function () {
+    if (result instanceof Error) throw result
+    return result
+  }
+  const manager = new StrategyManager()
+  manager.registerStrategy(strategy)
+  await manager.processInput('>p initial', strategyContext('>p initial'))
+
+  const events = []
+  manager.on('candidates-pending', () => events.push({ type: 'pending' }))
+  manager.on('candidates-updated', event => events.push({ type: 'updated', event }))
+
+  result = []
+  await manager.processInput('>p empty', strategyContext('>p empty'))
+  assert.deepEqual(events, [
+    { type: 'pending' },
+    { type: 'updated', event: { candidates: [], preserveSelection: true } }
+  ])
+
+  events.length = 0
+  result = new Error('expected search failure')
+  const originalConsoleError = console.error
+  const errors = []
+  console.error = (...args) => errors.push(args)
+  try {
+    await manager.processInput('>p error', strategyContext('>p error'))
+  } finally {
+    console.error = originalConsoleError
+  }
+  assert.deepEqual(events, [
+    { type: 'pending' },
+    { type: 'updated', event: { candidates: [] } }
+  ])
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0][1], result)
 })
 
 test('StrategyManager drops stale replies from the current strategy', async () => {
@@ -280,11 +332,14 @@ test('StrategyManager drops stale replies from the current strategy', async () =
   manager.on('candidates-updated', event => updates.push(event.candidates))
 
   const initial = manager.processInput('>m initial', strategyContext('>m initial'))
+  await new Promise(resolve => setTimeout(resolve, 150))
   pending.shift().request.resolve(result('initial'))
   await initial
 
   const old = manager.processInput('>m old', strategyContext('>m old'))
+  await new Promise(resolve => setTimeout(resolve, 150))
   const newer = manager.processInput('>m new', strategyContext('>m new'))
+  await new Promise(resolve => setTimeout(resolve, 150))
   const oldRequest = pending.find(request => request.query === 'old').request
   const newRequest = pending.find(request => request.query === 'new').request
   newRequest.resolve(result('new'))

@@ -53,6 +53,7 @@ function createCommandPalette (options) {
     isVisible: false,
     selectedIndex: 0,
     currentCandidates: [],
+    candidatesPending: false,
 
     // Strategy management
     strategyManager: null,
@@ -129,7 +130,8 @@ function createCommandPalette (options) {
       // Strategy manager event listeners
       strategyUnsubscribes.push(
         commandPalette.strategyManager.on('state-changed', commandPalette.handleStateChange),
-        commandPalette.strategyManager.on('candidates-updated', commandPalette.handleCandidatesUpdate)
+        commandPalette.strategyManager.on('candidates-updated', commandPalette.handleCandidatesUpdate),
+        commandPalette.strategyManager.on('candidates-pending', () => { commandPalette.candidatesPending = true })
       )
       focusUnsubscribe = rendererHost.onCommandPaletteFocusRequested(commandPalette.focusInput)
     },
@@ -145,12 +147,8 @@ function createCommandPalette (options) {
       commandPalette.updateOverlayUIDebounced({ input: inputValue })
 
       try {
-        const stateChanged = await commandPalette.strategyManager.processInput(inputValue, context)
-        if (!stateChanged) {
-        // State didn't change, just update selection
-          commandPalette.selectedIndex = 0
-          commandPalette.updateSelection()
-        }
+        // Result events own selection; stale requests must not reset it.
+        await commandPalette.strategyManager.processInput(inputValue, context)
       } catch (error) {
         logger.error('Error processing input:', error)
         // Fallback to empty state on error
@@ -235,7 +233,7 @@ function createCommandPalette (options) {
    * @param {Object} candidate - Selected candidate
    */
     executeAction: async function (candidate) {
-      if (!candidate) return
+      if (!candidate || commandPalette.candidatesPending) return
       if (candidate.prefix) {
         commandPalette.input.value = candidate.prefix
         commandPalette.handleInput()
@@ -306,11 +304,14 @@ function createCommandPalette (options) {
 
       commandPalette.isVisible = false
       commandPalette.strategyManager.generation++
+      const strategy = commandPalette.strategyManager.currentStrategy
+      if (strategy && strategy.cancelSearch) strategy.cancelSearch()
       commandPalette.input.blur()
 
       // Reset state
       commandPalette.selectedIndex = 0
       commandPalette.currentCandidates = []
+      commandPalette.candidatesPending = false
 
       if (commandPalette.overlayUpdateTimeout) {
         cancelSchedule(commandPalette.overlayUpdateTimeout)
@@ -390,9 +391,9 @@ function createCommandPalette (options) {
    * @param {Object} event - State change event data
    */
     handleStateChange: function (event) {
+      commandPalette.candidatesPending = false
       commandPalette.selectedIndex = 0
       commandPalette.currentCandidates = event.candidates || []
-      commandPalette.updateSelection()
 
       // Update overlay UI with new state
       commandPalette.updateOverlayUI({
@@ -406,9 +407,13 @@ function createCommandPalette (options) {
    * @param {Object} event - Candidates update event data
    */
     handleCandidatesUpdate: function (event) {
-      commandPalette.selectedIndex = 0
+      const selected = commandPalette.currentCandidates[commandPalette.selectedIndex]
+      commandPalette.candidatesPending = false
       commandPalette.currentCandidates = event.candidates || []
-      commandPalette.updateSelection()
+      const selectedIndex = event.preserveSelection && selected
+        ? commandPalette.currentCandidates.findIndex(candidate => candidate.id === selected.id)
+        : -1
+      commandPalette.selectedIndex = Math.max(0, selectedIndex)
 
       // Update overlay UI with new candidates
       commandPalette.updateOverlayUI({

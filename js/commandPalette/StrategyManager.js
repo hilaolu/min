@@ -111,14 +111,17 @@ class StrategyManager {
     }
 
     // Same strategy, just update UI with new data
+    const preserveSelection = Boolean(this.currentStrategy.retainCandidatesWhileSearching)
     try {
-      if (this.currentStrategy.loadingCandidates) this.emit('candidates-updated', { candidates: this.currentStrategy.loadingCandidates() })
+      if (preserveSelection) this.emit('candidates-pending', {})
+      else if (this.currentStrategy.loadingCandidates) this.emit('candidates-updated', { candidates: this.currentStrategy.loadingCandidates() })
       const candidates = await this.currentStrategy.updateUI(input, transition.data, context)
       if (generation !== this.generation) return false
-      this.emit('candidates-updated', { candidates })
+      this.emit('candidates-updated', { candidates, preserveSelection })
       return false
     } catch (error) {
       console.error(`Error updating UI for ${this.currentStrategy.stateName}:`, error)
+      if (generation === this.generation) this.emit('candidates-updated', { candidates: [] })
       return false
     }
   }

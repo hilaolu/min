@@ -12,6 +12,9 @@ function createVaultFileIndex (root) {
   let closed = false
   let finish
   let version = 0
+  let sortedVersion = -1
+  let sortedPaths = []
+  let previousSearch
   let annotationSnapshot
   let annotationVersion = -1
   const ready = new Promise(resolve => { finish = resolve })
@@ -115,8 +118,22 @@ function createVaultFileIndex (root) {
     async search (query, isCurrent = () => true) {
       await wait(isCurrent)
       const needle = query.toLowerCase()
-      const matches = Array.from(entries.values()).filter(entry => !isHiddenPath(entry.relativePath) && /\.md$/i.test(entry.relativePath) && entry.searchPath.includes(needle))
-        .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+      if (sortedVersion !== version) {
+        sortedPaths = Array.from(entries.values())
+          .filter(entry => !isHiddenPath(entry.relativePath) && /\.md$/i.test(entry.relativePath))
+          .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+        sortedVersion = version
+        previousSearch = null
+      }
+      // Retain ALL matches, not the displayed 20: an extension may match only
+      // files beyond the first page. Backspace/replacement searches start fresh.
+      const source = previousSearch && needle.startsWith(previousSearch.needle)
+        ? previousSearch.matches
+        : sortedPaths
+      const matches = previousSearch && needle === previousSearch.needle
+        ? previousSearch.matches
+        : source.filter(entry => entry.searchPath.includes(needle))
+      previousSearch = { needle, matches }
       const results = []
       for (const entry of matches) {
         check(isCurrent)
@@ -134,6 +151,8 @@ function createVaultFileIndex (root) {
     async close () {
       closed = true
       entries.clear()
+      sortedPaths = []
+      previousSearch = null
       annotationSnapshot = null
       finish()
       await initialized
