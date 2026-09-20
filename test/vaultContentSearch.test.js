@@ -5,8 +5,8 @@ const os = require('node:os')
 const path = require('node:path')
 const search = require('../main/vaultContentSearch.js')
 
-async function fixture (t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'min-content-search-'))
+async function fixture (t, prefix = 'min-content-search-') {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
   return root
 }
@@ -40,6 +40,23 @@ test('content search respects scope, skips binaries and symlinks, and cancels', 
   assert.equal(result.total, 0)
   assert.equal(result.skipped, 4)
   await assert.rejects(search(root, 'vault://', 'python', () => false), /canceled/)
+})
+
+test('content search excludes hidden paths and an explicitly scoped hidden folder', async t => {
+  const root = await fixture(t, '.min-content-search-')
+  await fs.writeFile(path.join(root, 'visible.note.md'), 'hidden-path regression phrase')
+  await fs.writeFile(path.join(root, '.hidden.md'), 'hidden-path regression phrase')
+  await fs.mkdir(path.join(root, '.hidden-folder'))
+  await fs.writeFile(path.join(root, '.hidden-folder', 'descendant.md'), 'hidden-path regression phrase')
+  await fs.mkdir(path.join(root, 'visible', '.nested-hidden'), { recursive: true })
+  await fs.writeFile(path.join(root, 'visible', '.nested-hidden', 'descendant.md'), 'hidden-path regression phrase')
+
+  const result = await search(root, 'vault://', 'hidden-path regression phrase', () => true, { exact: true })
+  assert.deepEqual(result.entries.map(entry => entry.relativePath), ['visible.note.md'])
+
+  const scoped = await search(root, 'vault://.hidden-folder/', 'hidden-path regression phrase', () => true, { exact: true })
+  assert.equal(scoped.total, 0)
+  assert.deepEqual(scoped.entries, [])
 })
 
 test('content search finds long-line boundary matches and reports file-size truncation', async t => {

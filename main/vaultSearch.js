@@ -18,6 +18,7 @@ async function searchVaultFiles (root, kind, query, isCurrent = () => true) {
     } catch (_) { continue }
     for await (const item of directory) {
       if (!isCurrent()) throw new Error('Vault changed')
+      if (item.name.startsWith('.')) continue
       if (++visited > 2000) { truncated = true; break }
       try {
         const file = await resolveVaultURL(url + encodeURIComponent(item.name), root)

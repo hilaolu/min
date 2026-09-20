@@ -44,6 +44,17 @@ test('vault search finds nested markdown but excludes unannotated PDF files', as
   assert.deepEqual(symlink.entries, [])
 })
 
+test('fallback Markdown search excludes hidden paths relative to a hidden vault root', async t => {
+  const root = profile(t, '.min-vault-search-')
+  write(path.join(root, 'visible.note.md'))
+  write(path.join(root, '.hidden.md'))
+  write(path.join(root, '.hidden-folder', 'descendant.md'))
+  write(path.join(root, 'visible', '.hidden-folder', 'descendant.md'))
+
+  const result = await searchVaultFiles(root, 'm', '')
+  assert.deepEqual(result.entries.map(entry => entry.relativePath), ['visible.note.md'])
+})
+
 test('vault search reports a missing root and honors its result limit', async t => {
   const root = profile(t, 'min-vault-search-')
   await assert.rejects(searchVaultFiles(path.join(root, 'missing'), 'm', ''), /Vault resource unavailable/)

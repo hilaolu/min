@@ -2,6 +2,7 @@ const fs = require('fs')
 const { TextDecoder } = require('util')
 const { quickScore } = require('quick-score')
 const { resolveVaultURL } = require('./vault.js')
+const { isHiddenPath } = require('./vaultSearchPaths.js')
 
 const FILE_BYTES = 4 * 1024 * 1024
 const TOTAL_BYTES = 32 * 1024 * 1024
@@ -85,10 +86,12 @@ async function searchContents (root, url, query, current = () => true, options =
       let directory
       try {
         const folder = await resolveVaultURL(pending.pop(), root)
+        if (isHiddenPath(folder.relativePath)) continue
         directory = { folder, stream: await fs.promises.opendir(folder.absolutePath) }
       } catch (_) { skipped++; continue }
       for await (const item of directory.stream) {
         check()
+        if (item.name.startsWith('.')) continue
         if (++visited > MAX_ENTRIES) { notes.add('Scan limited to 20,000 entries'); stopped = true; break }
         if (readBytes >= TOTAL_BYTES) { notes.add('Scan limited to 32 MiB of file data'); stopped = true; break }
         let handle

@@ -65,6 +65,39 @@ test('live index tracks creation, renames, nested removal, and excludes symlinks
   await eventually(async () => assert.deepEqual((await index.search('')).entries, []))
 })
 
+test('index excludes initial and live hidden paths and drops a visible file renamed hidden', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), '.min-file-index-'))
+  await fs.writeFile(path.join(root, 'initial.visible.md'), '')
+  await fs.writeFile(path.join(root, '.initial-hidden.md'), '')
+  await fs.mkdir(path.join(root, '.initial-hidden-folder'))
+  await fs.writeFile(path.join(root, '.initial-hidden-folder', 'descendant.md'), '')
+  await fs.mkdir(path.join(root, 'visible', '.nested-hidden'), { recursive: true })
+  await fs.writeFile(path.join(root, 'visible', '.nested-hidden', 'descendant.md'), '')
+  const index = createIndex(root)
+  t.after(async () => {
+    await index.close()
+    await fs.rm(root, { recursive: true, force: true })
+  })
+
+  assert.deepEqual((await index.search('')).entries.map(entry => entry.relativePath), ['initial.visible.md'])
+
+  await fs.writeFile(path.join(root, '.live-hidden.md'), '')
+  await fs.mkdir(path.join(root, '.live-hidden-folder'))
+  await fs.writeFile(path.join(root, '.live-hidden-folder', 'descendant.md'), '')
+  await fs.writeFile(path.join(root, 'live.visible.md'), '')
+  await eventually(async () => {
+    assert.deepEqual((await index.search('')).entries.map(entry => entry.relativePath), [
+      'initial.visible.md',
+      'live.visible.md'
+    ])
+  })
+
+  await fs.rename(path.join(root, 'live.visible.md'), path.join(root, '.renamed-hidden.md'))
+  await eventually(async () => {
+    assert.deepEqual((await index.search('')).entries.map(entry => entry.relativePath), ['initial.visible.md'])
+  })
+})
+
 test('initial index has no scan budget, limits results, and honors cancellation and close', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'min-file-index-large-'))
   t.after(async () => {
@@ -146,7 +179,7 @@ test('PDF index observes JSON migration, Markdown saves and empty deletion autho
   await store.save([], loaded.revision)
   await eventually(async () => assert.deepEqual((await index.searchAnnotations('p', '')).entries, []))
   assert.equal(await fs.readFile(jsonFile, 'utf8'), json)
-  assert.equal((await index.search('')).entries.length, 1)
+  assert.deepEqual((await index.search('')).entries, [], 'annotation metadata remains available to annotation search but is hidden from file search')
   assert.deepEqual((await index.searchAnnotations('a', '')).entries, [])
   const empty = await store.read()
   await store.save(annotations, empty.revision)

@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const crypto = require('node:crypto')
+const { pathToFileURL } = require('node:url')
 const test = require('node:test')
 const { search, discover, rank, checkSource } = require('../main/annotatedPdfSearch.js')
 const { createStore } = require('../main/annotationStore.js')
@@ -217,6 +218,32 @@ test('local native PDF records open through vault routing, and result limits are
   assert.equal(result.entries[19].source, 'https://example.com/19')
 })
 
+test('checkSource rejects hidden local PDFs and accepts visible dotted PDF names for vault and file URLs', async t => {
+  const { root } = fixture(t)
+  const hiddenFile = path.join(root, '.hidden.pdf')
+  const hiddenDescendant = path.join(root, 'papers', '.private', 'hidden.pdf')
+  const visibleDottedFile = path.join(root, 'papers', 'visible.draft.pdf')
+  fs.mkdirSync(path.dirname(hiddenDescendant), { recursive: true })
+  fs.writeFileSync(hiddenFile, '%PDF-')
+  fs.writeFileSync(hiddenDescendant, '%PDF-')
+  fs.writeFileSync(visibleDottedFile, '%PDF-')
+
+  for (const hiddenSource of [
+    'vault://.hidden.pdf',
+    pathToFileURL(hiddenFile).href,
+    'vault://papers/.private/hidden.pdf',
+    pathToFileURL(hiddenDescendant).href
+  ]) {
+    await assert.rejects(checkSource(hiddenSource, root), /Unavailable local PDF/)
+  }
+  for (const visibleSource of [
+    'vault://papers/visible.draft.pdf',
+    pathToFileURL(visibleDottedFile).href
+  ]) {
+    await assert.doesNotReject(checkSource(visibleSource, root))
+  }
+})
+
 test('unrelated invalid paths do not prevent annotation loading for a new PDF', async t => {
   const { root } = fixture(t)
   fs.writeFileSync(path.join(root, 'invalid?.md'), 'ordinary note')
@@ -253,6 +280,25 @@ test('optional snapshots resolve inventory files, exclude private components, an
   assert.equal(result.truncated, false)
   assert.equal(result.errors, 0)
   assert.deepEqual(result.resources.map(resource => resource.source), [source])
+})
+
+test('walker and supplied snapshots exclude hidden legacy files and hidden-directory descendants', async t => {
+  const { root } = fixture(t)
+  const hiddenFile = path.join(root, '.legacy.md')
+  const hiddenDescendant = path.join(root, 'Archives', '.private', 'nested', 'legacy.md')
+  fs.mkdirSync(path.dirname(hiddenDescendant), { recursive: true })
+  fs.writeFileSync(hiddenFile, legacy('https://example.com/hidden-file.pdf', 'Hidden file'))
+  fs.writeFileSync(hiddenDescendant, legacy('https://example.com/hidden-descendant.pdf', 'Hidden descendant'))
+  const snapshot = [
+    { relativePath: '.legacy.md', url: 'vault://.legacy.md', version: 1 },
+    { relativePath: 'Archives/.private/nested/legacy.md', url: 'vault://Archives/.private/nested/legacy.md', version: 1 },
+    { relativePath: 'Archives/Annotations/resource.md', url: 'vault://Archives/Annotations/resource.md', version: 1 }
+  ]
+
+  for (const result of [await discover(root), await discover(root, () => true, snapshot)]) {
+    assert.equal(result.errors, 0)
+    assert.deepEqual(result.resources.map(resource => resource.source), [source])
+  }
 })
 
 test('reports native records with mismatched source filenames or versions', async t => {

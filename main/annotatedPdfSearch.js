@@ -6,11 +6,12 @@ const { resolveVaultURL } = require('./vault.js')
 const { createStore, validateAnnotations, maximumBytes } = require('./annotationStore.js')
 const annotationMarkdown = require('./annotationMarkdown.js')
 const parseLegacy = require('./annotationLegacy.js')
+const { isHiddenPath, isAnnotationMetadata } = require('./vaultSearchPaths.js')
 
 const MAX_VISITED_ENTRIES = 20000
 const MAX_DEPTH = 32
 const MAX_RESULTS = 20
-const EXCLUDED_DIRECTORIES = new Set(['.obsidian', '.git', '.trash', 'node_modules'])
+const EXCLUDED_DIRECTORIES = new Set(['node_modules'])
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0
 
 function sourceIdentity (input) {
@@ -31,7 +32,7 @@ async function checkSource (source, root) {
       target = 'vault://' + relative.split(path.sep).map(encodeURIComponent).join('/')
     }
     const file = await resolveVaultURL(target, root)
-    if (!file.stat.isFile() || !/\.pdf$/i.test(file.relativePath)) throw new Error('Unavailable local PDF')
+    if (isHiddenPath(file.relativePath) || !file.stat.isFile() || !/\.pdf$/i.test(file.relativePath)) throw new Error('Unavailable local PDF')
   }
 }
 
@@ -77,7 +78,7 @@ async function readRecord (file) {
 }
 
 function excluded (relativePath) {
-  return relativePath.split('/').some(component => EXCLUDED_DIRECTORIES.has(component))
+  return (isHiddenPath(relativePath) && !isAnnotationMetadata(relativePath)) || relativePath.split('/').some(component => EXCLUDED_DIRECTORIES.has(component))
 }
 
 // No writes or network requests. Legacy Markdown may live in a moved archive,
@@ -159,18 +160,21 @@ async function discover (root, isCurrent = () => true, snapshot) {
       if (!isCurrent()) throw new Error('Vault changed')
       const { url, depth } = pending.shift()
       let directory
+      let folder
       try {
-        directory = await fs.promises.opendir((await resolveVaultURL(url, root)).absolutePath)
+        folder = await resolveVaultURL(url, root)
+        directory = await fs.promises.opendir(folder.absolutePath)
       } catch (_) { diagnostics.push(url); continue }
       for await (const item of directory) {
         if (!isCurrent()) throw new Error('Vault changed')
+        const relative = [folder.relativePath, item.name].filter(Boolean).join('/')
+        if (excluded(relative)) continue
         if (++visited > MAX_VISITED_ENTRIES) { truncated = true; break }
         if (item.isSymbolicLink()) continue
         const diagnostic = url + encodeURIComponent(item.name)
         try {
           const file = await resolveVaultURL(diagnostic, root)
           if (file.kind === 'directory') {
-            if (EXCLUDED_DIRECTORIES.has(item.name)) continue
             if (depth >= MAX_DEPTH) truncated = true
             else pending.push({ url: file.vaultURL, depth: depth + 1 })
           } else await inspect(file, diagnostic)

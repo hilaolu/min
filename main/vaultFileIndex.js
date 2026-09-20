@@ -1,6 +1,7 @@
 const path = require('path')
 const chokidar = require('chokidar')
 const { resolveVaultURL } = require('./vault.js')
+const { isHiddenPath, isAnnotationMetadata } = require('./vaultSearchPaths.js')
 
 // One watcher shared by path and annotation metadata indexes. No contents or
 // absolute paths leave main through picker results.
@@ -22,8 +23,11 @@ function createVaultFileIndex (root) {
         persistent: false,
         followSymlinks: false,
         ignoreInitial: false,
-        ignored: (file, stat) => stat && stat.isFile() && !/\.(md|pdf)$/i.test(file) &&
-          !/^\.min-annotations\/[a-f0-9]{64}\.json$/.test(path.relative(root, file).split(path.sep).join('/'))
+        ignored: (file, stat) => {
+          const relative = path.relative(root, file).split(path.sep).join('/')
+          if (isHiddenPath(relative)) return !isAnnotationMetadata(relative)
+          return stat && stat.isFile() && !/\.(md|pdf)$/i.test(file)
+        }
       })
       const update = (file, stat) => {
         if (closed || !stat?.isFile()) return
@@ -111,7 +115,7 @@ function createVaultFileIndex (root) {
     async search (query, isCurrent = () => true) {
       await wait(isCurrent)
       const needle = query.toLowerCase()
-      const matches = Array.from(entries.values()).filter(entry => /\.md$/i.test(entry.relativePath) && entry.searchPath.includes(needle))
+      const matches = Array.from(entries.values()).filter(entry => !isHiddenPath(entry.relativePath) && /\.md$/i.test(entry.relativePath) && entry.searchPath.includes(needle))
         .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
       const results = []
       for (const entry of matches) {
