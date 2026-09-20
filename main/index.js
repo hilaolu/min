@@ -161,7 +161,8 @@ function createMainProcess (options = {}) {
     event.preventDefault()
     if (preparingQuit) return
     preparingQuit = true
-    viewManager.prepareWindow().then(allowed => {
+    viewManager.prepareWindow().then(async allowed => {
+      if (allowed) await vault.destroy()
       preparingQuit = false
       if (allowed) { quitApproved = true; app.quit() }
     }).catch(() => { preparingQuit = false })

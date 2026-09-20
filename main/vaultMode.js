@@ -15,6 +15,12 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
   let changing = false
   let searchGeneration = 0
   let annotationGeneration = 0
+  let fileIndex = null
+  async function closeFileIndex () {
+    const previous = fileIndex
+    fileIndex = null
+    if (previous) await previous.close()
+  }
   const searches = new WeakMap()
   ipc.handle('vault:search-files', async (event, kind, query) => {
     const allowed = () => isChrome(event.sender) && event.senderFrame === event.sender.mainFrame
@@ -30,6 +36,12 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       generation === searchGeneration && searches.get(event.sender) === token
     try {
       if (!current()) throw new Error('Vault changing')
+      if (kind === 'm') {
+        if (fileIndex?.failed) await closeFileIndex()
+        if (!current()) throw new Error('Vault changing')
+        if (!fileIndex) fileIndex = require('./vaultFileIndex.js')(capturedRoot)
+        return await fileIndex.search(query.trim(), current)
+      }
       return await require('./vaultSearch.js')(capturedRoot, kind, query.trim(), current)
     } catch (_) {
       return { ok: false, error: 'Vault unavailable or changed. Check vault Settings and retry.' }
@@ -227,6 +239,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       if (access.hasAssociations()) throw new Error('Vault tabs remain open')
       await writeFileAtomic(configPath, JSON.stringify({ root: selected }))
       root = selected
+      await closeFileIndex()
       annotationGeneration++
       savedDirectory = selected
       return { ok: true, directory: selected }
@@ -283,6 +296,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
 
   return {
     ...access,
+    destroy: closeFileIndex,
     navigate,
     prepareToLeave,
     resume,
