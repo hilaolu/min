@@ -151,7 +151,7 @@ test('palette uses the default renderer export through preload IPC with the save
   assert.deepEqual(opened, ['vault://Nested/Read%20me.md'])
 })
 
-test('VaultFileStrategy exposes loading, empty, error, and open results', async () => {
+test('VaultFileStrategy loads silently and exposes empty, error, and open results', async () => {
   const opened = []
   const entry = { url: 'vault://notes/Report.md', relativePath: 'notes/Report.md' }
   const strategy = new VaultFileStrategy(
@@ -159,7 +159,7 @@ test('VaultFileStrategy exposes loading, empty, error, and open results', async 
     url => opened.push(url)
   )
 
-  assert.deepEqual(strategy.loadingCandidates(), [{ id: 'vault-loading', title: 'Searching vault…', icon: 'carbon:search' }])
+  assert.deepEqual(strategy.loadingCandidates(), [])
   const results = await strategy.updateUI('>m report', { command: 'm', query: 'report' })
   const report = results.find(candidate => candidate.title === entry.relativePath)
   assert.ok(report)
@@ -224,6 +224,37 @@ function strategyContext (value) {
 function result (id) {
   return { ok: true, entries: [{ url: `vault://${id}.md`, relativePath: `${id}.md` }], truncated: false }
 }
+
+test('all vault picker modes clear stale candidates without a loading placeholder', async () => {
+  for (const command of ['m', 'p', 'a']) {
+    const pending = []
+    const strategy = new VaultFileStrategy(() => {
+      const request = deferred()
+      pending.push(request)
+      return request.promise
+    }, () => {})
+    const manager = new StrategyManager()
+    manager.registerStrategy(strategy)
+    const updates = []
+    manager.on('candidates-updated', event => updates.push(event.candidates))
+    manager.on('state-changed', event => updates.push(event.candidates))
+
+    const initialInput = `>${command} initial`
+    const initial = manager.processInput(initialInput, strategyContext(initialInput))
+    assert.deepEqual(updates, [[]], command + ' enters silently')
+    pending.shift().resolve(result('initial'))
+    await initial
+    assert.equal(updates[updates.length - 1][0].title, 'initial.md')
+
+    const nextInput = `>${command} next`
+    const next = manager.processInput(nextInput, strategyContext(nextInput))
+    assert.deepEqual(updates[updates.length - 1], [], command + ' clears stale actions')
+    pending.shift().resolve(result('next'))
+    await next
+    assert.equal(updates[updates.length - 1][0].title, 'next.md')
+    assert.equal(updates.flat().some(candidate => candidate.id === 'vault-loading'), false)
+  }
+})
 
 test('StrategyManager drops stale replies from the current strategy', async () => {
   const pending = []

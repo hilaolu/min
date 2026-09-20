@@ -14,7 +14,8 @@ class VaultFileStrategy extends CommandStateStrategy {
   }
 
   loadingCandidates () {
-    return [{ id: 'vault-loading', title: 'Searching vault…', icon: 'carbon:search' }]
+    // Clear stale actions while searching, without displaying a loading row.
+    return []
   }
 
   async updateUI (input, { command, query }) {
