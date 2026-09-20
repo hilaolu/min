@@ -97,12 +97,11 @@ async function run () {
       await command('navigation.load', { url })
       await until(async () => !contents.isLoading() && await evaluate(ready).catch(() => false), url)
     }
-    await load('vault://', "document.querySelectorAll('#files a').length > 0")
-    await evaluate("Array.from(document.querySelectorAll('#files details')).find(d => d.querySelector('a').textContent === 'Projects').open = true")
-    await until(() => evaluate("Array.from(document.querySelectorAll('#files a')).some(a => a.textContent === 'Projects/note.md')"), 'expand folder tree')
-    await evaluate("document.getElementById('search').value = 'note'; document.getElementById('search').dispatchEvent(new Event('input'))")
-    await until(() => evaluate("document.querySelector('#files a')?.textContent === 'Projects/note.md'"), 'recursive search')
-    await evaluate("document.querySelector('#files a').click()")
+    await load('vault://', "document.querySelectorAll('#files .entry').length > 0")
+    await evaluate("document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })); document.getElementById('fuzzy-query').value = '# Note'; document.getElementById('fuzzy-form').requestSubmit()")
+    await until(() => evaluate("document.querySelector('#files .entry')?.title === 'Projects/note.md'"), 'recursive content search')
+    await until(() => evaluate("document.querySelector('#preview .preview-text')?.textContent.startsWith('# Note')"), 'fuzzy hit preview')
+    await evaluate("document.querySelector('#files .entry').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")
     await until(() => evaluate("typeof cherry !== 'undefined' && !!cherry && document.querySelectorAll('.cherry-previewer img').length === 5").catch(() => false), 'Cherry production page')
     await until(() => evaluate("Array.from(document.querySelectorAll('.cherry-previewer img')).every(i => i.complete && i.naturalWidth > 0 && i.naturalHeight > 0)"), 'five Cherry images')
 

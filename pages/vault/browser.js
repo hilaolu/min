@@ -8,6 +8,62 @@ let generation = 0
 let previewGeneration = 0
 let previewController = null
 let lastG = 0
+const fuzzyForm = document.getElementById('fuzzy-form')
+const fuzzyQuery = document.getElementById('fuzzy-query')
+
+function renderEntries (items, previous, fuzzy = false) {
+  entries = items
+  selected = -1
+  files.replaceChildren()
+  entries.forEach((entry, i) => {
+    const element = row(fuzzy ? { ...entry, name: entry.relativePath } : entry)
+    if (entry.passage) {
+      const snippet = document.createElement('small')
+      snippet.className = 'result-snippet'
+      snippet.textContent = 'Line ' + entry.passage.line + ': ' + entry.passage.text.replace(/\s+/g, ' ')
+      element.append(snippet)
+    }
+    element.id = 'entry-' + i
+    element.tabIndex = -1
+    element.setAttribute('role', 'option')
+    element.onclick = () => { select(i); files.focus() }
+    element.ondblclick = () => open(entry.url)
+    files.append(element)
+  })
+  select(Math.max(0, entries.findIndex(entry => entry.url === previous)))
+}
+
+fuzzyForm.addEventListener('submit', async event => {
+  event.preventDefault()
+  const mine = ++generation
+  const query = fuzzyQuery.value
+  const options = { exact: document.getElementById('fuzzy-exact').checked, limit: Number(document.getElementById('fuzzy-limit').value) }
+  status.textContent = 'Searching file contents…'
+  renderEntries([])
+  files.setAttribute('aria-busy', 'true')
+  try {
+    const result = await vaultPage.searchContents(query, options)
+    if (mine !== generation) return
+    if (!result.ok) { status.textContent = result.error; return }
+    renderEntries(result.entries, null, true)
+    status.textContent = result.entries.length ? 'Showing ' + result.entries.length + ' of ' + (result.total ?? result.entries.length) + ' matching files' : 'No matches'
+    if (result.notes?.length) status.textContent += ' — ' + result.notes.join('; ') + '; search a subfolder to narrow the scan'
+    else if (result.truncated) status.textContent += result.scanLimited ? ' — scan limited to 20,000 entries; search a subfolder' : ' — refine the query, enable Exact phrase, or increase Top'
+    if (result.skipped) status.textContent += ' — ' + result.skipped + ' binary, non-UTF-8, or inaccessible entries skipped'
+    files.focus()
+  } catch (_) {
+    if (mine === generation) status.textContent = 'Content search failed. Check vault Settings.'
+  } finally {
+    if (mine === generation) files.setAttribute('aria-busy', 'false')
+  }
+})
+document.getElementById('fuzzy-close').onclick = () => refresh()
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !fuzzyForm.hidden) {
+    event.preventDefault()
+    refresh()
+  }
+})
 
 function sorted (items) {
   return items.slice().sort((a, b) => Number(b.kind === 'directory') - Number(a.kind === 'directory') || a.name.localeCompare(b.name))
@@ -49,6 +105,28 @@ async function preview (entry) {
   const target = document.getElementById('preview')
   message(target, entry ? (entry.kind === 'directory' ? 'Loading…' : entry.name + ' — Enter to open') : 'No entry selected')
   if (!entry) return
+  if (entry.passage) {
+    const passage = entry.passage
+    const label = document.createElement('p')
+    label.className = 'placeholder'
+    label.textContent = 'Content match · line ' + passage.line + ' (search snapshot)'
+    const pre = document.createElement('pre')
+    pre.className = 'preview-text'
+    if (passage.clippedStart) pre.append(document.createTextNode('…'))
+    let end = 0
+    for (const [start, stop] of passage.ranges) {
+      pre.append(document.createTextNode(passage.text.slice(end, start)))
+      const mark = document.createElement('mark')
+      mark.textContent = passage.text.slice(start, stop)
+      pre.append(mark)
+      end = stop
+    }
+    pre.append(document.createTextNode(passage.text.slice(end) + (passage.clippedEnd ? '…' : '')))
+    target.append(label, pre)
+    const firstMatch = pre.querySelector('mark')
+    if (firstMatch) firstMatch.scrollIntoView({ block: 'center' })
+    return
+  }
   if (entry.kind !== 'directory') {
     const extension = entry.name.split('.').pop().toLowerCase()
     if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg'].includes(extension)) {
@@ -126,6 +204,8 @@ function select (index) {
 }
 
 async function refresh () {
+  if (!fuzzyForm.hidden) vaultPage.cancelContentSearch().catch(() => {})
+  fuzzyForm.hidden = true
   const mine = ++generation
   const previous = entries[selected]?.url
   ++previewGeneration
@@ -166,18 +246,8 @@ async function refresh () {
     breadcrumb.title = result.url
     breadcrumb.scrollLeft = breadcrumb.scrollWidth
     document.title = (segments.length ? decodeURIComponent(segments[segments.length - 1]) + ' — ' : '') + 'Vault'
-    entries = sorted(result.entries)
-    entries.forEach((entry, i) => {
-      const element = row(entry)
-      element.id = 'entry-' + i
-      element.tabIndex = -1
-      element.setAttribute('role', 'option')
-      element.onclick = () => { select(i); files.focus() }
-      element.ondblclick = () => open(entry.url)
-      files.append(element)
-    })
+    renderEntries(sorted(result.entries), previous)
     status.textContent = entries.length ? '' : 'Empty directory'
-    select(Math.max(0, entries.findIndex(entry => entry.url === previous)))
     files.focus()
     const parent = document.getElementById('parent')
     if (!parentURL) return message(parent, 'Vault root')
@@ -205,6 +275,14 @@ document.addEventListener('keydown', event => {
   if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable) return
   if (event.key === 'Enter' && event.target.closest('button')) return
   const key = event.key
+  if (key === '/') {
+    event.preventDefault()
+    lastG = 0
+    fuzzyForm.hidden = false
+    fuzzyQuery.focus()
+    fuzzyQuery.select()
+    return
+  }
   if (!['j', 'k', 'h', 'l', 'g', 'G', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(key)) {
     lastG = 0
     return

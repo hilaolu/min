@@ -113,11 +113,36 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
   function handle (name, kinds, fn) {
     ipc.handle('vault:' + name, async (event, ...args) => {
       try { return await fn(current(event, kinds), event.sender, ...args) } catch (error) {
+        if (error.message === 'VAULT_CALLER_DENIED') {
+          return { ok: false, error: 'This vault page is no longer connected. Reopen vault:// in a tab, then try again.' }
+        }
+        if (error.status === 503) {
+          return { ok: false, error: 'The vault folder is unavailable. Select an existing folder in Settings → Vault.' }
+        }
+        if (name === 'list') {
+          return { ok: false, error: 'This directory is unavailable. Check that it still exists and is readable, or reopen vault://.' }
+        }
         return { ok: false, error: error.message.startsWith('MARKDOWN_') ? error.message : 'Vault operation failed. Check the file and vault Settings.' }
       }
     })
   }
   handle('read', ['markdown'], async record => ({ ok: true, markdown: await record.note.read(), vaultURL: record.url }))
+  handle('cancel-content-search', ['browser'], (record, contents) => {
+    searches.delete(contents)
+    return { ok: true }
+  })
+  handle('search-content', ['browser'], async (record, contents, query, options = {}) => {
+    if (typeof query !== 'string' || query.length > 256 || query.includes('\0')) return { ok: false, error: 'Enter a search query of at most 256 characters, without NUL characters.' }
+    if (!options || typeof options !== 'object' || (options.limit !== undefined && ![25, 50, 100, 500].includes(options.limit)) || (options.exact !== undefined && typeof options.exact !== 'boolean')) return { ok: false, error: 'Invalid search options.' }
+    const token = {}
+    searches.set(contents, token)
+    const current = () => !changing && root === record.root && records.get(contents.id) === record && searches.get(contents) === token && !contents.isDestroyed()
+    try {
+      return await require('./vaultContentSearch.js')(record.root, record.url, query, current, options)
+    } catch (_) {
+      return { ok: false, error: 'Content search unavailable or canceled. Check vault Settings and retry.' }
+    }
+  })
   handle('save', ['markdown'], (record, contents, text) => record.note.save(text))
   handle('open', ['markdown', 'browser'], async (record, contents, url) => {
     if (typeof url !== 'string') throw new Error('Invalid URL')

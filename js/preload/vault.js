@@ -22,6 +22,8 @@ if (process.isMainFrame && ['min://app/pages/markdown/index.html', 'min://app/pa
     readCurrent: () => ipcRenderer.invoke('vault:read'),
     saveCurrent: text => ipcRenderer.invoke('vault:save', text),
     listCurrent: query => ipcRenderer.invoke('vault:list', query),
+    searchContents: (query, options) => ipcRenderer.invoke('vault:search-content', query, options),
+    cancelContentSearch: () => ipcRenderer.invoke('vault:cancel-content-search'),
     listDirectory: url => ipcRenderer.invoke('vault:list', '', url),
     open: url => ipcRenderer.invoke('vault:open', url)
   })

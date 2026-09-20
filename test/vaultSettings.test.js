@@ -70,3 +70,11 @@ test('saved directory is disclosed only to the registered Settings main frame', 
   instance.event.senderFrame.url = 'min://app/pages/markdown/index.html'
   assert.equal(getRoot(instance.event).ok, false)
 })
+
+test('content search is denied from Settings and unmanaged browser frames', async t => {
+  const instance = settingsInstance(profile(t))
+  const search = instance.handlers.get('vault:search-content')
+  assert.equal((await search(instance.event, 'query')).ok, false)
+  instance.event.senderFrame.url = 'min://app/pages/vault/index.html'
+  assert.equal((await search(instance.event, 'query')).ok, false)
+})

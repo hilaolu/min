@@ -35,7 +35,10 @@ fs.writeFileSync(preload, `
     fetchRejection: null,
     fetchText: 'Mocked file contents',
     opens: [],
-    listCalls: 0
+    listCalls: 0,
+    searchCalls: [],
+    cancellations: 0,
+    pendingSearch: null
   }
   state.directories['vault://Parent%20Dir/'] = {
     ok: true,
@@ -57,6 +60,13 @@ fs.writeFileSync(preload, `
     fetchCalls: () => state.fetchCalls.slice(),
     listCalls: () => state.listCalls,
     opens: () => state.opens.slice(),
+    searchCalls: () => state.searchCalls.slice(),
+    cancellations: () => state.cancellations,
+    searchPending: () => Boolean(state.pendingSearch),
+    resolveSearch: () => {
+      state.pendingSearch({ ok: true, entries: [${JSON.stringify(initial.entries[0])}], total: 1 })
+      state.pendingSearch = null
+    },
     pending: url => state.deferred[url] ? state.deferred[url].length : 0,
     rejectCurrent: message => { state.currentRejection = message },
     rejectFetch: message => { state.fetchRejection = message },
@@ -88,6 +98,27 @@ fs.writeFileSync(preload, `
     }
   }
   window.vaultPage = {
+    cancelContentSearch: async () => { state.cancellations++; return { ok: true } },
+    searchContents: async (query, options) => {
+      state.searchCalls.push({ query, options })
+      if (query === 'slow') return new Promise(resolve => { state.pendingSearch = resolve })
+      if (query === 'missing') return { ok: true, entries: [], total: 0 }
+      if (query === 'error') return { ok: false, error: 'Content search failed.' }
+      return {
+        ok: true,
+        total: 2,
+        entries: ${JSON.stringify([
+          {
+            ...initial.entries[0],
+            passage: { text: 'Before <img src=x> NEEDLE after', ranges: [[19, 25]], line: 7, clippedStart: true, clippedEnd: false }
+          },
+          {
+            ...initial.entries[2],
+            passage: { text: 'Second ranked NEEDLE result', ranges: [[14, 20]], line: 11, clippedStart: false, clippedEnd: true }
+          }
+        ])}
+      }
+    },
     listCurrent: async () => {
       state.listCalls++
       if (state.currentRejection !== null) throw new Error(state.currentRejection)
@@ -399,6 +430,77 @@ async function run () {
   await setCurrentAndRefresh({ ok: true, url: 'vault://', entries: [] }, "document.getElementById('preview').textContent === 'No entry selected'", 'image preview cleanup')
   assert.equal(await evaluate("window.__previousPreviewImage.hasAttribute('src')"), false)
   console.log('PASS image preview uses the entry URL and filename')
+
+  await setCurrentAndRefresh(initial, "document.querySelectorAll('#files .entry').length === 4", 'restore listing before content search')
+  await evaluate(`
+    window.__vaultTest.clearOpens()
+    document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }))
+  `)
+  assert.equal(await evaluate('document.activeElement.id'), 'fuzzy-query')
+  await evaluate("document.getElementById('fuzzy-query').value = 'needle'; document.getElementById('fuzzy-exact').checked = true; document.getElementById('fuzzy-limit').value = '25'; document.getElementById('fuzzy-form').requestSubmit()")
+  await until(() => evaluate("document.querySelector('#preview mark')?.textContent === 'NEEDLE' && document.getElementById('status').textContent === 'Showing 2 of 2 matching files'"), 'content result preview')
+  assert.deepEqual(await evaluate('window.__vaultTest.searchCalls().pop()'), { query: 'needle', options: { exact: true, limit: 25 } })
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#files .entry'), row => row.title)"), [
+    initial.entries[0].relativePath,
+    initial.entries[2].relativePath
+  ], 'content search preserves service rank order')
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#files .result-snippet'), snippet => snippet.textContent)"), [
+    'Line 7: Before <img src=x> NEEDLE after',
+    'Line 11: Second ranked NEEDLE result'
+  ])
+  assert.deepEqual(await evaluate(`({
+    selected: Array.from(document.querySelectorAll('#files .entry'), row => row.getAttribute('aria-selected')),
+    preview: document.querySelector('#preview .preview-text').textContent,
+    marks: Array.from(document.querySelectorAll('#preview mark'), mark => mark.textContent),
+    unsafe: document.querySelectorAll('#files img, #preview img, #files script, #preview script').length,
+    injected: window.__previewInjected === true
+  })`), {
+    selected: ['true', 'false'],
+    preview: '…Before <img src=x> NEEDLE after',
+    marks: ['NEEDLE'],
+    unsafe: 0,
+    injected: false
+  })
+  await sendKey('Down')
+  assert.deepEqual(await evaluate(`({
+    position: document.getElementById('position').textContent,
+    selected: Array.from(document.querySelectorAll('#files .entry'), row => row.getAttribute('aria-selected')),
+    preview: document.querySelector('#preview .preview-text').textContent,
+    line: document.querySelector('#preview .placeholder:last-of-type').textContent
+  })`), {
+    position: '2 / 2',
+    selected: ['false', 'true'],
+    preview: 'Second ranked NEEDLE result…',
+    line: 'Content match · line 11 (search snapshot)'
+  })
+  await sendKey('Enter')
+  assert.equal((await evaluate('window.__vaultTest.opens()')).pop(), initial.entries[2].url)
+  // The preview uses the submitted result snapshot, not the edited input value.
+  await evaluate("document.getElementById('fuzzy-query').value = 'changed but not submitted'")
+  await sendKey('Home')
+  assert.equal(await evaluate("document.querySelector('#preview mark')?.textContent"), 'NEEDLE')
+  await evaluate("document.getElementById('fuzzy-query').value = 'missing'; document.getElementById('fuzzy-form').requestSubmit()")
+  await until(() => evaluate("document.getElementById('status').textContent === 'No matches'"), 'no content matches')
+  assert.equal(await evaluate("document.getElementById('preview').textContent"), 'No entry selected')
+  await evaluate("document.getElementById('fuzzy-query').value = 'error'; document.getElementById('fuzzy-form').requestSubmit()")
+  await until(() => evaluate("document.getElementById('status').textContent === 'Content search failed.'"), 'content search error')
+  await sendKey('Escape')
+  await until(() => evaluate("document.getElementById('fuzzy-form').hidden && document.querySelectorAll('#files .entry').length === 4 && document.getElementById('files').getAttribute('aria-busy') === 'false'"), 'close content search and restore listing')
+  assert.equal(await evaluate("document.querySelector('#files .result-snippet')"), null)
+  const cancellations = await evaluate('window.__vaultTest.cancellations()')
+  await evaluate(`
+    document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
+    document.getElementById('fuzzy-query').value = 'slow'
+    document.getElementById('fuzzy-form').requestSubmit()
+  `)
+  await until(() => evaluate('window.__vaultTest.searchPending()'), 'pending content search')
+  await sendKey('Escape')
+  await until(() => evaluate("document.querySelectorAll('#files .entry').length === 4"), 'cancel restores browse')
+  assert.equal(await evaluate('window.__vaultTest.cancellations()'), cancellations + 1)
+  await evaluate('window.__vaultTest.resolveSearch()')
+  await sleep(50)
+  assert.equal(await evaluate("document.querySelectorAll('#files .entry').length"), 4, 'late search cannot replace restored listing')
+  console.log('PASS content prompt, rank order, safe snippets and highlights, navigation, empty/error states, and Escape restore')
 }
 
 async function finish () {
