@@ -1,0 +1,167 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
+const test = require('node:test')
+const { search, discover } = require('../main/annotatedPdfSearch.js')
+const { createStore } = require('../main/annotationStore.js')
+const { installPdfAnnotations } = require('../main/pdfAnnotations.js')
+const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
+
+const source = 'https://example.com/download?id=42'
+const rect = { origin: { x: 10, y: 20 }, size: { width: 30, height: 5 } }
+const annotation = {
+  uid: 'test-id',
+  sourceType: 'pdf',
+  data: { color: '#FFCD45', text: 'quote', notes: '', textBefore: '', textAfter: '', pageIndex: 2, rect, segmentRects: [rect] }
+}
+function legacy (url = source, title = 'Research paper') {
+  return `| Field | Value |
+| --- | --- |
+| Title | ${title} |
+| URL | ${url} |
+| Tags | #science |
+
+## Annotations
+
+%% annotation: test-id | color: FFCD45 | sourceType: pdf | pageIndex: 2 %%
+<pre></pre>
+<pre>quote</pre>
+<pre></pre>
+
+%% annotation-rect: ${JSON.stringify(rect)} %%
+%% annotation-segments: ${JSON.stringify([rect])} %%
+`
+}
+function fixture (t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'min-annotated-search-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const directory = path.join(root, 'Archives', 'Annotations')
+  fs.mkdirSync(directory, { recursive: true })
+  const filename = path.join(directory, 'resource.md')
+  fs.writeFileSync(filename, legacy())
+  return { root, filename }
+}
+
+test('discovers archived legacy annotations, not raw PDFs, and opens the PDF wrapper', async t => {
+  const { root, filename } = fixture(t)
+  fs.writeFileSync(path.join(root, 'unannotated.pdf'), '%PDF-')
+  fs.writeFileSync(path.join(root, 'empty.md'), legacy('https://example.com/empty.pdf').split('%% annotation:')[0])
+  fs.writeFileSync(path.join(root, 'plain.md'), 'Research paper')
+  for (const query of ['', 'research', 'SCIENCE', 'id=42', 'rsrch']) {
+    const result = await search(root, query)
+    assert.equal(result.entries.length, 1)
+    assert.equal(result.entries[0].annotationCount, 1)
+    assert.equal(result.errors, 0)
+    assert.equal(new URL(result.entries[0].url).searchParams.get('url'), source)
+  }
+  for (const query of ['unannotated.pdf', 'resource.md', 'quote', 'https://unknown.test/a.pdf']) {
+    assert.deepEqual((await search(root, query)).entries, [])
+  }
+  assert.equal(fs.readFileSync(filename, 'utf8'), legacy())
+  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+})
+
+test('legacy annotations hydrate through IPC; native edits and empty stores override legacy', async t => {
+  const { root, filename } = fixture(t)
+  let handler
+  const frame = {}
+  const sender = { session: { isPersistent: () => true } }
+  installPdfAnnotations({ ipc: { handle: (_, fn) => { handler = fn } }, context: () => ({ root, source, generation: 1 }) })
+  const event = { sender, senderFrame: frame }
+  const loaded = await handler(event, 'load')
+  assert.deepEqual(loaded, { ok: true, revision: null, annotations: [annotation] })
+  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  const saved = await handler(event, 'save', { revision: null, annotations: [] })
+  assert.equal(saved.ok, true)
+  assert.deepEqual((await handler(event, 'load')).annotations, [])
+  assert.deepEqual((await search(root, '')).entries, [])
+  assert.equal(fs.readFileSync(filename, 'utf8'), legacy())
+})
+
+test('native annotations are discoverable without legacy records; stale scans fail', async t => {
+  const { root, filename } = fixture(t)
+  fs.unlinkSync(filename)
+  await createStore(root, source).save([annotation], null)
+  assert.equal((await search(root, 'download')).entries.length, 1)
+  await assert.rejects(discover(root, () => false), /Vault changed/)
+})
+
+test('rejects ambiguous records, invalid geometry, unsafe sources and symlinks without modifying them', async t => {
+  const { root, filename } = fixture(t)
+  fs.writeFileSync(path.join(root, 'duplicate.md'), legacy())
+  let result = await search(root, '')
+  assert.equal(result.entries.length, 0)
+  assert.ok(result.errors)
+  fs.unlinkSync(path.join(root, 'duplicate.md'))
+  fs.symlinkSync(filename, path.join(root, 'linked.md'))
+  assert.equal((await search(root, '')).entries.length, 1)
+  for (const contents of [legacy('javascript:alert(1)'), legacy('file:///outside.pdf'), legacy().replace('"width":30', '"width":-1')]) {
+    fs.writeFileSync(filename, contents)
+    result = await search(root, '')
+    assert.equal(result.entries.length, 0)
+    assert.ok(result.errors)
+    assert.equal(fs.readFileSync(filename, 'utf8'), contents)
+  }
+})
+
+test('palette PDF search has no literal path or URL fallback', async () => {
+  const opened = []
+  const strategy = new VaultFileStrategy(async () => ({ ok: true, entries: [], total: 0 }), url => opened.push(url))
+  const rows = await strategy.updateUI('>p raw.pdf', { command: 'p', query: 'raw.pdf' })
+  assert.ok(rows.every(row => !row.action))
+  assert.deepEqual(opened, [])
+})
+
+test('local native PDF records open through vault routing, and result limits are explicit', async t => {
+  const { root, filename } = fixture(t)
+  fs.unlinkSync(filename)
+  fs.writeFileSync(path.join(root, 'local.pdf'), '%PDF-')
+  await createStore(root, 'vault://local.pdf').save([annotation], null)
+  assert.equal((await search(root, 'local')).entries[0].url, 'vault://local.pdf')
+  for (let index = 0; index < 21; index++) {
+    fs.writeFileSync(path.join(root, `${index}.md`), legacy(`https://example.com/${String(index).padStart(2, '0')}`, 'Same title'))
+  }
+  const result = await search(root, 'Same title')
+  assert.equal(result.entries.length, 20)
+  assert.equal(result.truncated, true)
+  assert.equal(result.entries[0].source, 'https://example.com/00')
+  assert.equal(result.entries[19].source, 'https://example.com/19')
+})
+
+test('unrelated invalid paths do not prevent annotation loading for a new PDF', async t => {
+  const { root } = fixture(t)
+  fs.writeFileSync(path.join(root, 'invalid?.md'), 'ordinary note')
+  let handler
+  installPdfAnnotations({ ipc: { handle: (_, fn) => { handler = fn } }, context: () => ({ root, source: 'https://example.com/new.pdf', generation: 1 }) })
+  const loaded = await handler({ sender: { session: { isPersistent: () => true } } }, 'load')
+  assert.deepEqual(loaded, { ok: true, revision: null, annotations: [] })
+})
+
+test('depth truncation does not discard other queued directories', async t => {
+  const { root, filename } = fixture(t)
+  fs.unlinkSync(filename)
+  const parent = path.join(root, ...Array(31).fill('level'))
+  fs.mkdirSync(path.join(parent, 'deep', 'excluded'), { recursive: true })
+  fs.mkdirSync(path.join(parent, 'sibling'))
+  fs.writeFileSync(path.join(parent, 'sibling', 'resource.md'), legacy())
+  const result = await search(root, '')
+  assert.equal(result.truncated, true)
+  assert.equal(result.entries.length, 1)
+  assert.equal(result.entries[0].source, source)
+})
+
+test('reports native records with mismatched source filenames or versions', async t => {
+  const { root, filename } = fixture(t)
+  fs.unlinkSync(filename)
+  await createStore(root, source).save([annotation], null)
+  const directory = path.join(root, '.min-annotations')
+  const nativeFile = path.join(directory, fs.readdirSync(directory)[0])
+  const data = JSON.parse(fs.readFileSync(nativeFile, 'utf8'))
+  for (const invalid of [{ ...data, source: 'https://example.com/other' }, { ...data, version: 2 }]) {
+    fs.writeFileSync(nativeFile, JSON.stringify(invalid))
+    const result = await search(root, '')
+    assert.deepEqual(result.entries, [])
+    assert.equal(result.errors, 1)
+  }
+})

@@ -118,7 +118,7 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
    * @returns {Promise<Array>} Array of candidates
    */
   async generateCandidates (command, args) {
-    if (command === 'm' || command === 'p') {
+    if (command === 'm') {
       const vaultFileCandidate = require('../vaultFileCandidate.js')
       return [vaultFileCandidate(command, args, url => this.executeURLAction(url, 'new-tab'))]
     }

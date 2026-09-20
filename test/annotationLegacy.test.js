@@ -103,3 +103,14 @@ test('rejects embedded pre/marker content and pipe metadata without discarding i
 test('bounds input at one mebibyte', function () {
   assert.throws(() => parseLegacy(`${webMarkdown}${'x'.repeat(1024 * 1024)}`), /1 MiB/)
 })
+
+test('accepts formatted tables and identical duplicated plugin geometry, but rejects conflicts', () => {
+  const formatted = pdfMarkdown.replace('| Field | Value |', '| Field | value      |')
+    .replace('| --- | --- |', '| ----- | ---------- |')
+    .replace('| Title | A PDF |', '| Title   | A PDF      |')
+  assert.equal(parseLegacy(formatted).title, 'A PDF')
+  const geometry = pdfMarkdown.split('\n').filter(line => line.startsWith('%% annotation-')).join('\n')
+  const duplicated = pdfMarkdown.replace(geometry, geometry + '\n' + geometry)
+  assert.deepEqual(parseLegacy(duplicated), parseLegacy(pdfMarkdown))
+  assert.throws(() => parseLegacy(pdfMarkdown.replace(geometry, geometry + '\n' + geometry.replace('"x":12.3', '"x":99'))), /conflicting rect geometry/)
+})

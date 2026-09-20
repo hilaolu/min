@@ -5,7 +5,7 @@ function invalid (message) {
 }
 
 function readMetadata (line, field) {
-  const match = line.match(new RegExp(`^\\| ${field} \\| ([^|]+) \\|$`))
+  const match = line.match(new RegExp(`^\\|\\s*${field}\\s*\\|\\s*([^|]+)\\s*\\|\\s*$`, 'i'))
   if (!match || !match[1].trim()) invalid(`missing or malformed ${field} metadata`)
   return match[1].trim()
 }
@@ -92,7 +92,7 @@ function parseLegacy (text) {
   const normalized = text.replace(/\r\n/g, '\n')
   if (normalized.includes('\r')) invalid('unsupported line ending')
   const lines = normalized.split('\n')
-  if (lines[0] !== '| Field | Value |' || lines[1] !== '| --- | --- |') invalid('malformed metadata table')
+  if (!/^\|\s*Field\s*\|\s*Value\s*\|\s*$/i.test(lines[0]) || !/^\|\s*-{3,}\s*\|\s*-{3,}\s*\|\s*$/.test(lines[1])) invalid('malformed metadata table')
 
   const title = readMetadata(lines[2] || '', 'Title')
   const source = readMetadata(lines[3] || '', 'URL')
@@ -126,12 +126,16 @@ function parseLegacy (text) {
     while (lines[index] === '') index += 1
     while (index < lines.length) {
       if (lines[index].startsWith('%% annotation-rect: ')) {
-        if (rect !== undefined || marker.sourceType !== 'pdf') invalid('unexpected rect geometry')
-        rect = readGeometry(lines[index], 'rect')
+        if (marker.sourceType !== 'pdf') invalid('unexpected rect geometry')
+        const value = readGeometry(lines[index], 'rect')
+        if (rect !== undefined && JSON.stringify(rect) !== JSON.stringify(value)) invalid('conflicting rect geometry')
+        rect = value
         index += 1
       } else if (lines[index].startsWith('%% annotation-segments: ')) {
-        if (segmentRects !== undefined || marker.sourceType !== 'pdf') invalid('unexpected segment geometry')
-        segmentRects = readGeometry(lines[index], 'segments')
+        if (marker.sourceType !== 'pdf') invalid('unexpected segment geometry')
+        const value = readGeometry(lines[index], 'segments')
+        if (segmentRects !== undefined && JSON.stringify(segmentRects) !== JSON.stringify(value)) invalid('conflicting segment geometry')
+        segmentRects = value
         index += 1
       } else {
         break

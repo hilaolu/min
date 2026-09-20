@@ -2,6 +2,7 @@ const fs = require('fs')
 const { resolveVaultURL } = require('./vault.js')
 
 async function searchVaultFiles (root, kind, query, isCurrent = () => true) {
+  if (kind === 'p') return require('./annotatedPdfSearch.js').search(root, query, isCurrent)
   const entries = []
   const pending = [{ url: 'vault://', depth: 0 }]
   let visited = 0

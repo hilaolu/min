@@ -4,12 +4,7 @@ const fs = require('fs')
 const { fileURLToPath } = require('url')
 
 const viewerURL = 'min://app/pages/pdfViewer/index.html'
-function sourceIdentity (input) {
-  const url = new URL(input)
-  if (!['https:', 'http:', 'file:', 'vault:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported PDF source')
-  url.hash = ''
-  return url.href
-}
+const { sourceIdentity, discover } = require('./annotatedPdfSearch.js')
 
 function installPdfAnnotations ({ ipc, context }) {
   const bindings = new WeakMap()
@@ -53,8 +48,16 @@ function installPdfAnnotations ({ ipc, context }) {
       }
       const store = createStore(captured.root, source)
       let result
-      if (operation === 'load') result = await store.read()
-      else if (operation === 'save') result = await store.save(payload?.annotations, payload?.revision, current)
+      if (operation === 'load') {
+        result = await store.read()
+        if (!current()) throw new Error('Document or vault changed')
+        if (result.revision === null) {
+          const legacy = await discover(captured.root, current)
+          const resource = legacy.resources.find(item => item.source === source)
+          if (resource) result.annotations = resource.annotations
+          else if (legacy.truncated || legacy.invalidSources.has(source)) throw new Error('Annotation discovery incomplete; check legacy records in the vault')
+        }
+      } else if (operation === 'save') result = await store.save(payload?.annotations, payload?.revision, current)
       else if (operation === 'import') {
         if (typeof payload !== 'string' || Buffer.byteLength(payload) > 1024 * 1024) throw new Error('Import size limit exceeded')
         const legacy = payload.trim().startsWith('{') ? JSON.parse(payload) : parseLegacy(payload)

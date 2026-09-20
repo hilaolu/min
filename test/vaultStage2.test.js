@@ -24,7 +24,7 @@ function write (file, contents = '') {
   fs.writeFileSync(file, contents)
 }
 
-test('vault search finds nested markdown and PDF files with encoded names', async t => {
+test('vault search finds nested markdown but excludes unannotated PDF files', async t => {
   const root = profile(t, 'min-vault-search-')
   write(path.join(root, 'nested', 'Encoded name.md'))
   write(path.join(root, 'nested', 'Quarterly REPORT.PDF'))
@@ -38,7 +38,7 @@ test('vault search finds nested markdown and PDF files with encoded names', asyn
   assert.match(markdown.entries[0].url, /nested\/Encoded%20name\.md$/)
 
   const pdf = await searchVaultFiles(root, 'p', 'report')
-  assert.deepEqual(pdf.entries.map(entry => entry.relativePath), ['nested/Quarterly REPORT.PDF'])
+  assert.deepEqual(pdf.entries, [])
 
   const symlink = await searchVaultFiles(root, 'm', 'linked')
   assert.deepEqual(symlink.entries, [])
@@ -137,13 +137,16 @@ test('palette uses the default renderer export through preload IPC with the save
   const host = context.module.exports
   const opened = []
   const strategy = new VaultFileStrategy((kind, query) => host.searchVaultFiles(kind, query), url => opened.push(url))
-  for (const [command, query, expected] of [['m', 'READ ME', 'Nested/Read me.md'], ['p', 'report', 'Report.pdf']]) {
+  for (const [command, query, expected] of [['m', 'READ ME', 'Nested/Read me.md']]) {
     const results = await strategy.updateUI(`>${command} ${query}`, { command, query })
     assert.deepEqual(results.map(result => result.title), [expected])
     results[0].action()
   }
+  const pdfResults = await strategy.updateUI('>p report', { command: 'p', query: 'report' })
+  assert.equal(pdfResults[0].title, 'No annotated PDFs found')
+  assert.equal(pdfResults[0].action, undefined)
   assert.deepEqual(calls, [['vault:search-files', 'm', 'READ ME'], ['vault:search-files', 'p', 'report']])
-  assert.deepEqual(opened, ['vault://Nested/Read%20me.md', 'vault://Report.pdf'])
+  assert.deepEqual(opened, ['vault://Nested/Read%20me.md'])
 })
 
 test('VaultFileStrategy exposes loading, empty, error, and open results', async () => {

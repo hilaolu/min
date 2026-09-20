@@ -25,15 +25,16 @@ class VaultFileStrategy extends CommandStateStrategy {
     if (!result.ok) return [{ id: 'vault-error', title: result.error, icon: 'carbon:warning' }]
     const candidates = result.entries.map(entry => ({
       id: entry.url,
-      title: entry.relativePath,
-      description: 'Open from vault',
+      title: entry.title || entry.relativePath,
+      description: command === 'p' ? `${entry.annotationCount} PDF annotations · ${entry.source}` : 'Open from vault',
       icon: 'carbon:document',
       action: () => this.open(entry.url)
     }))
-    const direct = vaultFileCandidate(command, query, this.open)
+    const direct = command === 'm' ? vaultFileCandidate(command, query, this.open) : {}
     if (direct.action && !result.entries.some(entry => entry.url === direct.id.substring(`vault-${command}-`.length))) candidates.unshift(direct)
-    if (!candidates.length) candidates.push({ id: 'vault-empty', title: 'No matching vault files', icon: 'carbon:search' })
-    if (result.truncated) candidates.push({ id: 'vault-limit', title: 'Search limit reached; use an exact vault-relative path', icon: 'carbon:search' })
+    if (!candidates.length) candidates.push({ id: 'vault-empty', title: command === 'p' ? (result.total ? 'No matching annotated PDFs' : 'No annotated PDFs found') : 'No matching vault files', icon: 'carbon:search' })
+    if (result.errors) candidates.push({ id: 'vault-errors', title: 'Some annotation records could not be read or validated', description: result.diagnostics?.slice(0, 3).join(' · '), icon: 'carbon:warning' })
+    if (result.truncated) candidates.push({ id: 'vault-limit', title: command === 'p' ? 'Results limited; refine your query (vault scan may be incomplete)' : 'Search limit reached; use an exact vault-relative path', icon: 'carbon:search' })
     return candidates
   }
 }
