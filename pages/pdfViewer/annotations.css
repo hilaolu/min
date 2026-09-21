@@ -1,13 +1,28 @@
-html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; }
-body { display: flex; background: #fff; color: #222; }
+html, body { height: 100%; }
+body { display: flex; }
 #viewer { flex: 1; min-width: 0; height: 100%; }
-aside { width: 230px; padding: 12px; overflow: auto; border-left: 1px solid #aaa; }
-h1 { font-size: 17px; }
-label { display: block; margin: 12px 0; }
-textarea, select { box-sizing: border-box; display: block; width: 100%; }
-button { margin: 4px 0; }
-#status { overflow-wrap: anywhere; }
-input[type=file] { width: 100%; }
-@media (prefers-color-scheme: dark) {
-  body { background: #252525; color: #eee; }
+aside { flex: 0 0 300px; width: 300px; padding: 24px 20px; overflow: auto; border-left: 1px solid var(--doc-line); scrollbar-width: thin; }
+h1 { margin: 4px 0 12px; font-size: 20px; letter-spacing: -.4px; font-weight: 600; }
+#status { margin: 0 0 18px; color: var(--doc-muted); font-size: 12px; overflow-wrap: anywhere; }
+#highlight, #download, #retry, #export { width: 100%; }
+section { margin: 20px 0 12px; padding-top: 4px; border-top: 1px solid var(--doc-line); }
+label { display: block; margin: 14px 0; font-size: 12px; font-weight: 600; }
+textarea, select { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; font-size: 13px; font-weight: 400; }
+textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+textarea::placeholder { color: var(--doc-muted); }
+.color-field { display: flex; align-items: center; justify-content: space-between; }
+input[type=color] { width: 42px; height: 30px; padding: 3px; border: 1px solid var(--doc-line); border-radius: 6px; background: var(--doc-surface); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button { flex: 1; padding: 6px 8px; font-size: 12px; white-space: nowrap; }
+#delete { color: var(--doc-danger); background: transparent; }
+#retry[hidden] { display: none; }
+#retry { margin: 4px 0 12px; }
+details { margin: 20px 0; border-top: 1px solid var(--doc-line); border-bottom: 1px solid var(--doc-line); }
+summary { padding: 12px 0; cursor: pointer; color: var(--doc-muted); font-size: 12px; font-weight: 600; }
+input[type=file] { width: 100%; margin-top: 8px; padding: 6px; font-size: 12px; font-weight: 400; }
+#export, #download { font-size: 12px; }
+@media (max-width: 760px) {
+  body { flex-direction: column; }
+  #viewer { flex: 1 0 55vh; min-height: 280px; }
+  aside { flex: 0 0 auto; width: 100%; overflow: visible; padding: 20px; border-left: 0; border-top: 1px solid var(--doc-line); }
 }

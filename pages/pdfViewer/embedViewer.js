@@ -25,7 +25,8 @@ function controls () {
   for (const id of ['highlight', 'import']) ui[id].disabled = !writable || busy || Boolean(pending) || noteDirty
   for (const id of ['save', 'delete']) ui[id].disabled = !writable || busy || Boolean(pending) || !ui.annotations.value
   ui.retry.disabled = !pending || busy
-  ui.annotations.disabled = busy || Boolean(pending) || noteDirty
+  if (!pending) ui.retry.hidden = true
+  ui.annotations.disabled = !annotations.length || busy || Boolean(pending) || noteDirty
   ui.note.disabled = ui.color.disabled = busy || Boolean(pending) || !writable || !selected()
 }
 function selected () { return annotations.find(item => item.uid === ui.annotations.value) }
@@ -54,7 +55,7 @@ function render () {
   })))
   rendered = annotations
   const previous = ui.annotations.value
-  ui.annotations.replaceChildren(new Option('Select a highlight', ''))
+  ui.annotations.replaceChildren(new Option(annotations.length ? 'Select a highlight' : 'No highlights yet', ''))
   for (const item of annotations) ui.annotations.add(new Option(`Page ${item.data.pageIndex + 1}: ${item.data.text.slice(0, 60) || item.uid}`, item.uid))
   ui.annotations.value = annotations.some(item => item.uid === previous) ? previous : annotations[0]?.uid || ''
   showNote()
@@ -79,6 +80,10 @@ async function commit (items) {
     render()
     status('Saved to vault')
   } catch (error) {
+    if (pending) {
+      ui.retry.hidden = false
+      ui.export.closest('details').open = true
+    }
     status(pending ? 'Not saved: ' + error.message + ' Retry or export before leaving this tab.' : 'Saved, but the display could not refresh. Reopen this PDF: ' + error.message)
   } finally {
     busy = false
@@ -117,7 +122,11 @@ ui.save.onclick = () => {
 ui.delete.onclick = () => commit(annotations.filter(item => item.uid !== ui.annotations.value))
 ui.retry.onclick = () => { if (pending) commit(pending) }
 ui.annotations.onchange = showNote
-ui.note.oninput = ui.color.oninput = () => { noteDirty = true; controls() }
+ui.note.oninput = ui.color.oninput = () => {
+  noteDirty = true
+  status('Unsaved changes. Choose Save changes to save your note and color.')
+  controls()
+}
 ui.export.onclick = () => {
   const items = (pending || annotations).map(item => item.uid === ui.annotations.value && noteDirty ? { ...item, data: { ...item.data, notes: ui.note.value, color: ui.color.value } } : item)
   const blob = new Blob([JSON.stringify({ version: 1, source, annotations: items }, null, 2)], { type: 'application/json' })
@@ -187,6 +196,7 @@ async function start () {
     wasmUrl: new URL('../../node_modules/@embedpdf/snippet/dist/pdfium.wasm', location.href).href,
     worker: true,
     fonts: { ui: null, signature: null },
+    theme: { preference: 'system' },
     fontFallback: { fonts: {} },
     documentManager: { maxDocuments: 1 },
     tabBar: 'never',

@@ -5,6 +5,10 @@ let saving = false
 let error = ''
 let pendingSave
 let loaded = false
+const colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+colorScheme.addEventListener('change', () => {
+  if (cherry) cherry.setTheme(colorScheme.matches ? 'dark' : 'default')
+})
 function sourceText () {
   // Cherry 0.11 caches getMarkdown until the preview debounce fires. Read its
   // live CodeMirror document so Ctrl+S/close cannot miss the most recent key.
@@ -14,6 +18,7 @@ function sourceText () {
 function state () { return { dirty: Boolean(cherry && sourceText() !== savedText), saving } }
 function update () {
   document.getElementById('status').textContent = error || (saving ? 'Saving…' : state().dirty ? 'Unsaved changes' : 'Saved')
+  document.getElementById('status').dataset.state = error ? 'error' : saving ? 'saving' : state().dirty ? 'dirty' : 'saved'
 }
 async function saveSnapshot () {
   if (!cherry || saving) return false
@@ -95,6 +100,7 @@ vaultPage.readCurrent().then(result => {
     id: 'editor',
     value: savedText,
     locale: 'en_US',
+    themeSettings: { mainTheme: colorScheme.matches ? 'dark' : 'default' },
     engine: { global: { htmlBlackList: '*' } },
     editor: { defaultModel: 'edit&preview', keyMap: 'vim' },
     toolbars: { toolbar: ['bold', 'italic', 'header', '|', 'list', 'quote', 'code'] },

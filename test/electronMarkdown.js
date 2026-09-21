@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { app, BrowserWindow, ipcMain, net, protocol, session } = require('electron')
+const { app, BrowserWindow, ipcMain, nativeTheme, net, protocol, session } = require('electron')
 const createProtocol = require('../main/minInternalProtocol.js')
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'min-markdown-'))
@@ -246,6 +246,22 @@ async function run () {
     status: document.getElementById('status').textContent
   })`), { dirty: false, saving: false, status: 'Saved' })
   console.log('PASS failed saves preserve dirty status and retry the same latest text successfully')
+
+  for (const theme of ['dark', 'light']) {
+    nativeTheme.themeSource = theme
+    await until(() => evaluate(`document.querySelector('#editor .cherry').classList.contains('theme__${theme === 'dark' ? 'dark' : 'default'}')`), `${theme} editor theme`)
+    assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), theme === 'dark' ? 'rgb(24, 29, 38)' : 'rgb(248, 249, 251)')
+  }
+  nativeTheme.themeSource = 'system'
+  window.setContentSize(390, 700)
+  await until(() => evaluate('window.innerWidth === 390'), 'narrow editor viewport')
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'no horizontal page overflow')
+  assert.equal(await evaluate(`(() => {
+    const editor = document.getElementById('editor').getBoundingClientRect()
+    const footer = document.querySelector('footer').getBoundingClientRect()
+    return editor.height > 300 && editor.bottom <= footer.top + 1 && footer.bottom <= innerHeight + 1
+  })()`), true, 'editor and save status fit the narrow viewport')
+  console.log('PASS live light/dark themes and narrow editor layout')
 }
 
 run().then(() => finish(0), error => {

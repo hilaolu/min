@@ -343,6 +343,19 @@ async function run () {
     const pdfReady = "document.body.dataset.pdfReady === 'true'"
     await load('vault://reference.pdf', pdfReady)
     assert.equal(await evaluate('document.title'), 'reference.pdf', 'root-level vault PDF retains its filename')
+    assert.equal(await evaluate("document.querySelector('details').open"), false, 'backup tools start collapsed')
+    await evaluate("document.querySelector('summary').click()")
+    assert.equal(await evaluate("document.getElementById('export').getBoundingClientRect().height > 0"), true, 'backup tools can be revealed')
+    await evaluate("document.querySelector('summary').click()")
+    views.get(id).setBounds({ x: 0, y: 0, width: 390, height: 800 })
+    await until(() => evaluate('innerWidth === 390'), 'narrow PDF viewport')
+    assert.equal(await evaluate(`(() => {
+      const viewer = document.getElementById('viewer').getBoundingClientRect()
+      const sidebar = document.querySelector('aside').getBoundingClientRect()
+      return viewer.height >= 280 && sidebar.top >= viewer.bottom - 1 && document.documentElement.scrollWidth <= innerWidth
+    })()`), true, 'narrow PDF stacks highlights below a usable reading area')
+    views.get(id).setBounds({ x: 0, y: 0, width: 1000, height: 800 })
+    await until(() => evaluate('innerWidth === 1000'), 'restore PDF viewport')
     await command('find.start', { text: 'Highlight', options: {} })
     assert.equal(messages.filter(message => message.type === 'find-result').at(-1).payload.result.matches, 1, 'browser Find searches PDF text through EmbedPDF')
     await command('find.stop', { action: 'clearSelection' })
@@ -374,6 +387,9 @@ async function run () {
       await until(() => evaluate("!document.getElementById('delete').disabled"), 'saved highlight controls')
       await evaluate("document.getElementById('delete').click()")
       await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'selection highlight removed')
+      assert.equal(await evaluate("document.getElementById('annotations').disabled"), true, 'empty highlight picker is disabled')
+      assert.equal(await evaluate("document.getElementById('annotations').selectedOptions[0].textContent"), 'No highlights yet')
+      assert.equal(await evaluate("document.getElementById('retry').hidden"), true, 'retry stays hidden without an unsaved change')
       const rect = { origin: { x: 20, y: 25 }, size: { width: 100, height: 12 } }
       const legacy = '| Field | Value |\n| --- | --- |\n| Title | Reference |\n| URL | vault://reference.pdf |\n| Tags | #annotation |\n\n## Annotations\n\n' +
         '%% annotation: pdf-test-id | color: ffcd45 | sourceType: pdf | pageIndex: 0 %%\n<pre></pre>\n<pre>Test highlight</pre>\n<pre></pre>\n\n' +
