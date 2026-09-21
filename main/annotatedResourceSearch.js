@@ -40,22 +40,9 @@ function checkWebSource (source) {
 }
 
 function validateWebAnnotations (items) {
-  if (!Array.isArray(items) || items.length > 1000 || Buffer.byteLength(JSON.stringify(items)) > maximumBytes) throw new Error('Annotation size limit exceeded')
-  const ids = new Set()
-  return items.map(item => {
-    if (!item || item.sourceType !== 'webpage' || typeof item.uid !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(item.uid) || ids.has(item.uid)) throw new Error('Invalid or duplicate annotation')
-    ids.add(item.uid)
-    const data = item.data
-    if (!data || !/^#[0-9a-f]{6}$/i.test(data.color)) throw new Error('Invalid webpage annotation')
-    for (const key of ['text', 'notes', 'textBefore', 'textAfter']) {
-      if (typeof data[key] !== 'string' || data[key].length > 100000) throw new Error('Invalid annotation text')
-    }
-    return {
-      uid: item.uid,
-      sourceType: 'webpage',
-      data: { color: data.color, text: data.text, notes: data.notes, textBefore: data.textBefore, textAfter: data.textAfter }
-    }
-  })
+  const annotations = validateAnnotations(items)
+  if (annotations.some(item => item.sourceType !== 'webpage')) throw new Error('Invalid webpage annotation')
+  return annotations
 }
 
 async function readRecord (file) {
@@ -99,7 +86,7 @@ async function decodeCandidate (file, root) {
     const pdfAnnotations = parsed.annotations.filter(annotation => annotation.sourceType === 'pdf')
     let annotations
     let sourceType
-    if (portable || pdfAnnotations.length) {
+    if (pdfAnnotations.length || (portable && !parsed.annotations.length)) {
       await checkSource(source, root)
       annotations = validateAnnotations(pdfAnnotations)
       sourceType = 'pdf'
@@ -159,9 +146,11 @@ async function discover (root, isCurrent = () => true, snapshot) {
     try {
       const stored = await createStore(root, source).read()
       if (stored.revision !== null) {
-        await checkSource(source, root)
         const previous = resources.get(source)
-        resources.set(source, { source, sourceType: 'pdf', title: previous?.title || source, tags: previous?.tags || '', annotations: stored.annotations })
+        const sourceType = stored.annotations[0]?.sourceType || previous?.sourceType || 'pdf'
+        if (sourceType === 'webpage') checkWebSource(source)
+        else await checkSource(source, root)
+        resources.set(source, { source, sourceType, title: previous?.title || source, tags: previous?.tags || '', annotations: stored.annotations })
         ambiguous.delete(source)
         invalidSources.delete(source)
       }

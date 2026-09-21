@@ -7,11 +7,14 @@ const { fileURLToPath } = require('url')
 const viewerURL = 'min://app/pages/pdfViewer/index.html'
 const { sourceIdentity, discover } = require('./annotatedResourceSearch.js')
 
-function installPdfAnnotations ({ ipc, context }) {
+// Share revision, legacy migration, and document binding checks across PDF and
+// webpage annotations. File reading/import remain exclusive to the PDF viewer.
+function installPdfAnnotations ({ ipc, context, sourceType = 'pdf' }) {
   const bindings = new WeakMap()
-  ipc.handle('pdf-annotations', async (event, operation, payload) => {
+  ipc.handle(sourceType === 'pdf' ? 'pdf-annotations' : 'web-annotations', async (event, operation, payload) => {
     try {
       const captured = context(event, operation)
+      if (sourceType === 'webpage' && !['load', 'save'].includes(operation)) throw new Error('Unknown annotation operation')
       const source = sourceIdentity(captured.source)
       const current = () => {
         try {
@@ -54,12 +57,14 @@ function installPdfAnnotations ({ ipc, context }) {
         if (!current()) throw new Error('Document or vault changed')
         if (result.revision === null) {
           const legacy = await discover(captured.root, current)
-          const resource = legacy.resources.find(item => item.source === source && item.sourceType === 'pdf')
+          const resource = legacy.resources.find(item => item.source === source && item.sourceType === sourceType)
           if (resource) result.annotations = resource.annotations
           else if (legacy.truncated || legacy.invalidSources.has(source)) throw new Error('Annotation discovery incomplete; check legacy records in the vault')
         }
-      } else if (operation === 'save') result = await store.save(payload?.annotations, payload?.revision, current)
-      else if (operation === 'import') {
+      } else if (operation === 'save') {
+        if (!Array.isArray(payload?.annotations) || payload.annotations.some(item => item?.sourceType !== sourceType)) throw new Error('Invalid annotation source type')
+        result = await store.save(payload.annotations, payload.revision, current)
+      } else if (operation === 'import') {
         if (typeof payload !== 'string' || Buffer.byteLength(payload) > 1024 * 1024) throw new Error('Import size limit exceeded')
         const legacy = annotationMarkdown.isMarkdown(payload) ? annotationMarkdown.parse(payload) : payload.trim().startsWith('{') ? JSON.parse(payload) : parseLegacy(payload)
         if (payload.trim().startsWith('{') && legacy.version !== 1) throw new Error('Unsupported annotation version')
@@ -67,6 +72,7 @@ function installPdfAnnotations ({ ipc, context }) {
         result = { annotations: validateAnnotations(legacy.annotations) }
       } else throw new Error('Unknown annotation operation')
       if (!current()) throw new Error('Document or vault changed')
+      if (result.annotations.some(item => item.sourceType !== sourceType)) throw new Error('Annotation source type mismatch')
       if (operation === 'load') bindings.set(event.sender, { frame: event.senderFrame, root: captured.root, generation: captured.generation, source })
       return { ok: true, ...result }
     } catch (error) {

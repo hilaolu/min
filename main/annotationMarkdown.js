@@ -98,7 +98,7 @@ function parse (text) {
     if (!uid) malformed()
     state.offset = headingEnd + 2
     const metadata = parseComment(state, '<!-- min-annotation: ')
-    const metadataKeys = ['uid', 'sourceType', 'color', 'pageIndex', 'rect', 'segmentRects']
+    const metadataKeys = metadata.sourceType === 'webpage' ? ['uid', 'sourceType', 'color'] : ['uid', 'sourceType', 'color', 'pageIndex', 'rect', 'segmentRects']
     if (!objectWithKeys(metadata, metadataKeys) || metadata.uid !== uid) malformed()
     const values = {}
     for (const field of fields) {

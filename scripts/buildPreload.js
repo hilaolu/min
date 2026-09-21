@@ -6,6 +6,7 @@ const outFile = path.resolve(__dirname, '../dist/preload.js')
 const modules = [
   'js/preload/default.js',
   'js/preload/vault.js',
+  'js/preload/annotations.js',
   'js/preload/textExtractor.js',
   'js/preload/readerDetector.js',
   'js/preload/siteUnbreak.js',

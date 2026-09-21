@@ -82,6 +82,17 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
     }
   })
 
+  require('./pdfAnnotations.js').installPdfAnnotations({
+    ipc,
+    sourceType: 'webpage',
+    context: event => {
+      if (changing || !isTab(event.sender) || event.sender.isDestroyed?.() || event.senderFrame !== event.sender.mainFrame) throw new Error('Annotation caller denied')
+      const url = new URL(event.senderFrame.url)
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Annotation caller denied')
+      return { root, source: url.href, generation: annotationGeneration }
+    }
+  })
+
   function release (contents) {
     const record = records.get(contents.id)
     if (record?.identity && owners.get(record.identity) === contents) owners.delete(record.identity)

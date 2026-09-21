@@ -20,23 +20,22 @@ function validateAnnotations (items) {
     return { origin: { x: value.origin.x, y: value.origin.y }, size: { width: value.size.width, height: value.size.height } }
   }
   return items.map(item => {
-    if (!item || typeof item.uid !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(item.uid) || ids.has(item.uid) || item.sourceType !== 'pdf') throw new Error('Invalid or duplicate annotation')
+    if (!item || typeof item.uid !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(item.uid) || ids.has(item.uid) || !['pdf', 'webpage'].includes(item.sourceType)) throw new Error('Invalid or duplicate annotation')
     ids.add(item.uid)
     const data = item.data
-    if (!data || !/^#[0-9a-f]{6}$/i.test(data.color) || !Number.isSafeInteger(data.pageIndex) || data.pageIndex < 0 || data.pageIndex > 100000) throw new Error('Invalid PDF annotation')
+    if (!data || !/^#[0-9a-f]{6}$/i.test(data.color)) throw new Error('Invalid annotation color')
     for (const key of ['text', 'notes', 'textBefore', 'textAfter']) {
       if (typeof data[key] !== 'string' || data[key].length > 100000) throw new Error('Invalid annotation text')
     }
+    const shared = { color: data.color, text: data.text, notes: data.notes, textBefore: data.textBefore, textAfter: data.textAfter }
+    if (item.sourceType === 'webpage') return { uid: item.uid, sourceType: 'webpage', data: shared }
+    if (!Number.isSafeInteger(data.pageIndex) || data.pageIndex < 0 || data.pageIndex > 100000) throw new Error('Invalid PDF annotation')
     if (!Array.isArray(data.segmentRects) || !data.segmentRects.length || data.segmentRects.length > 10000) throw new Error('Invalid PDF segments')
     return {
       uid: item.uid,
       sourceType: 'pdf',
       data: {
-        color: data.color,
-        text: data.text,
-        notes: data.notes,
-        textBefore: data.textBefore,
-        textAfter: data.textAfter,
+        ...shared,
         pageIndex: data.pageIndex,
         rect: rect(data.rect),
         segmentRects: data.segmentRects.map(rect)
