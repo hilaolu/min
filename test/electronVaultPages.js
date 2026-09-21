@@ -305,14 +305,15 @@ async function run () {
     await evaluate('window.vaultEditorSave()')
     assert.equal(fs.readFileSync(path.join(root, 'Projects/note.md'), 'utf8'), source + '\nEdited')
     assert.equal(await evaluate('window.vaultEditorState().dirty'), false)
-    // The acknowledgement belongs only to its captured snapshot.
+    // The save promise drains newer edits before reporting a clean buffer.
     await evaluate("cherry.setMarkdown('older'); window.racingSave = window.vaultEditorSave(); cherry.setMarkdown('newer')")
     await evaluate('window.racingSave')
-    assert.equal(await evaluate('window.vaultEditorState().dirty'), true)
-    assert.equal(fs.readFileSync(path.join(root, 'Projects/note.md'), 'utf8'), 'older')
+    assert.equal(await evaluate('window.vaultEditorState().dirty'), false)
+    assert.equal(fs.readFileSync(path.join(root, 'Projects/note.md'), 'utf8'), 'newer')
     fs.writeFileSync(path.join(root, 'Projects/note.md'), 'external')
+    await evaluate("cherry.setMarkdown('newest')")
     assert.equal(await evaluate('window.vaultEditorSave()'), false)
-    assert.equal(await evaluate('cherry.getCodeMirror().state.doc.toString()'), 'newer')
+    assert.equal(await evaluate('cherry.getCodeMirror().state.doc.toString()'), 'newest')
     assert.equal(fs.readFileSync(path.join(root, 'Projects/note.md'), 'utf8'), 'external')
     fs.unlinkSync(path.join(root, 'Projects/note.md'))
     assert.equal(await evaluate('window.vaultEditorSave()'), false, 'I/O failure preserves the buffer')
@@ -341,6 +342,7 @@ async function run () {
     await until(() => evaluate("document.body.innerText.includes('alpha')"), 'history authorization')
     const pdfReady = "document.body.dataset.pdfReady === 'true'"
     await load('vault://reference.pdf', pdfReady)
+    assert.equal(await evaluate('document.title'), 'reference.pdf', 'root-level vault PDF retains its filename')
     await command('find.start', { text: 'Highlight', options: {} })
     assert.equal(messages.filter(message => message.type === 'find-result').at(-1).payload.result.matches, 1, 'browser Find searches PDF text through EmbedPDF')
     await command('find.stop', { action: 'clearSelection' })

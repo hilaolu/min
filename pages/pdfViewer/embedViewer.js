@@ -1,4 +1,4 @@
-/* global Blob, Option, crypto, location */
+/* global Blob, Option, crypto, location, vaultDisplayPath */
 import EmbedPDF, { PdfAnnotationSubtype, LockModeType } from '../../node_modules/@embedpdf/snippet/dist/embedpdf.js'
 import { PdfBlendMode } from '../../node_modules/@embedpdf/models/dist/index.js'
 
@@ -178,7 +178,9 @@ window.pdfHighlightsSave = async () => {
 
 async function start () {
   if (!source || !/^(vault|https?|file):/.test(source)) throw new Error('Unsupported PDF source')
-  document.title = decodeURIComponent(new URL(source).pathname.split('/').pop()) || 'PDF'
+  document.title = (source.startsWith('vault://')
+    ? vaultDisplayPath(source).split('/').pop()
+    : decodeURIComponent(new URL(source).pathname.split('/').pop())) || 'PDF'
   const viewer = EmbedPDF.init({
     type: 'container',
     target: ui.viewer,

@@ -432,6 +432,8 @@ async function run () {
   console.log('PASS image preview uses the entry URL and filename')
 
   await setCurrentAndRefresh(initial, "document.querySelectorAll('#files .entry').length === 4", 'restore listing before content search')
+  await sendKey('End')
+  assert.equal(await evaluate("document.querySelector('#files .selected').title"), initial.entries[0].relativePath)
   await evaluate(`
     window.__vaultTest.clearOpens()
     document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }))
@@ -508,6 +510,7 @@ async function run () {
   await sendKey('Escape')
   await until(() => evaluate("!document.getElementById('fuzzy-dialog').open && document.querySelectorAll('#files .entry').length === 4 && document.getElementById('files').getAttribute('aria-busy') === 'false'"), 'close content search and restore listing')
   assert.equal(await evaluate("document.querySelector('#files .result-snippet')"), null)
+  assert.equal(await evaluate("document.querySelector('#files .selected').title"), initial.entries[0].relativePath, 'leaving refined/empty/error searches restores the browsing selection')
   const cancellations = await evaluate('window.__vaultTest.cancellations()')
   await evaluate(`
     document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))

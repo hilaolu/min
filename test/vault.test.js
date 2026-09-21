@@ -4,7 +4,7 @@ const test = require('node:test')
 const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
-const { parseVaultURL, resolveNoteReference } = require('../js/util/vaultURL.js')
+const { parseVaultURL, vaultDisplayPath, resolveNoteReference } = require('../js/util/vaultURL.js')
 const { canonicalRoot, resolveVaultURL } = require('../main/vault.js')
 const { serveVaultResource } = require('../main/vaultProtocol.js')
 const createAccess = require('../main/vaultAccess.js')
@@ -38,6 +38,17 @@ test('canonical flat vault URLs and preview-only reference resolution', () => {
   for (const url of ['vault://local:12/a', 'vault://x@local/a', 'vault://a%2fb', 'vault://a%5cb', 'vault://%00', 'vault://%zz', 'vault://C%3a', 'vault://CON']) {
     assert.throws(() => parseVaultURL(url), url)
   }
+})
+
+test('vault display paths retain the first component and decode filenames once', () => {
+  for (const [url, expected] of [
+    ['vault://', ''],
+    ['vault://Note.md', 'Note.md'],
+    ['vault://Paper.PDF', 'Paper.PDF'],
+    ['vault://Projects/Note.md', 'Projects/Note.md'],
+    ['vault://%E9%9B%AA/Example%20%23%2520.pdf?q=1#page=2', '雪/Example #%20.pdf']
+  ]) assert.equal(vaultDisplayPath(url), expected)
+  assert.throws(() => vaultDisplayPath('vault://a%2fb.md'))
 })
 
 test('confined raw response bytes, methods, ranges and errors', async t => {

@@ -1,4 +1,4 @@
-/* global Cherry, vaultPage, resolveNoteReference */
+/* global Cherry, vaultPage, resolveNoteReference, vaultDisplayPath */
 let cherry
 let savedText
 let saving = false
@@ -87,7 +87,7 @@ vaultPage.readCurrent().then(result => {
   loaded = true
   if (!result.ok) { error = result.error; update(); return }
   savedText = result.markdown
-  const notePath = decodeURIComponent(new URL(result.vaultURL).pathname)
+  const notePath = vaultDisplayPath(result.vaultURL)
   document.getElementById('path').textContent = notePath
   document.getElementById('path').title = notePath
   document.title = document.getElementById('path').textContent

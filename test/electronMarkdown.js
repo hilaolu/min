@@ -110,6 +110,9 @@ async function run () {
   await window.loadURL('min://app/pages/markdown/index.html')
   await until(() => evaluate("typeof cherry !== 'undefined' && !!cherry && document.getElementById('status').textContent === 'Saved'").catch(() => false), 'Cherry editor ready')
 
+  assert.equal(await evaluate('document.title'), 'note.md')
+  assert.equal(await evaluate("document.getElementById('path').textContent"), 'note.md')
+
   const initial = await evaluate(`({
     lang: document.documentElement.lang,
     locale: cherry.options.locale,

@@ -8,7 +8,7 @@ const vm = require('node:vm')
 const { createRequire } = require('node:module')
 const { createBrowserChromeHost } = require('../main/browserChromePreload.js')
 const { createRuntimeArgument } = require('../main/browserChromeRuntime.js')
-const searchVaultFiles = require('../main/vaultSearch.js')
+const createVaultFileIndex = require('../main/vaultFileIndex.js')
 const createVaultMode = require('../main/vaultMode.js')
 const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
 const StrategyManager = require('../js/commandPalette/StrategyManager.js')
@@ -22,6 +22,17 @@ function profile (t, prefix = 'min-stage2-') {
 function write (file, contents = '') {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, contents)
+}
+
+async function searchVaultFiles (root, kind, query, isCurrent) {
+  const index = createVaultFileIndex(root)
+  try {
+    return kind === 'm'
+      ? await index.search(query, isCurrent)
+      : await index.searchAnnotations(kind, query, isCurrent)
+  } finally {
+    await index.close()
+  }
 }
 
 test('vault search finds nested markdown but excludes unannotated PDF files', async t => {
@@ -44,7 +55,7 @@ test('vault search finds nested markdown but excludes unannotated PDF files', as
   assert.deepEqual(symlink.entries, [])
 })
 
-test('fallback Markdown search excludes hidden paths relative to a hidden vault root', async t => {
+test('indexed Markdown search excludes hidden paths relative to a hidden vault root', async t => {
   const root = profile(t, '.min-vault-search-')
   write(path.join(root, 'visible.note.md'))
   write(path.join(root, '.hidden.md'))

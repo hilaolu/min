@@ -5,7 +5,7 @@ const os = require('node:os')
 const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
 const test = require('node:test')
-const { search, discover, rank, checkSource } = require('../main/annotatedPdfSearch.js')
+const { search, discover, rank, checkSource } = require('../main/annotatedResourceSearch.js')
 const { createStore } = require('../main/annotationStore.js')
 const annotationMarkdown = require('../main/annotationMarkdown.js')
 const { installPdfAnnotations } = require('../main/pdfAnnotations.js')
@@ -214,8 +214,23 @@ test('local native PDF records open through vault routing, and result limits are
   const result = await search(root, 'Same title')
   assert.equal(result.entries.length, 20)
   assert.equal(result.truncated, true)
+  assert.equal(result.scanLimited, false)
+  assert.equal(result.resultLimited, true)
   assert.equal(result.entries[0].source, 'https://example.com/00')
   assert.equal(result.entries[19].source, 'https://example.com/19')
+})
+
+test('picker distinguishes incomplete scans from display result limits', async () => {
+  for (const scanLimited of [false, true]) {
+    const result = rank({ resources: [], truncated: scanLimited, errors: 0, diagnostics: [] }, '')
+    assert.equal(result.scanLimited, scanLimited)
+    assert.equal(result.resultLimited, false)
+    const strategy = new VaultFileStrategy(async () => ({ ...result, truncated: true }), () => {})
+    const rows = await strategy.updateUI('>p', { command: 'p', query: '' })
+    const title = rows.find(row => row.id === 'vault-limit').title
+    assert.match(title, scanLimited ? /scan incomplete/ : /More matches available/)
+    if (!scanLimited) assert.doesNotMatch(title, /scan|incomplete/)
+  }
 })
 
 test('checkSource rejects hidden local PDFs and accepts visible dotted PDF names for vault and file URLs', async t => {

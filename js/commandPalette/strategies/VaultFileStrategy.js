@@ -65,7 +65,15 @@ class VaultFileStrategy extends CommandStateStrategy {
     const resources = command === 'p' ? 'PDFs' : 'web pages'
     if (!candidates.length) candidates.push({ id: 'vault-empty', title: command !== 'm' ? (result.total ? `No matching annotated ${resources}` : `No annotated ${resources} found`) : 'No matching vault files', icon: 'carbon:search' })
     if (result.errors) candidates.push({ id: 'vault-errors', title: 'Some annotation records could not be read or validated', description: result.diagnostics?.slice(0, 3).join(' · '), icon: 'carbon:warning' })
-    if (result.truncated) candidates.push({ id: 'vault-limit', title: command !== 'm' ? 'Results limited; refine your query (vault scan may be incomplete)' : 'Search limit reached; use an exact vault-relative path', icon: 'carbon:search' })
+    if (result.truncated) {
+      candidates.push({
+        id: 'vault-limit',
+        title: result.scanLimited
+          ? 'Vault scan incomplete; some annotated resources may be missing'
+          : 'More matches available; refine your query' + (command === 'm' ? ' or use an exact vault-relative path' : ''),
+        icon: 'carbon:search'
+      })
+    }
     return candidates
   }
 }

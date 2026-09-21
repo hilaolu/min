@@ -12,6 +12,7 @@ function createVaultFileIndex (root) {
   let closed = false
   let finish
   let version = 0
+  let pathVersion = 0
   let sortedVersion = -1
   let sortedPaths = []
   let previousSearch
@@ -37,6 +38,7 @@ function createVaultFileIndex (root) {
         const relative = path.relative(root, file)
         if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) return
         const relativePath = relative.split(path.sep).join('/')
+        if (!entries.has(relativePath)) pathVersion++
         entries.set(relativePath, {
           relativePath,
           url: 'vault://' + relativePath.split('/').map(encodeURIComponent).join('/'),
@@ -47,13 +49,16 @@ function createVaultFileIndex (root) {
       watcher.on('add', update)
       watcher.on('change', update)
       watcher.on('unlink', file => {
-        entries.delete(path.relative(root, file).split(path.sep).join('/'))
+        if (entries.delete(path.relative(root, file).split(path.sep).join('/'))) pathVersion++
         version++
       })
       watcher.on('unlinkDir', file => {
         const relative = path.relative(root, file).split(path.sep).join('/')
         for (const key of entries.keys()) {
-          if (!relative || key.startsWith(relative + '/')) entries.delete(key)
+          if (!relative || key.startsWith(relative + '/')) {
+            entries.delete(key)
+            pathVersion++
+          }
         }
         version++
       })
@@ -85,7 +90,7 @@ function createVaultFileIndex (root) {
   return {
     get failed () { return Boolean(failure) },
     async searchAnnotations (kind, query, isCurrent = () => true) {
-      const { discover, rank, checkSource } = require('./annotatedPdfSearch.js')
+      const { discover, rank, checkSource } = require('./annotatedResourceSearch.js')
       await wait(isCurrent)
       // Coalesce concurrent queries and change bursts. Rebuild metadata on the
       // next query after an event, never on every keystroke or by walking again.
@@ -118,11 +123,12 @@ function createVaultFileIndex (root) {
     async search (query, isCurrent = () => true) {
       await wait(isCurrent)
       const needle = query.toLowerCase()
-      if (sortedVersion !== version) {
+      // Content edits invalidate annotation metadata, not filename membership.
+      if (sortedVersion !== pathVersion) {
         sortedPaths = Array.from(entries.values())
           .filter(entry => !isHiddenPath(entry.relativePath) && /\.md$/i.test(entry.relativePath))
           .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
-        sortedVersion = version
+        sortedVersion = pathVersion
         previousSearch = null
       }
       // Retain ALL matches, not the displayed 20: an extension may match only

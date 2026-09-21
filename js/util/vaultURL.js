@@ -24,6 +24,11 @@ function parseVaultURL (input) {
   return { segments, vaultURL: 'vault://' + segments.map(encodeURIComponent).join('/') + suffix }
 }
 
+// Display only: decode each component once, without treating the first as a host.
+function vaultDisplayPath (input) {
+  return parseVaultURL(input).segments.join('/')
+}
+
 function resolveNoteReference (reference, documentURL) {
   if (typeof reference !== 'string' || /[\\\x00-\x1f]/.test(reference)) invalid()
   const base = parseVaultURL(documentURL).vaultURL
@@ -46,4 +51,4 @@ function resolveNoteReference (reference, documentURL) {
   return parseVaultURL('vault://' + resolved.pathname.slice(1)).vaultURL + resolved.search + resolved.hash
 }
 
-if (typeof module !== 'undefined') module.exports = { parseVaultURL, resolveNoteReference }
+if (typeof module !== 'undefined') module.exports = { parseVaultURL, vaultDisplayPath, resolveNoteReference }

@@ -303,9 +303,7 @@ function createCommandPalette (options) {
       if (!commandPalette.isVisible) return
 
       commandPalette.isVisible = false
-      commandPalette.strategyManager.generation++
-      const strategy = commandPalette.strategyManager.currentStrategy
-      if (strategy && strategy.cancelSearch) strategy.cancelSearch()
+      commandPalette.strategyManager.cancelPending()
       commandPalette.input.blur()
 
       // Reset state

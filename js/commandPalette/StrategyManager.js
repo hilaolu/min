@@ -29,6 +29,12 @@ class StrategyManager {
     this.generation = 0
   }
 
+  // Invalidate pending UI work without resetting the selected strategy.
+  cancelPending () {
+    this.generation++
+    if (this.currentStrategy?.cancelSearch) this.currentStrategy.cancelSearch()
+  }
+
   /**
    * Register a command state strategy
    * @param {CommandStateStrategy} strategy - Strategy to register
@@ -164,6 +170,7 @@ class StrategyManager {
         candidates
       })
     } catch (error) {
+      if (generation !== this.generation) return
       console.error(`Error entering strategy ${newStrategy.stateName}:`, error)
 
       // Fallback to previous strategy or default

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
+const StrategyManager = require('../js/commandPalette/StrategyManager.js')
 
 function delay (milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -19,6 +20,43 @@ function result (name) {
     truncated: false
   }
 }
+
+test('manager cancellation settles debounce without publishing stale rows and allows reopening', async () => {
+  const calls = []
+  const strategy = new VaultFileStrategy(async (command, query) => {
+    calls.push(query)
+    return result(query)
+  }, () => {})
+  const manager = new StrategyManager()
+  manager.registerStrategy(strategy)
+  const published = []
+  manager.on('state-changed', event => published.push(event))
+  manager.on('candidates-updated', event => published.push(event))
+  const pending = manager.processInput('>m old', { input: { value: '>m old' } })
+  manager.cancelPending()
+  const count = published.length
+  await pending
+  assert.equal(published.length, count)
+  assert.deepEqual(calls, [])
+  await manager.processInput('>m new', { input: { value: '>m new' } })
+  assert.deepEqual(calls, ['new'])
+  assert.equal(published.at(-1).candidates[0].id, 'vault://new.md')
+})
+
+test('a stale rejected transition cannot restore an obsolete strategy', async () => {
+  const manager = new StrategyManager()
+  const old = new VaultFileStrategy(() => {}, () => {})
+  const latest = new VaultFileStrategy(() => {}, () => {})
+  manager.currentStrategy = new VaultFileStrategy(() => {}, () => {})
+  let rejectOld
+  old.updateUI = () => new Promise((resolve, reject) => { rejectOld = reject })
+  latest.updateUI = async () => []
+  const pending = manager.transitionTo(old, {}, { input: { value: '' } })
+  await manager.transitionTo(latest, {}, { input: { value: '' } })
+  rejectOld(new Error('obsolete failure'))
+  await pending
+  assert.equal(manager.currentStrategy, latest)
+})
 
 test('rapid Markdown updates debounce to the latest search and settle every promise', { timeout: 2000 }, async () => {
   const calls = []

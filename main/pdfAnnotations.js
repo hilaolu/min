@@ -5,7 +5,7 @@ const fs = require('fs')
 const { fileURLToPath } = require('url')
 
 const viewerURL = 'min://app/pages/pdfViewer/index.html'
-const { sourceIdentity, discover } = require('./annotatedPdfSearch.js')
+const { sourceIdentity, discover } = require('./annotatedResourceSearch.js')
 
 function installPdfAnnotations ({ ipc, context }) {
   const bindings = new WeakMap()

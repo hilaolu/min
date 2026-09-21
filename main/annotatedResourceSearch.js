@@ -6,12 +6,10 @@ const { resolveVaultURL } = require('./vault.js')
 const { createStore, validateAnnotations, maximumBytes } = require('./annotationStore.js')
 const annotationMarkdown = require('./annotationMarkdown.js')
 const parseLegacy = require('./annotationLegacy.js')
-const { isHiddenPath, isAnnotationMetadata } = require('./vaultSearchPaths.js')
+const { isHiddenPath } = require('./vaultSearchPaths.js')
+const visitCandidates = require('./annotationCandidates.js')
 
-const MAX_VISITED_ENTRIES = 20000
-const MAX_DEPTH = 32
 const MAX_RESULTS = 20
-const EXCLUDED_DIRECTORIES = new Set(['node_modules'])
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0
 
 function sourceIdentity (input) {
@@ -77,111 +75,76 @@ async function readRecord (file) {
   } finally { await handle.close() }
 }
 
-function excluded (relativePath) {
-  return (isHiddenPath(relativePath) && !isAnnotationMetadata(relativePath)) || relativePath.split('/').some(component => EXCLUDED_DIRECTORIES.has(component))
+// Decode one candidate without mutating the aggregate resource/precedence state.
+async function decodeCandidate (file, root) {
+  let recordSource
+  const nativeMatch = file.relativePath.match(/^\.min-annotations\/([a-f0-9]{64})\.(md|json)$/)
+  try {
+    if (!file.stat.isFile() || (!nativeMatch && !/\.md$/i.test(file.relativePath))) return
+    const text = await readRecord(file)
+    if (nativeMatch) {
+      const data = nativeMatch[2] === 'md' ? annotationMarkdown.parse(text) : JSON.parse(text)
+      recordSource = sourceIdentity(data.source)
+      const digest = createHash('sha256').update(recordSource).digest('hex')
+      if (data.version !== 1 || nativeMatch[1] !== digest) throw new Error('Annotation source or version mismatch')
+      return { nativeSource: recordSource }
+    }
+    const portable = annotationMarkdown.isMarkdown(text)
+    if (!portable && !/%% annotation:/m.test(text)) return
+    const declaredSource = text.match(/^\|\s*URL\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim()
+    if (declaredSource) recordSource = sourceIdentity(declaredSource)
+    const parsed = portable ? annotationMarkdown.parse(text) : parseLegacy(text)
+    const source = sourceIdentity(parsed.source)
+    recordSource = source
+    const pdfAnnotations = parsed.annotations.filter(annotation => annotation.sourceType === 'pdf')
+    let annotations
+    let sourceType
+    if (portable || pdfAnnotations.length) {
+      await checkSource(source, root)
+      annotations = validateAnnotations(pdfAnnotations)
+      sourceType = 'pdf'
+    } else {
+      checkWebSource(source)
+      annotations = validateWebAnnotations(parsed.annotations)
+      sourceType = 'webpage'
+    }
+    if (!annotations.length && !portable) return
+    const tags = text.match(/^\|\s*Tags\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim() || ''
+    return { resource: { source, sourceType, title: parsed.title || source, tags, annotations } }
+  } catch (_) {
+    return { failed: true, invalidSource: recordSource, invalidMarkdownDigest: nativeMatch?.[2] === 'md' ? nativeMatch[1] : null }
+  }
 }
 
 // No writes or network requests. Legacy Markdown may live in a moved archive,
 // not just the plugin's default Annotations folder.
 async function discover (root, isCurrent = () => true, snapshot) {
-  await resolveVaultURL('vault://', root)
-  if (snapshot !== undefined && !Array.isArray(snapshot)) throw new TypeError('Invalid vault snapshot')
   const resources = new Map()
   const ambiguous = new Set()
   const invalidSources = new Set()
   const nativeSources = new Set()
   const invalidMarkdownDigests = new Set()
   const diagnostics = []
-  let truncated = false
 
   async function inspect (file, diagnostic) {
-    let recordSource
-    const nativeMatch = file.relativePath.match(/^\.min-annotations\/([a-f0-9]{64})\.(md|json)$/)
-    try {
-      if (!file.stat.isFile() || (!nativeMatch && !/\.md$/i.test(file.relativePath))) return
-      const text = await readRecord(file)
-      if (nativeMatch) {
-        const data = nativeMatch[2] === 'md' ? annotationMarkdown.parse(text) : JSON.parse(text)
-        recordSource = sourceIdentity(data.source)
-        const digest = createHash('sha256').update(recordSource).digest('hex')
-        if (data.version !== 1 || nativeMatch[1] !== digest) throw new Error('Annotation source or version mismatch')
-        nativeSources.add(recordSource)
-        return
-      }
-      const portable = annotationMarkdown.isMarkdown(text)
-      if (!portable && !/%% annotation:/m.test(text)) return
-      const declaredSource = text.match(/^\|\s*URL\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim()
-      if (declaredSource) recordSource = sourceIdentity(declaredSource)
-      const parsed = portable ? annotationMarkdown.parse(text) : parseLegacy(text)
-      const source = sourceIdentity(parsed.source)
-      recordSource = source
-      const pdfAnnotations = parsed.annotations.filter(annotation => annotation.sourceType === 'pdf')
-      let annotations
-      let sourceType
-      if (portable || pdfAnnotations.length) {
-        await checkSource(source, root)
-        annotations = validateAnnotations(pdfAnnotations)
-        sourceType = 'pdf'
-      } else {
-        checkWebSource(source)
-        annotations = validateWebAnnotations(parsed.annotations)
-        sourceType = 'webpage'
-      }
-      if (!annotations.length && !portable) return
-      if (resources.has(source)) { ambiguous.add(source); diagnostics.push(file.relativePath); return }
-      const tags = text.match(/^\|\s*Tags\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim() || ''
-      resources.set(source, { source, sourceType, title: parsed.title || source, tags, annotations })
-    } catch (_) {
-      if (recordSource) invalidSources.add(recordSource)
-      if (nativeMatch?.[2] === 'md') invalidMarkdownDigests.add(nativeMatch[1])
+    const decoded = await decodeCandidate(file, root)
+    if (!decoded) return
+    if (decoded.failed) {
+      if (decoded.invalidSource) invalidSources.add(decoded.invalidSource)
+      if (decoded.invalidMarkdownDigest) invalidMarkdownDigests.add(decoded.invalidMarkdownDigest)
       diagnostics.push(diagnostic)
+    } else if (decoded.nativeSource) {
+      nativeSources.add(decoded.nativeSource)
+    } else {
+      const resource = decoded.resource
+      if (resources.has(resource.source)) {
+        ambiguous.add(resource.source)
+        diagnostics.push(file.relativePath)
+      } else resources.set(resource.source, resource)
     }
   }
 
-  if (snapshot !== undefined) {
-    const seen = new Set()
-    for (const entry of snapshot) {
-      if (!isCurrent()) throw new Error('Vault changed')
-      const diagnostic = entry && typeof entry.url === 'string' ? entry.url : 'Vault snapshot entry'
-      try {
-        if (!entry || typeof entry.relativePath !== 'string' || typeof entry.url !== 'string') throw new Error('Invalid vault snapshot entry')
-        const file = await resolveVaultURL(entry.url, root)
-        if (file.relativePath !== entry.relativePath) throw new Error('Vault snapshot path mismatch')
-        if (excluded(file.relativePath) || seen.has(file.relativePath)) continue
-        seen.add(file.relativePath)
-        await inspect(file, diagnostic)
-      } catch (_) { diagnostics.push(diagnostic) }
-    }
-  } else {
-    const pending = [{ url: 'vault://', depth: 0 }]
-    let visited = 0
-    // Reaching the depth limit must not discard other queued directories.
-    while (pending.length && visited <= MAX_VISITED_ENTRIES) {
-      if (!isCurrent()) throw new Error('Vault changed')
-      const { url, depth } = pending.shift()
-      let directory
-      let folder
-      try {
-        folder = await resolveVaultURL(url, root)
-        directory = await fs.promises.opendir(folder.absolutePath)
-      } catch (_) { diagnostics.push(url); continue }
-      for await (const item of directory) {
-        if (!isCurrent()) throw new Error('Vault changed')
-        const relative = [folder.relativePath, item.name].filter(Boolean).join('/')
-        if (excluded(relative)) continue
-        if (++visited > MAX_VISITED_ENTRIES) { truncated = true; break }
-        if (item.isSymbolicLink()) continue
-        const diagnostic = url + encodeURIComponent(item.name)
-        try {
-          const file = await resolveVaultURL(diagnostic, root)
-          if (file.kind === 'directory') {
-            if (depth >= MAX_DEPTH) truncated = true
-            else pending.push({ url: file.vaultURL, depth: depth + 1 })
-          } else await inspect(file, diagnostic)
-        } catch (_) { diagnostics.push(diagnostic) }
-      }
-    }
-  }
+  const { truncated } = await visitCandidates(root, isCurrent, snapshot, inspect, diagnostics)
 
   // A native store (even an empty one) takes precedence over legacy records.
   // This prevents deleted legacy highlights reappearing after reopening.
@@ -253,6 +216,8 @@ function rank (result, query, kind = 'p') {
     })),
     total: resources.length,
     truncated: result.truncated || matches.length > MAX_RESULTS,
+    scanLimited: Boolean(result.truncated),
+    resultLimited: matches.length > MAX_RESULTS,
     errors: result.errors,
     diagnostics: result.diagnostics
   }

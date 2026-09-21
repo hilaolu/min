@@ -1,24 +1,23 @@
-/* global vaultPage, AbortController */
+/* global vaultPage, createVaultPreview, createVaultContentSearch */
 const files = document.getElementById('files')
 const status = document.getElementById('status')
 let entries = []
 let selected = -1
 let parentURL = null
 let generation = 0
-let previewGeneration = 0
-let previewController = null
 let lastG = 0
-const fuzzyForm = document.getElementById('fuzzy-form')
-const fuzzyQuery = document.getElementById('fuzzy-query')
-const fuzzyDialog = document.getElementById('fuzzy-dialog')
-// Search results can remain active after the input dialog closes.
-let searchActive = false
+const contentSearch = createVaultContentSearch({
+  files,
+  status,
+  renderEntries,
+  getSelection: () => entries[selected]?.url,
+  onStart: () => { generation++; lastG = 0 },
+  api: vaultPage
+})
 
 function showSearch () {
   lastG = 0
-  fuzzyDialog.showModal()
-  fuzzyQuery.focus()
-  fuzzyQuery.select()
+  contentSearch.show()
 }
 
 document.getElementById('search-open').onclick = showSearch
@@ -44,36 +43,6 @@ function renderEntries (items, previous, fuzzy = false) {
   })
   select(Math.max(0, entries.findIndex(entry => entry.url === previous)))
 }
-
-fuzzyForm.addEventListener('submit', async event => {
-  event.preventDefault()
-  if (!fuzzyQuery.value.trim()) { fuzzyQuery.focus(); return }
-  searchActive = true
-  fuzzyDialog.close()
-  files.focus()
-  const mine = ++generation
-  const query = fuzzyQuery.value
-  const options = { exact: document.getElementById('fuzzy-exact').checked, limit: Number(document.getElementById('fuzzy-limit').value) }
-  status.textContent = 'Searching file contents…'
-  renderEntries([])
-  files.setAttribute('aria-busy', 'true')
-  try {
-    const result = await vaultPage.searchContents(query, options)
-    if (mine !== generation) return
-    if (!result.ok) { status.textContent = result.error; return }
-    renderEntries(result.entries, null, true)
-    status.textContent = result.entries.length ? 'Showing ' + result.entries.length + ' of ' + (result.total ?? result.entries.length) + ' matching files' : 'No matches'
-    if (result.notes?.length) status.textContent += ' — ' + result.notes.join('; ') + '; search a subfolder to narrow the scan'
-    else if (result.truncated) status.textContent += result.scanLimited ? ' — scan limited to 20,000 entries; search a subfolder' : ' — refine the query, enable Exact phrase, or increase Top'
-    if (result.skipped) status.textContent += ' — ' + result.skipped + ' binary, non-UTF-8, or inaccessible entries skipped'
-    files.focus()
-  } catch (_) {
-    if (mine === generation) status.textContent = 'Content search failed. Check vault Settings.'
-  } finally {
-    if (mine === generation) files.setAttribute('aria-busy', 'false')
-  }
-})
-document.getElementById('fuzzy-close').onclick = () => fuzzyDialog.close()
 
 function sorted (items) {
   return items.slice().sort((a, b) => Number(b.kind === 'directory') - Number(a.kind === 'directory') || a.name.localeCompare(b.name))
@@ -108,94 +77,14 @@ function message (target, text) {
   target.append(p)
 }
 
-async function preview (entry) {
-  const mine = ++previewGeneration
-  if (previewController) previewController.abort()
-  previewController = null
-  const target = document.getElementById('preview')
-  message(target, entry ? (entry.kind === 'directory' ? 'Loading…' : entry.name + ' — Enter to open') : 'No entry selected')
-  if (!entry) return
-  if (entry.passage) {
-    const passage = entry.passage
-    const label = document.createElement('p')
-    label.className = 'placeholder'
-    label.textContent = 'Content match · line ' + passage.line + ' (search snapshot)'
-    const pre = document.createElement('pre')
-    pre.className = 'preview-text'
-    if (passage.clippedStart) pre.append(document.createTextNode('…'))
-    let end = 0
-    for (const [start, stop] of passage.ranges) {
-      pre.append(document.createTextNode(passage.text.slice(end, start)))
-      const mark = document.createElement('mark')
-      mark.textContent = passage.text.slice(start, stop)
-      pre.append(mark)
-      end = stop
-    }
-    pre.append(document.createTextNode(passage.text.slice(end) + (passage.clippedEnd ? '…' : '')))
-    target.append(label, pre)
-    const firstMatch = pre.querySelector('mark')
-    if (firstMatch) firstMatch.scrollIntoView({ block: 'center' })
-    return
-  }
-  if (entry.kind !== 'directory') {
-    const extension = entry.name.split('.').pop().toLowerCase()
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico', 'svg'].includes(extension)) {
-      const image = document.createElement('img')
-      image.className = 'preview-image'
-      image.alt = entry.name
-      image.decoding = 'async'
-      image.onerror = () => {
-        if (mine === previewGeneration) message(target, 'Could not preview image — Enter to open')
-      }
-      image.src = entry.url
-      target.append(image)
-    } else if (['txt', 'md', 'markdown', 'json', 'csv', 'log', 'js', 'ts', 'css', 'html', 'xml', 'yaml', 'yml', 'toml', 'ini', 'sh', 'py', 'rs', 'c', 'h', 'cpp'].includes(extension)) {
-      const controller = new AbortController()
-      previewController = controller
-      try {
-        // The vault protocol supports ranges; never load an entire large text file.
-        const limit = 64 * 1024
-        const response = await fetch(entry.url, { headers: { Range: 'bytes=0-' + limit }, signal: controller.signal })
-        const empty = response.status === 416 && response.headers.get('Content-Range') === 'bytes */0'
-        if (!response.ok && !empty) throw new Error('Preview unavailable')
-        const bytes = empty ? new Uint8Array() : new Uint8Array(await response.arrayBuffer())
-        if (mine !== previewGeneration) return
-        if (bytes.includes(0)) return message(target, 'Binary file — Enter to open')
-        // Omit an incomplete UTF-8 character at the preview boundary.
-        const text = new TextDecoder().decode(bytes.slice(0, limit), { stream: bytes.length > limit })
-        const pre = document.createElement('pre')
-        pre.className = 'preview-text'
-        pre.textContent = text || '(Empty file)'
-        target.append(pre)
-        if (bytes.length > limit) {
-          const notice = document.createElement('p')
-          notice.className = 'placeholder'
-          notice.textContent = 'Preview truncated at 64 KiB — Enter to open full file'
-          target.append(notice)
-        }
-      } catch (_) {
-        if (mine === previewGeneration) message(target, 'Could not preview file — Enter to open')
-      } finally {
-        if (previewController === controller) previewController = null
-      }
-    }
-    return
-  }
-  try {
-    const result = await vaultPage.listDirectory(entry.url)
-    if (mine !== previewGeneration) return
-    if (!result.ok) return message(target, result.error)
-    target.replaceChildren()
-    sorted(result.entries).forEach(child => {
-      const element = row(child)
-      element.onclick = () => open(child.url)
-      target.append(element)
-    })
-    if (!result.entries.length) message(target, 'Empty directory')
-  } catch (_) {
-    if (mine === previewGeneration) message(target, 'Could not read directory.')
-  }
-}
+const preview = createVaultPreview({
+  target: document.getElementById('preview'),
+  listDirectory: vaultPage.listDirectory,
+  open,
+  row,
+  sorted,
+  message
+})
 
 function select (index) {
   const next = entries.length ? Math.max(0, Math.min(entries.length - 1, index)) : -1
@@ -210,18 +99,13 @@ function select (index) {
     files.children[selected].scrollIntoView({ block: 'nearest' })
   } else files.removeAttribute('aria-activedescendant')
   document.getElementById('position').textContent = (selected + 1) + ' / ' + entries.length
-  if (changed || selected === -1) preview(entries[selected])
+  if (changed || selected === -1) preview.show(entries[selected])
 }
 
 async function refresh () {
-  if (searchActive) vaultPage.cancelContentSearch().catch(() => {})
-  searchActive = false
-  fuzzyDialog.close()
+  const previous = contentSearch.cancel()
   const mine = ++generation
-  const previous = entries[selected]?.url
-  ++previewGeneration
-  if (previewController) previewController.abort()
-  previewController = null
+  preview.clear()
   entries = []
   selected = -1
   parentURL = null
@@ -284,8 +168,8 @@ async function refresh () {
 
 document.addEventListener('keydown', event => {
   // Let the native dialog handle focus trapping and Escape to cancel input.
-  if (fuzzyDialog.open) return
-  if (event.key === 'Escape' && searchActive) {
+  if (contentSearch.dialogOpen) return
+  if (event.key === 'Escape' && contentSearch.active) {
     event.preventDefault()
     refresh()
     return

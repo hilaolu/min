@@ -1,8 +1,12 @@
 const assert = require('node:assert/strict')
+const { EventEmitter } = require('node:events')
+const fsSync = require('node:fs')
 const fs = require('node:fs/promises')
+const { createRequire, wrap } = require('node:module')
 const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
+const vm = require('node:vm')
 const createIndex = require('../main/vaultFileIndex.js')
 const { createStore } = require('../main/annotationStore.js')
 
@@ -41,6 +45,20 @@ async function eventually (check) {
       if (Date.now() >= deadline) throw error
       await new Promise(resolve => setTimeout(resolve, 30))
     }
+  }
+}
+
+function loadIndexWithChokidar (chokidar) {
+  const filename = require.resolve('../main/vaultFileIndex.js')
+  const indexModule = { exports: {} }
+  const localRequire = createRequire(filename)
+  const scopedRequire = request => request === 'chokidar' ? chokidar : localRequire(request)
+  const context = vm.createContext()
+  const factory = vm.runInContext(wrap(fsSync.readFileSync(filename, 'utf8')), context, { filename })
+  factory(indexModule.exports, scopedRequire, indexModule, filename, path.dirname(filename))
+  return {
+    createIndex: indexModule.exports,
+    stringPrototype: vm.runInContext('String.prototype', context)
   }
 }
 
@@ -174,6 +192,87 @@ test('watcher changes invalidate a warm filename search cache', async t => {
   await eventually(async () => {
     assert.deepEqual((await index.search('renamed')).entries, [])
   })
+})
+
+test('content changes preserve the filename cache while invalidating annotation metadata', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'min-file-index-versions-'))
+  const article = path.join(root, 'article.md')
+  const middle = path.join(root, 'middle.md')
+  const zed = path.join(root, 'zed.md')
+  await fs.writeFile(article, webNote('Before edit'))
+  await fs.writeFile(middle, '')
+  await fs.writeFile(zed, '')
+
+  const watcher = new EventEmitter()
+  watcher.close = async () => {}
+  let reportWatcher
+  const watcherCreated = new Promise(resolve => { reportWatcher = resolve })
+  const controlledModule = loadIndexWithChokidar({
+    watch: watchedRoot => {
+      reportWatcher(watchedRoot)
+      return watcher
+    }
+  })
+  const index = controlledModule.createIndex(root)
+  const originalLocaleCompare = controlledModule.stringPrototype.localeCompare
+  let localeCompareCalls = 0
+
+  try {
+    assert.equal(await watcherCreated, root)
+    for (const filename of [article, middle, zed]) watcher.emit('add', filename, await fs.stat(filename))
+    watcher.emit('ready')
+
+    assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
+      'article.md',
+      'middle.md',
+      'zed.md'
+    ])
+    assert.deepEqual((await index.searchAnnotations('a', 'Before edit')).entries.map(entry => entry.title), ['Before edit'])
+
+    controlledModule.stringPrototype.localeCompare = function (...args) {
+      localeCompareCalls++
+      return originalLocaleCompare.apply(this, args)
+    }
+
+    await fs.writeFile(article, webNote('After edit'))
+    watcher.emit('change', article, await fs.stat(article))
+    assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
+      'article.md',
+      'middle.md',
+      'zed.md'
+    ])
+    assert.equal(localeCompareCalls, 0, 'an existing-file change must not re-sort filename entries')
+    assert.deepEqual((await index.searchAnnotations('a', 'After edit')).entries.map(entry => entry.title), ['After edit'])
+
+    const added = path.join(root, 'added.md')
+    await fs.writeFile(added, '')
+    localeCompareCalls = 0
+    watcher.emit('add', added, await fs.stat(added))
+    assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
+      'added.md',
+      'article.md',
+      'middle.md',
+      'zed.md'
+    ])
+    assert.ok(localeCompareCalls > 0, 'adding a file must rebuild the sorted filename entries')
+
+    await fs.unlink(middle)
+    localeCompareCalls = 0
+    watcher.emit('unlink', middle)
+    assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
+      'added.md',
+      'article.md',
+      'zed.md'
+    ])
+    assert.ok(localeCompareCalls > 0, 'unlinking a file must rebuild the sorted filename entries')
+  } finally {
+    controlledModule.stringPrototype.localeCompare = originalLocaleCompare
+    try {
+      await index.close()
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  }
 })
 
 test('missing roots fail and closing during initialization settles pending searches', async t => {

@@ -148,6 +148,7 @@ async function searchContents (root, url, query, current = () => true, options =
     total,
     truncated: notes.size > 0 || total > limit,
     scanLimited: notes.size > 0,
+    resultLimited: total > limit,
     notes: Array.from(notes),
     skipped
   }
