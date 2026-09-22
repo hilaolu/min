@@ -2,12 +2,10 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
-const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
 const test = require('node:test')
 const { search, discover, rank, checkSource } = require('../main/annotatedResourceSearch.js')
 const { createStore } = require('../main/annotationStore.js')
-const annotationMarkdown = require('../main/annotationMarkdown.js')
 const { installPdfAnnotations } = require('../main/pdfAnnotations.js')
 const VaultFileStrategy = require('../js/commandPalette/strategies/VaultFileStrategy.js')
 
@@ -53,10 +51,6 @@ function webpageLegacy (url = 'https://example.com/article', title = 'Web resear
 Useful note
 `
 }
-function nativeFile (root, nativeSource = source, extension = 'md') {
-  const digest = crypto.createHash('sha256').update(nativeSource).digest('hex')
-  return path.join(root, 'Annotations', `${digest}.${extension}`)
-}
 function fixture (t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'min-annotated-search-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -64,14 +58,14 @@ function fixture (t) {
   fs.mkdirSync(directory, { recursive: true })
   const filename = path.join(directory, 'resource.md')
   fs.writeFileSync(filename, legacy())
-  return { root, filename }
+  return { root, directory, filename }
 }
 
 test('discovers archived legacy annotations, not raw PDFs, and opens the PDF wrapper', async t => {
-  const { root, filename } = fixture(t)
-  fs.writeFileSync(path.join(root, 'unannotated.pdf'), '%PDF-')
-  fs.writeFileSync(path.join(root, 'empty.md'), legacy('https://example.com/empty.pdf').split('%% annotation:')[0])
-  fs.writeFileSync(path.join(root, 'plain.md'), 'Research paper')
+  const { root, directory, filename } = fixture(t)
+  fs.writeFileSync(path.join(directory, 'unannotated.pdf'), '%PDF-')
+  fs.writeFileSync(path.join(directory, 'empty.md'), legacy('https://example.com/empty.pdf').split('%% annotation:')[0])
+  fs.writeFileSync(path.join(directory, 'plain.md'), 'Research paper')
   for (const query of ['', 'research', 'SCIENCE', 'id=42', 'rsrch']) {
     const result = await search(root, query)
     assert.equal(result.entries.length, 1)
@@ -83,17 +77,17 @@ test('discovers archived legacy annotations, not raw PDFs, and opens the PDF wra
     assert.deepEqual((await search(root, query)).entries, [])
   }
   assert.equal(fs.readFileSync(filename, 'utf8'), legacy())
-  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Archive', 'Annotations')), false, 'the singular typo is not used')
 })
 
 test('discovers and ranks webpage annotations separately, opens original URLs, and routes mixed records to PDF', async t => {
-  const { root } = fixture(t)
+  const { root, directory } = fixture(t)
   const webpageSource = 'https://example.com/article'
-  fs.writeFileSync(path.join(root, 'web.md'), webpageLegacy(webpageSource))
+  fs.writeFileSync(path.join(directory, 'web.md'), webpageLegacy(webpageSource))
   const mixedSource = 'https://example.com/mixed'
   const pdfBlock = legacy(mixedSource).slice(legacy(mixedSource).indexOf('%% annotation:'))
-  fs.writeFileSync(path.join(root, 'mixed.md'), webpageLegacy(mixedSource, 'Mixed highlights').trimEnd() + '\n\n' + pdfBlock)
-  fs.writeFileSync(path.join(root, 'web-empty.md'), webpageLegacy('https://example.com/empty').split('%% annotation:')[0])
+  fs.writeFileSync(path.join(directory, 'mixed.md'), webpageLegacy(mixedSource, 'Mixed highlights').trimEnd() + '\n\n' + pdfBlock)
+  fs.writeFileSync(path.join(directory, 'web-empty.md'), webpageLegacy('https://example.com/empty').split('%% annotation:')[0])
 
   const discovered = await discover(root)
   const webpage = discovered.resources.find(resource => resource.source === webpageSource)
@@ -112,20 +106,20 @@ test('discovers and ranks webpage annotations separately, opens original URLs, a
 })
 
 test('rejects unsafe or invalid webpage records without treating plain notes as errors', async t => {
-  const { root, filename } = fixture(t)
+  const { root, directory, filename } = fixture(t)
   fs.unlinkSync(filename)
-  fs.writeFileSync(path.join(root, 'plain.md'), 'Just a note')
-  fs.writeFileSync(path.join(root, 'script.md'), webpageLegacy('javascript:alert(1)', 'Script page'))
-  fs.writeFileSync(path.join(root, 'credentials.md'), webpageLegacy('https://user:secret@example.com/', 'Credential page'))
-  fs.writeFileSync(path.join(root, 'local.md'), webpageLegacy('file:///tmp/page.html', 'Local page'))
-  fs.writeFileSync(path.join(root, 'color.md'), webpageLegacy('https://example.com/color', 'Bad color', 'red'))
+  fs.writeFileSync(path.join(directory, 'plain.md'), 'Just a note')
+  fs.writeFileSync(path.join(directory, 'script.md'), webpageLegacy('javascript:alert(1)', 'Script page'))
+  fs.writeFileSync(path.join(directory, 'credentials.md'), webpageLegacy('https://user:secret@example.com/', 'Credential page'))
+  fs.writeFileSync(path.join(directory, 'local.md'), webpageLegacy('file:///tmp/page.html', 'Local page'))
+  fs.writeFileSync(path.join(directory, 'color.md'), webpageLegacy('https://example.com/color', 'Bad color', 'red'))
   const result = await discover(root)
   assert.deepEqual(result.resources, [])
   assert.equal(result.errors, 4)
-  await assert.rejects(checkSource('javascript:alert(1)', root), /Unsupported PDF source/)
+  await assert.rejects(checkSource('javascript:alert(1)', root), /Unsupported annotation source/)
 })
 
-test('legacy annotations hydrate through IPC; native edits and empty stores override legacy', async t => {
+test('legacy annotations hydrate through IPC; URL-derived store edits and empty stores override legacy', async t => {
   const { root, filename } = fixture(t)
   let handler
   const frame = {}
@@ -134,7 +128,7 @@ test('legacy annotations hydrate through IPC; native edits and empty stores over
   const event = { sender, senderFrame: frame }
   const loaded = await handler(event, 'load')
   assert.deepEqual(loaded, { ok: true, revision: null, annotations: [annotation] })
-  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Archives', 'Annotations', 'example.com', '%2Fdownload%3Fid%3D42.md')), false)
   const saved = await handler(event, 'save', { revision: null, annotations: [] })
   assert.equal(saved.ok, true)
   assert.deepEqual((await handler(event, 'load')).annotations, [])
@@ -142,47 +136,82 @@ test('legacy annotations hydrate through IPC; native edits and empty stores over
   assert.equal(fs.readFileSync(filename, 'utf8'), legacy())
 })
 
-test('native annotations are discoverable without legacy records; stale scans fail', async t => {
+test('URL-derived table annotations are discoverable without legacy records; stale scans fail', async t => {
   const { root, filename } = fixture(t)
   fs.unlinkSync(filename)
   await createStore(root, source).save([annotation], null)
+  const storedFile = path.join(root, 'Archives', 'Annotations', 'example.com', '%2Fdownload%3Fid%3D42.md')
+  assert.equal(fs.existsSync(storedFile), true)
+  assert.match(fs.readFileSync(storedFile, 'utf8'), /^\| Field \| Value \|\n\| --- \| --- \|\n\| Title \| https:\/\/example\.com\/download\?id=42 \|\n\| URL \| https:\/\/example\.com\/download\?id=42 \|/)
   assert.equal((await search(root, 'download')).entries.length, 1)
   await assert.rejects(discover(root, () => false), /Vault changed/)
 })
 
-test('legacy native JSON remains discoverable, while Markdown is authoritative even when empty or malformed', async t => {
-  const { root, filename } = fixture(t)
+test('old native JSON and Min Markdown are ignored while URL-derived table Markdown is authoritative', async t => {
+  const { root, directory, filename } = fixture(t)
   fs.unlinkSync(filename)
-  const directory = path.join(root, 'Annotations')
-  fs.mkdirSync(directory)
-  const jsonFile = nativeFile(root, source, 'json')
-  const markdownFile = nativeFile(root)
+  const oldDirectory = path.join(root, 'Annotations')
+  fs.mkdirSync(oldDirectory)
+  const jsonFile = path.join(oldDirectory, '395f5a04b57b3b2da1fc00ef46b8926fecb25ff850ac8c592cabf875ba1f29f4.json')
+  const minFile = path.join(directory, 'old-min-format.md')
   const jsonText = JSON.stringify({ version: 1, source, annotations: [annotation] })
+  const minText = `# PDF annotations
+
+<!-- min-annotation-source: {"version":1,"source":"${source}"} -->
+
+## Highlight test-id
+
+<!-- min-annotation: {"uid":"test-id","sourceType":"pdf","color":"#FFCD45","pageIndex":2,"rect":${JSON.stringify(rect)},"segmentRects":${JSON.stringify([rect])}} -->
+
+### textBefore
+
+\`\`\`text
+
+\`\`\`
+
+### text
+
+\`\`\`text
+quote
+\`\`\`
+
+### textAfter
+
+\`\`\`text
+
+\`\`\`
+
+### notes
+
+\`\`\`markdown
+
+\`\`\`
+
+`
   fs.writeFileSync(jsonFile, jsonText)
+  fs.writeFileSync(minFile, minText)
+  const ignored = await search(root, '')
+  assert.deepEqual(ignored.entries, [])
+  assert.equal(ignored.errors, 0)
+
+  const store = createStore(root, source)
+  await store.save([annotation], null)
   assert.equal((await search(root, '')).entries.length, 1)
-
-  fs.writeFileSync(markdownFile, annotationMarkdown.stringify({ version: 1, source, annotations: [] }))
+  const loaded = await store.read()
+  await store.save([], loaded.revision)
   assert.deepEqual((await search(root, '')).entries, [])
-  fs.writeFileSync(markdownFile, '# PDF annotations\n\nmalformed\n')
-  const malformedMarkdown = await search(root, '')
-  assert.deepEqual(malformedMarkdown.entries, [])
-  assert.equal(malformedMarkdown.errors, 1)
-
-  fs.unlinkSync(markdownFile)
-  fs.writeFileSync(jsonFile, '{ malformed JSON')
-  const malformedJSON = await search(root, '')
-  assert.deepEqual(malformedJSON.entries, [])
-  assert.equal(malformedJSON.errors, 1)
+  assert.equal(fs.readFileSync(jsonFile, 'utf8'), jsonText)
+  assert.equal(fs.readFileSync(minFile, 'utf8'), minText)
 })
 
 test('rejects ambiguous records, invalid geometry, unsafe sources and symlinks without modifying them', async t => {
-  const { root, filename } = fixture(t)
-  fs.writeFileSync(path.join(root, 'duplicate.md'), legacy())
+  const { root, directory, filename } = fixture(t)
+  fs.writeFileSync(path.join(directory, 'duplicate.md'), legacy())
   let result = await search(root, '')
   assert.equal(result.entries.length, 0)
   assert.ok(result.errors)
-  fs.unlinkSync(path.join(root, 'duplicate.md'))
-  fs.symlinkSync(filename, path.join(root, 'linked.md'))
+  fs.unlinkSync(path.join(directory, 'duplicate.md'))
+  fs.symlinkSync(filename, path.join(directory, 'linked.md'))
   assert.equal((await search(root, '')).entries.length, 1)
   for (const contents of [legacy('javascript:alert(1)'), legacy('file:///outside.pdf'), legacy().replace('"width":30', '"width":-1')]) {
     fs.writeFileSync(filename, contents)
@@ -201,15 +230,15 @@ test('palette PDF search has no literal path or URL fallback', async () => {
   assert.deepEqual(opened, [])
 })
 
-test('local native PDF records open through vault routing, and result limits are explicit', async t => {
-  const { root, filename } = fixture(t)
+test('local PDF store records open through vault routing, and result limits are explicit', async t => {
+  const { root, directory, filename } = fixture(t)
   fs.unlinkSync(filename)
   fs.writeFileSync(path.join(root, 'local.pdf'), '%PDF-')
   await createStore(root, 'vault://local.pdf').save([annotation], null)
   await checkSource('vault://local.pdf', root)
   assert.equal((await search(root, 'local')).entries[0].url, 'vault://local.pdf')
   for (let index = 0; index < 21; index++) {
-    fs.writeFileSync(path.join(root, `${index}.md`), legacy(`https://example.com/${String(index).padStart(2, '0')}`, 'Same title'))
+    fs.writeFileSync(path.join(directory, `${index}.md`), legacy(`https://example.com/${String(index).padStart(2, '0')}`, 'Same title'))
   }
   const result = await search(root, 'Same title')
   assert.equal(result.entries.length, 20)
@@ -260,8 +289,8 @@ test('checkSource rejects hidden local PDFs and accepts visible dotted PDF names
 })
 
 test('unrelated invalid paths do not prevent annotation loading for a new PDF', async t => {
-  const { root } = fixture(t)
-  fs.writeFileSync(path.join(root, 'invalid?.md'), 'ordinary note')
+  const { root, directory } = fixture(t)
+  fs.writeFileSync(path.join(directory, 'invalid?.md'), 'ordinary note')
   let handler
   installPdfAnnotations({ ipc: { handle: (_, fn) => { handler = fn } }, context: () => ({ root, source: 'https://example.com/new.pdf', generation: 1 }) })
   const loaded = await handler({ sender: { session: { isPersistent: () => true } } }, 'load')
@@ -269,9 +298,9 @@ test('unrelated invalid paths do not prevent annotation loading for a new PDF', 
 })
 
 test('depth truncation does not discard other queued directories', async t => {
-  const { root, filename } = fixture(t)
+  const { root, directory, filename } = fixture(t)
   fs.unlinkSync(filename)
-  const parent = path.join(root, ...Array(31).fill('level'))
+  const parent = path.join(directory, ...Array(31).fill('level'))
   fs.mkdirSync(path.join(parent, 'deep', 'excluded'), { recursive: true })
   fs.mkdirSync(path.join(parent, 'sibling'))
   fs.writeFileSync(path.join(parent, 'sibling', 'resource.md'), legacy())
@@ -282,13 +311,13 @@ test('depth truncation does not discard other queued directories', async t => {
 })
 
 test('optional snapshots resolve inventory files, exclude private components, and have no directory scan cap', async t => {
-  const { root } = fixture(t)
-  fs.writeFileSync(path.join(root, 'plain.md'), 'ordinary note')
-  fs.mkdirSync(path.join(root, '.git'))
-  fs.writeFileSync(path.join(root, '.git', 'ignored.md'), webpageLegacy('https://example.com/ignored', 'Ignored page'))
-  const repeated = Array.from({ length: 20001 }, (_, version) => ({ relativePath: 'plain.md', url: 'vault://plain.md', version }))
+  const { root, directory } = fixture(t)
+  fs.writeFileSync(path.join(directory, 'plain.md'), 'ordinary note')
+  fs.mkdirSync(path.join(directory, '.git'))
+  fs.writeFileSync(path.join(directory, '.git', 'ignored.md'), webpageLegacy('https://example.com/ignored', 'Ignored page'))
+  const repeated = Array.from({ length: 20001 }, (_, version) => ({ relativePath: 'Archives/Annotations/plain.md', url: 'vault://Archives/Annotations/plain.md', version }))
   const snapshot = repeated.concat([
-    { relativePath: '.git/ignored.md', url: 'vault://.git/ignored.md', version: 1 },
+    { relativePath: 'Archives/Annotations/.git/ignored.md', url: 'vault://Archives/Annotations/.git/ignored.md', version: 1 },
     { relativePath: 'Archives/Annotations/resource.md', url: 'vault://Archives/Annotations/resource.md', version: 1 }
   ])
   const result = await discover(root, () => true, snapshot)
@@ -298,15 +327,18 @@ test('optional snapshots resolve inventory files, exclude private components, an
 })
 
 test('walker and supplied snapshots exclude hidden legacy files and hidden-directory descendants', async t => {
-  const { root } = fixture(t)
-  const hiddenFile = path.join(root, '.legacy.md')
-  const hiddenDescendant = path.join(root, 'Archives', '.private', 'nested', 'legacy.md')
+  const { root, directory } = fixture(t)
+  const hiddenFile = path.join(directory, '.legacy.md')
+  const hiddenDescendant = path.join(directory, '.private', 'nested', 'legacy.md')
   fs.mkdirSync(path.dirname(hiddenDescendant), { recursive: true })
   fs.writeFileSync(hiddenFile, legacy('https://example.com/hidden-file.pdf', 'Hidden file'))
   fs.writeFileSync(hiddenDescendant, legacy('https://example.com/hidden-descendant.pdf', 'Hidden descendant'))
+  // Excluded paths must not even be resolved, including dangling symlinks.
+  fs.symlinkSync(path.join(root, 'missing'), path.join(directory, '.linked.md'))
   const snapshot = [
-    { relativePath: '.legacy.md', url: 'vault://.legacy.md', version: 1 },
-    { relativePath: 'Archives/.private/nested/legacy.md', url: 'vault://Archives/.private/nested/legacy.md', version: 1 },
+    { relativePath: 'Archives/Annotations/.linked.md', url: 'vault://Archives/Annotations/.linked.md', version: 1 },
+    { relativePath: 'Archives/Annotations/.legacy.md', url: 'vault://Archives/Annotations/.legacy.md', version: 1 },
+    { relativePath: 'Archives/Annotations/.private/nested/legacy.md', url: 'vault://Archives/Annotations/.private/nested/legacy.md', version: 1 },
     { relativePath: 'Archives/Annotations/resource.md', url: 'vault://Archives/Annotations/resource.md', version: 1 }
   ]
 
@@ -316,20 +348,30 @@ test('walker and supplied snapshots exclude hidden legacy files and hidden-direc
   }
 })
 
-test('reports native records with mismatched source filenames or versions', async t => {
+test('reports malformed tables while renamed valid plugin notes remain accepted', async t => {
+  const { root, directory, filename } = fixture(t)
+  const renamed = path.join(directory, 'renamed-plugin-note.md')
+  fs.renameSync(filename, renamed)
+  assert.equal((await search(root, '')).entries.length, 1)
+
+  const malformed = legacy().replace('| --- | --- |', '| -- | --- |')
+  fs.writeFileSync(renamed, malformed)
+  const result = await search(root, '')
+  assert.deepEqual(result.entries, [])
+  assert.equal(result.errors, 1)
+  assert.equal(fs.readFileSync(renamed, 'utf8'), malformed)
+})
+
+test('reports invalid annotation URLs and colors', async t => {
   const { root, filename } = fixture(t)
-  fs.unlinkSync(filename)
-  await createStore(root, source).save([annotation], null)
-  const file = nativeFile(root)
-  const text = fs.readFileSync(file, 'utf8')
-  const data = annotationMarkdown.parse(text)
   for (const invalid of [
-    annotationMarkdown.stringify({ ...data, source: 'https://example.com/other' }),
-    text.replace('"version":1', '"version":2')
+    legacy('https://%'),
+    legacy().replace('color: FFCD45', 'color: red')
   ]) {
-    fs.writeFileSync(file, invalid)
+    fs.writeFileSync(filename, invalid)
     const result = await search(root, '')
     assert.deepEqual(result.entries, [])
     assert.equal(result.errors, 1)
+    assert.equal(fs.readFileSync(filename, 'utf8'), invalid)
   }
 })

@@ -1,11 +1,9 @@
 const fs = require('fs')
 const path = require('path')
-const { createHash } = require('crypto')
 const { fileURLToPath } = require('url')
 const { resolveVaultURL } = require('./vault.js')
 const { createStore, validateAnnotations, maximumBytes } = require('./annotationStore.js')
 const annotationMarkdown = require('./annotationMarkdown.js')
-const parseLegacy = require('./annotationLegacy.js')
 const { isHiddenPath } = require('./vaultSearchPaths.js')
 const visitCandidates = require('./annotationCandidates.js')
 const annotationPaths = require('./annotationPaths.js')
@@ -14,10 +12,7 @@ const MAX_RESULTS = 20
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0
 
 function sourceIdentity (input) {
-  const url = new URL(input)
-  if (!['https:', 'http:', 'file:', 'vault:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported PDF source')
-  url.hash = ''
-  return url.href
+  return annotationPaths.canonicalSource(input)
 }
 
 async function checkSource (source, root) {
@@ -64,30 +59,21 @@ async function readRecord (file) {
 }
 
 // Decode one candidate without mutating the aggregate resource/precedence state.
-async function decodeCandidate (file, root, folder) {
+async function decodeCandidate (file, root) {
   let recordSource
-  const nativeMatch = annotationPaths.nativeMatch(file.relativePath, folder)
   try {
-    if (!file.stat.isFile() || (!nativeMatch && !/\.md$/i.test(file.relativePath))) return
+    if (!file.stat.isFile() || !/\.md$/i.test(file.relativePath)) return
     const text = await readRecord(file)
-    if (nativeMatch) {
-      const data = nativeMatch[2] === 'md' ? annotationMarkdown.parse(text) : JSON.parse(text)
-      recordSource = sourceIdentity(data.source)
-      const digest = createHash('sha256').update(recordSource).digest('hex')
-      if (data.version !== 1 || nativeMatch[1] !== digest) throw new Error('Annotation source or version mismatch')
-      return { nativeSource: recordSource }
-    }
-    const portable = annotationMarkdown.isMarkdown(text)
-    if (!portable && !/%% annotation:/m.test(text)) return
+    if (!annotationMarkdown.isMarkdown(text) && !/%% annotation:/m.test(text)) return
     const declaredSource = text.match(/^\|\s*URL\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim()
     if (declaredSource) recordSource = sourceIdentity(declaredSource)
-    const parsed = portable ? annotationMarkdown.parse(text) : parseLegacy(text)
+    const parsed = annotationMarkdown.parse(text)
     const source = sourceIdentity(parsed.source)
     recordSource = source
     const pdfAnnotations = parsed.annotations.filter(annotation => annotation.sourceType === 'pdf')
     let annotations
     let sourceType
-    if (pdfAnnotations.length || (portable && !parsed.annotations.length)) {
+    if (pdfAnnotations.length || (!parsed.annotations.length && /^(file|vault):/.test(source))) {
       await checkSource(source, root)
       annotations = validateAnnotations(pdfAnnotations)
       sourceType = 'pdf'
@@ -96,34 +82,28 @@ async function decodeCandidate (file, root, folder) {
       annotations = validateWebAnnotations(parsed.annotations)
       sourceType = 'webpage'
     }
-    if (!annotations.length && !portable) return
-    const tags = text.match(/^\|\s*Tags\s*\|\s*([^|]+)\|\s*$/im)?.[1].trim() || ''
+    const tags = parsed.tags || ''
     return { resource: { source, sourceType, title: parsed.title || source, tags, annotations } }
   } catch (_) {
-    return { failed: true, invalidSource: recordSource, invalidMarkdownDigest: nativeMatch?.[2] === 'md' ? nativeMatch[1] : null }
+    return { failed: true, invalidSource: recordSource }
   }
 }
 
-// No writes or network requests. Legacy Markdown may live in a moved archive,
-// not just the plugin's default Annotations folder.
+// No writes or network requests. Discovery is confined to the Settings folder,
+// including for legacy files and watcher-provided snapshots.
 async function discover (root, isCurrent = () => true, snapshot, folder = annotationPaths.defaultFolder) {
   folder = annotationPaths.normalizeFolder(folder)
   const resources = new Map()
   const ambiguous = new Set()
   const invalidSources = new Set()
-  const nativeSources = new Set()
-  const invalidMarkdownDigests = new Set()
   const diagnostics = []
 
   async function inspect (file, diagnostic) {
-    const decoded = await decodeCandidate(file, root, folder)
+    const decoded = await decodeCandidate(file, root)
     if (!decoded) return
     if (decoded.failed) {
       if (decoded.invalidSource) invalidSources.add(decoded.invalidSource)
-      if (decoded.invalidMarkdownDigest) invalidMarkdownDigests.add(decoded.invalidMarkdownDigest)
       diagnostics.push(diagnostic)
-    } else if (decoded.nativeSource) {
-      nativeSources.add(decoded.nativeSource)
     } else {
       const resource = decoded.resource
       if (resources.has(resource.source)) {
@@ -133,18 +113,12 @@ async function discover (root, isCurrent = () => true, snapshot, folder = annota
     }
   }
 
-  const { truncated } = await visitCandidates(root, isCurrent, snapshot, inspect, diagnostics)
+  const { truncated } = await visitCandidates(root, isCurrent, snapshot, inspect, diagnostics, folder)
 
-  // A native store (even an empty one) takes precedence over legacy records.
-  // This prevents deleted legacy highlights reappearing after reopening.
-  for (const source of new Set([...resources.keys(), ...nativeSources])) {
+  // The URL-derived store (even empty) takes precedence over archived copies.
+  // This prevents deleted highlights reappearing after reopening.
+  for (const source of resources.keys()) {
     if (!isCurrent()) throw new Error('Vault changed')
-    const digest = createHash('sha256').update(source).digest('hex')
-    if (invalidMarkdownDigests.has(digest)) {
-      resources.delete(source)
-      invalidSources.add(source)
-      continue
-    }
     try {
       const stored = await createStore(root, source, folder).read()
       if (stored.revision !== null) {

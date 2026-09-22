@@ -43,6 +43,7 @@ test('parses the golden webpage fixture into the plugin annotation data model', 
   assert.deepEqual(parseLegacy(webMarkdown), {
     source: 'https://example.com/article',
     title: 'A web page',
+    tags: '#annotation',
     annotations: [{
       uid: 'web-1',
       sourceType: 'webpage',
@@ -62,6 +63,7 @@ test('extracts PDF geometry instead of adding geometry comments to notes', funct
   const annotation = result.annotations[0]
   assert.equal(result.source, 'https://example.com/file.pdf')
   assert.equal(result.title, 'A PDF')
+  assert.equal(result.tags, '#annotation')
   assert.equal(annotation.uid, 'pdf-1')
   assert.equal(annotation.sourceType, 'pdf')
   assert.equal(annotation.data.pageIndex, 2)

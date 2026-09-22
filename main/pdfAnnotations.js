@@ -63,7 +63,7 @@ function installPdfAnnotations ({ ipc, context, sourceType = 'pdf' }) {
         }
       } else if (operation === 'save') {
         if (!Array.isArray(payload?.annotations) || payload.annotations.some(item => item?.sourceType !== sourceType)) throw new Error('Invalid annotation source type')
-        result = await store.save(payload.annotations, payload.revision, current)
+        result = await store.save(payload.annotations, payload.revision, current, { title: captured.title })
       } else if (operation === 'import') {
         if (typeof payload !== 'string' || Buffer.byteLength(payload) > 1024 * 1024) throw new Error('Import size limit exceeded')
         const legacy = annotationMarkdown.isMarkdown(payload) ? annotationMarkdown.parse(payload) : payload.trim().startsWith('{') ? JSON.parse(payload) : parseLegacy(payload)

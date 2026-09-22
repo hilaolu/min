@@ -4,7 +4,7 @@ const crypto = require('crypto')
 const atomic = require('write-file-atomic')
 const annotationMarkdown = require('./annotationMarkdown.js')
 const { validRect } = require('./annotationGeometry.js')
-const { normalizeFolder, defaultFolder } = require('./annotationPaths.js')
+const { normalizeFolder, defaultFolder, canonicalSource, sourcePath } = require('./annotationPaths.js')
 
 const maximumBytes = 1024 * 1024
 const queues = new Map()
@@ -43,16 +43,15 @@ function validateAnnotations (items) {
 }
 
 function createStore (root, source, folder = defaultFolder) {
+  source = canonicalSource(source)
   folder = normalizeFolder(folder)
-  const directory = path.join(root, folder)
-  const basename = path.join(directory, digest(source))
-  const markdownFilename = basename + '.md'
-  const jsonFilename = basename + '.json'
+  const relativePath = folder + '/' + sourcePath(source)
+  const markdownFilename = path.join(root, relativePath)
   async function checkDirectory (create) {
     const rootStat = await fs.promises.lstat(root).catch(() => { throw new Error('Vault unavailable') })
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Vault unavailable')
     let current = root
-    for (const component of folder.split('/')) {
+    for (const component of relativePath.split('/').slice(0, -1)) {
       current = path.join(current, component)
       if (create) await fs.promises.mkdir(current).catch(error => { if (error.code !== 'EEXIST') throw error })
       const stat = await fs.promises.lstat(current)
@@ -81,21 +80,12 @@ function createStore (root, source, folder = defaultFolder) {
   async function readRecord () {
     try {
       await checkDirectory(false)
-      let text
-      let format
-      try {
-        text = await readFile(markdownFilename)
-        format = 'markdown'
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error
-        text = await readFile(jsonFilename)
-        format = 'json'
-      }
-      const data = format === 'markdown' ? annotationMarkdown.parse(text) : JSON.parse(text)
-      if (data.version !== 1 || data.source !== source) throw new Error('Annotation source or version mismatch')
-      return { revision: digest(text), annotations: validateAnnotations(data.annotations), format }
+      const text = await readFile(markdownFilename)
+      const data = annotationMarkdown.parse(text)
+      if (data.version !== 1 || canonicalSource(data.source) !== source) throw new Error('Annotation source or version mismatch')
+      return { revision: digest(text), annotations: validateAnnotations(data.annotations), title: data.title, tags: data.tags, source: data.source }
     } catch (error) {
-      if (error.code === 'ENOENT') return { revision: null, annotations: [], format: null }
+      if (error.code === 'ENOENT') return { revision: null, annotations: [] }
       throw error
     }
   }
@@ -105,22 +95,16 @@ function createStore (root, source, folder = defaultFolder) {
   }
   return {
     read,
-    save (annotations, revision, current = () => true) {
+    save (annotations, revision, current = () => true, metadata = {}) {
       const validated = validateAnnotations(annotations)
-      let text
-      try {
-        text = annotationMarkdown.stringify({ version: 1, source, annotations: validated })
-      } catch (error) {
-        if (/size limit/.test(error.message)) return Promise.reject(error)
-        throw error
-      }
-      if (Buffer.byteLength(text) > maximumBytes) return Promise.reject(new Error('Annotation size limit exceeded'))
       const result = (queues.get(markdownFilename) || Promise.resolve()).then(async () => {
         if (!current()) throw new Error('Document or vault changed')
         const before = await readRecord()
         if (before.revision !== revision) throw new Error('Annotations changed on disk. Export your edits before reloading.')
         if (!current()) throw new Error('Document or vault changed')
-        if (before.format === 'markdown' && before.revision === digest(text)) return { revision: before.revision, annotations: validated }
+        const text = annotationMarkdown.stringify({ version: 1, source: before.source || source, title: before.title || metadata.title, tags: before.tags, annotations: validated })
+        if (Buffer.byteLength(text) > maximumBytes) throw new Error('Annotation size limit exceeded')
+        if (before.revision === digest(text)) return { revision: before.revision, annotations: validated }
         await checkDirectory(true)
         if (!current()) throw new Error('Document or vault changed')
         await atomic(markdownFilename, text, { encoding: 'utf8', mode: 0o600 })

@@ -6,9 +6,9 @@ function invalid (message) {
 }
 
 function readMetadata (line, field) {
-  const match = line.match(new RegExp(`^\\|\\s*${field}\\s*\\|\\s*([^|]+)\\s*\\|\\s*$`, 'i'))
+  const match = line.match(new RegExp(`^\\|\\s*${field}\\s*\\|\\s*((?:\\\\\\||[^|])+)\\s*\\|\\s*$`, 'i'))
   if (!match || !match[1].trim()) invalid(`missing or malformed ${field} metadata`)
-  return match[1].trim()
+  return match[1].trim().replace(/\\\|/g, '|')
 }
 
 function parseMarker (line) {
@@ -96,7 +96,7 @@ function parseLegacy (text) {
 
   const title = readMetadata(lines[2] || '', 'Title')
   const source = readMetadata(lines[3] || '', 'URL')
-  readMetadata(lines[4] || '', 'Tags')
+  const tags = readMetadata(lines[4] || '', 'Tags')
   if (lines[5] !== '' || lines[6] !== '## Annotations' || lines[7] !== '') invalid('malformed annotation heading')
 
   const annotations = []
@@ -167,7 +167,7 @@ function parseLegacy (text) {
     annotations.push({ uid: marker.uid, sourceType: marker.sourceType, data })
   }
 
-  return { source, title, annotations }
+  return { source, title, tags, annotations }
 }
 
 module.exports = parseLegacy

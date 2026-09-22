@@ -10,7 +10,7 @@ const vm = require('node:vm')
 const createIndex = require('../main/vaultFileIndex.js')
 const { createStore } = require('../main/annotationStore.js')
 
-function webNote (title = 'Article', source = 'https://example.com/article?version=2') {
+function webNote (title = 'Article', source = 'https://example.com/article?id=2') {
   return `| Field | Value |
 | --- | --- |
 | Title | ${title} |
@@ -196,9 +196,11 @@ test('watcher changes invalidate a warm filename search cache', async t => {
 
 test('content changes preserve the filename cache while invalidating annotation metadata', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'min-file-index-versions-'))
-  const article = path.join(root, 'article.md')
+  const annotationDirectory = path.join(root, 'Archives', 'Annotations')
+  const article = path.join(annotationDirectory, 'article.md')
   const middle = path.join(root, 'middle.md')
   const zed = path.join(root, 'zed.md')
+  await fs.mkdir(annotationDirectory, { recursive: true })
   await fs.writeFile(article, webNote('Before edit'))
   await fs.writeFile(middle, '')
   await fs.writeFile(zed, '')
@@ -223,7 +225,6 @@ test('content changes preserve the filename cache while invalidating annotation 
     watcher.emit('ready')
 
     assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
-      'article.md',
       'middle.md',
       'zed.md'
     ])
@@ -237,7 +238,6 @@ test('content changes preserve the filename cache while invalidating annotation 
     await fs.writeFile(article, webNote('After edit'))
     watcher.emit('change', article, await fs.stat(article))
     assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
-      'article.md',
       'middle.md',
       'zed.md'
     ])
@@ -250,7 +250,6 @@ test('content changes preserve the filename cache while invalidating annotation 
     watcher.emit('add', added, await fs.stat(added))
     assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
       'added.md',
-      'article.md',
       'middle.md',
       'zed.md'
     ])
@@ -261,7 +260,6 @@ test('content changes preserve the filename cache while invalidating annotation 
     watcher.emit('unlink', middle)
     assert.deepEqual(Array.from((await index.search('')).entries, entry => entry.relativePath), [
       'added.md',
-      'article.md',
       'zed.md'
     ])
     assert.ok(localeCompareCalls > 0, 'unlinking a file must rebuild the sorted filename entries')
@@ -289,11 +287,13 @@ test('missing roots fail and closing during initialization settles pending searc
 
 test('shared index tracks webpage metadata edits, renames and deletion without rereading on queries', async t => {
   const { root, index } = await fixture(t)
-  const filename = path.join(root, 'article.md')
+  const directory = path.join(root, 'Archives', 'Annotations')
+  await fs.mkdir(directory, { recursive: true })
+  const filename = path.join(directory, 'article.md')
   await fs.writeFile(filename, webNote())
   await eventually(async () => assert.equal((await index.searchAnnotations('a', 'Article')).entries.length, 1))
   assert.deepEqual((await index.searchAnnotations('p', '')).entries, [])
-  assert.equal((await index.search('article')).entries.length, 1)
+  assert.equal((await index.search('article')).entries.length, 0)
   // A warm query must not reopen annotation records or enumerate directories.
   const originalOpen = fs.open
   const originalOpendir = fs.opendir
@@ -302,38 +302,46 @@ test('shared index tracks webpage metadata edits, renames and deletion without r
   try {
     const result = await index.searchAnnotations('a', 'reading')
     assert.equal(result.entries.length, 1)
-    assert.equal(result.entries[0].url, 'https://example.com/article?version=2')
+    assert.equal(result.entries[0].url, 'https://example.com/article?id=2')
   } finally {
     fs.open = originalOpen
     fs.opendir = originalOpendir
   }
   await fs.writeFile(filename, webNote('Changed title'))
   await eventually(async () => assert.equal((await index.searchAnnotations('a', 'Changed title')).entries.length, 1))
-  await fs.rename(filename, path.join(root, 'renamed.md'))
-  await eventually(async () => assert.equal((await index.search('renamed')).entries.length, 1))
-  assert.equal((await index.searchAnnotations('a', '')).entries.length, 1)
-  await fs.unlink(path.join(root, 'renamed.md'))
+  const renamed = path.join(directory, 'renamed.md')
+  await fs.rename(filename, renamed)
+  await fs.writeFile(renamed, webNote('Renamed inside folder'))
+  await eventually(async () => assert.equal((await index.searchAnnotations('a', 'Renamed inside folder')).entries.length, 1))
+  const movedOutside = path.join(root, 'moved-outside.md')
+  await fs.rename(renamed, movedOutside)
   await eventually(async () => assert.deepEqual((await index.searchAnnotations('a', '')).entries, []))
+  assert.deepEqual((await index.search('moved-outside')).entries.map(entry => entry.relativePath), ['moved-outside.md'])
   await assert.rejects(index.searchAnnotations('a', '', () => false), /Vault changed/)
 })
 
-test('PDF index observes JSON migration, Markdown saves and empty deletion authority', async t => {
+test('PDF index ignores old JSON and tracks URL-derived table store creation, edits, renames and deletion', async t => {
   const { root, index } = await fixture(t)
   const source = 'https://example.com/download?id=42'
   const rect = { origin: { x: 1, y: 2 }, size: { width: 3, height: 4 } }
   const annotations = [{ uid: 'pdf-id', sourceType: 'pdf', data: { text: 'quote', notes: '', textBefore: '', textAfter: '', color: '#ffeb3b', pageIndex: 0, rect, segmentRects: [rect] } }]
   assert.deepEqual((await index.searchAnnotations('p', '')).entries, [])
-  const directory = path.join(root, 'Annotations')
-  await fs.mkdir(directory)
-  const jsonFile = path.join(directory, require('crypto').createHash('sha256').update(source).digest('hex') + '.json')
+  const oldDirectory = path.join(root, 'Annotations')
+  await fs.mkdir(oldDirectory)
+  const jsonFile = path.join(oldDirectory, '395f5a04b57b3b2da1fc00ef46b8926fecb25ff850ac8c592cabf875ba1f29f4.json')
   const json = JSON.stringify({ version: 1, source, annotations })
   await fs.writeFile(jsonFile, json)
+  assert.deepEqual((await index.searchAnnotations('p', '')).entries, [])
+
+  const store = createStore(root, source)
+  await store.save(annotations, null)
+  const markdownFile = path.join(root, 'Archives', 'Annotations', 'example.com', '%2Fdownload%3Fid%3D42.md')
+  assert.match(await fs.readFile(markdownFile, 'utf8'), /^\| Field \| Value \|\n\| --- \| --- \|\n/)
   await eventually(async () => {
     const result = await index.searchAnnotations('p', 'id=42')
     assert.equal(result.entries.length, 1)
     assert.equal(new URL(result.entries[0].url).searchParams.get('url'), source)
   })
-  const store = createStore(root, source)
   const loaded = await store.read()
   await store.save([], loaded.revision)
   await eventually(async () => assert.deepEqual((await index.searchAnnotations('p', '')).entries, []))
@@ -342,8 +350,10 @@ test('PDF index observes JSON migration, Markdown saves and empty deletion autho
   assert.deepEqual((await index.searchAnnotations('a', '')).entries, [])
   const empty = await store.read()
   await store.save(annotations, empty.revision)
-  await fs.unlink(jsonFile)
-  const markdownFile = jsonFile.replace(/\.json$/, '.md')
-  await fs.rename(markdownFile, path.join(root, 'moved-record.md'))
-  await eventually(async () => assert.equal((await index.searchAnnotations('p', '')).entries.length, 1))
+  const movedFile = path.join(root, 'moved-record.md')
+  await fs.rename(markdownFile, movedFile)
+  await eventually(async () => assert.deepEqual((await index.searchAnnotations('p', '')).entries, []))
+  assert.equal(await fs.readFile(jsonFile, 'utf8'), json)
+  await fs.unlink(movedFile)
+  await eventually(async () => assert.deepEqual((await index.searchAnnotations('p', '')).entries, []))
 })

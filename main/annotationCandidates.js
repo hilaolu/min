@@ -1,6 +1,7 @@
 const fs = require('fs')
 const { resolveVaultURL } = require('./vault.js')
 const { isHiddenPath } = require('./vaultSearchPaths.js')
+const { normalizeFolder, isInFolder } = require('./annotationPaths.js')
 
 const MAX_VISITED_ENTRIES = 20000
 const MAX_DEPTH = 32
@@ -10,7 +11,8 @@ function excluded (relativePath) {
 }
 
 // Enumeration only. Callers own record decoding and resource precedence.
-async function visitCandidates (root, isCurrent, snapshot, inspect, diagnostics) {
+async function visitCandidates (root, isCurrent, snapshot, inspect, diagnostics, annotationFolder) {
+  annotationFolder = normalizeFolder(annotationFolder)
   await resolveVaultURL('vault://', root)
   if (snapshot !== undefined && !Array.isArray(snapshot)) throw new TypeError('Invalid vault snapshot')
   let truncated = false
@@ -21,6 +23,7 @@ async function visitCandidates (root, isCurrent, snapshot, inspect, diagnostics)
       const diagnostic = entry && typeof entry.url === 'string' ? entry.url : 'Vault snapshot entry'
       try {
         if (!entry || typeof entry.relativePath !== 'string' || typeof entry.url !== 'string') throw new Error('Invalid vault snapshot entry')
+        if (!isInFolder(entry.relativePath, annotationFolder) || excluded(entry.relativePath)) continue
         const file = await resolveVaultURL(entry.url, root)
         if (file.relativePath !== entry.relativePath) throw new Error('Vault snapshot path mismatch')
         if (excluded(file.relativePath) || seen.has(file.relativePath)) continue
@@ -29,7 +32,8 @@ async function visitCandidates (root, isCurrent, snapshot, inspect, diagnostics)
       } catch (_) { diagnostics.push(diagnostic) }
     }
   } else {
-    const pending = [{ url: 'vault://', depth: 0 }]
+    const folderURL = 'vault://' + annotationFolder.split('/').map(encodeURIComponent).join('/') + '/'
+    const pending = [{ url: folderURL, depth: 0 }]
     let visited = 0
     // Reaching the depth limit must not discard other queued directories.
     while (pending.length && visited <= MAX_VISITED_ENTRIES) {
@@ -40,7 +44,12 @@ async function visitCandidates (root, isCurrent, snapshot, inspect, diagnostics)
       try {
         folder = await resolveVaultURL(url, root)
         directory = await fs.promises.opendir(folder.absolutePath)
-      } catch (_) { diagnostics.push(url); continue }
+      } catch (error) {
+        // A not-yet-created configured folder is empty, not a reason to scan
+        // the rest of the vault or fall back to another annotation location.
+        if (!(url === folderURL && error.code === 'ENOENT')) diagnostics.push(url)
+        continue
+      }
       for await (const item of directory) {
         if (!isCurrent()) throw new Error('Vault changed')
         const relative = [folder.relativePath, item.name].filter(Boolean).join('/')

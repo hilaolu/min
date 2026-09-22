@@ -95,7 +95,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       if (changing || !isTab(event.sender) || event.sender.isDestroyed?.() || event.senderFrame !== event.sender.mainFrame) throw new Error('Annotation caller denied')
       const url = new URL(event.senderFrame.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Annotation caller denied')
-      return { root, source: url.href, generation: annotationGeneration, annotationFolder }
+      return { root, source: url.href, title: event.sender.getTitle?.(), generation: annotationGeneration, annotationFolder }
     }
   })
 

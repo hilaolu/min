@@ -1,132 +1,92 @@
+const parseLegacy = require('./annotationLegacy.js')
+
 const maximumBytes = 1024 * 1024
-const header = '# PDF annotations\n\n'
-const fields = ['textBefore', 'text', 'textAfter', 'notes']
+const tableHeader = '| Field | Value |\n| --- | --- |\n'
 
 function malformed () {
   throw new Error('Malformed annotation Markdown')
 }
 
-function escapedJSON (value) {
-  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
+function unsafe () {
+  throw new Error('Unsafe annotation Markdown content')
 }
 
-function objectWithKeys (value, keys) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const actual = Object.keys(value)
-  return actual.length === keys.length && keys.every(key => Object.prototype.hasOwnProperty.call(value, key))
+function tableValue (value, allowPipes = true) {
+  if (typeof value !== 'string' || !value || /[\r\n]/.test(value)) unsafe()
+  if (!allowPipes && value.includes('|')) unsafe()
+  return allowPipes ? value.replace(/\|/g, '\\|') : value
 }
 
-function longestBacktickRun (text) {
-  let longest = 0
-  for (const run of text.match(/`+/g) || []) longest = Math.max(longest, run.length)
-  return longest
-}
-
-function codeBlock (value, language) {
-  const fence = '`'.repeat(Math.max(3, longestBacktickRun(value) + 1))
-  return `${fence}${language}\n${value}\n${fence}\n\n`
+function annotationText (value, notes = false) {
+  if (typeof value !== 'string' || value.includes('\r') || value.includes('%%') || /<\/?pre\b/i.test(value)) unsafe()
+  // Plugin readers trim the raw notes surrounding an annotation block. Refuse
+  // input that they could not round trip rather than silently changing it.
+  if (notes && value && value !== value.trim()) unsafe()
+  return value
 }
 
 function stringify (record) {
   if (!record || record.version !== 1 || typeof record.source !== 'string' || !Array.isArray(record.annotations)) malformed()
-  let text = header + '<!-- min-annotation-source: ' + escapedJSON({ version: 1, source: record.source }) + ' -->\n\n'
-  for (const annotation of record.annotations) {
-    if (!annotation || typeof annotation.uid !== 'string' || typeof annotation.sourceType !== 'string' || !annotation.data) malformed()
-    const data = annotation.data
-    const metadata = {
-      uid: annotation.uid,
-      sourceType: annotation.sourceType,
-      color: data.color,
-      pageIndex: data.pageIndex,
-      rect: data.rect,
-      segmentRects: data.segmentRects
-    }
-    if (fields.some(field => typeof data[field] !== 'string')) malformed()
-    text += `## Highlight ${annotation.uid}\n\n`
-    text += '<!-- min-annotation: ' + escapedJSON(metadata) + ' -->\n\n'
-    for (const field of fields) {
-      text += `### ${field}\n\n`
-      text += codeBlock(data[field], field === 'notes' ? 'markdown' : 'text')
-    }
+
+  const source = tableValue(record.source)
+  const title = tableValue(record.title === undefined || record.title === '' ? record.source : record.title)
+  const tags = tableValue(record.tags === undefined || record.tags === '' ? '#annotation' : record.tags, false)
+  const chunks = []
+  let bytes = 0
+  const append = value => {
+    bytes += Buffer.byteLength(value)
+    if (bytes > maximumBytes) throw new Error('Annotation size limit exceeded')
+    chunks.push(value)
   }
-  if (Buffer.byteLength(text) > maximumBytes) throw new Error('Annotation size limit exceeded')
-  return text
-}
 
-function parseComment (state, prefix) {
-  if (!state.text.startsWith(prefix, state.offset)) malformed()
-  const start = state.offset + prefix.length
-  const end = state.text.indexOf(' -->\n\n', start)
-  if (end < 0) malformed()
-  let value
-  try { value = JSON.parse(state.text.slice(start, end)) } catch (_) { malformed() }
-  state.offset = end + ' -->\n\n'.length
-  return value
-}
+  append(tableHeader)
+  append(`| Title | ${title} |\n`)
+  append(`| URL | ${source} |\n`)
+  append(`| Tags | ${tags} |\n\n`)
+  append('## Annotations\n\n')
 
-function parseCodeBlock (state, language) {
-  const lineEnd = state.text.indexOf('\n', state.offset)
-  if (lineEnd < 0) malformed()
-  const line = state.text.slice(state.offset, lineEnd)
-  const match = line.match(/^(`{3,})(text|markdown)$/)
-  if (!match || match[2] !== language) malformed()
-  const fence = match[1]
-  const start = lineEnd + 1
-  const delimiter = '\n' + fence + '\n\n'
-  const end = state.text.indexOf(delimiter, start)
-  if (end < 0) malformed()
-  const value = state.text.slice(start, end)
-  if (longestBacktickRun(value) >= fence.length) malformed()
-  state.offset = end + delimiter.length
-  return value
+  const ids = new Set()
+  for (const annotation of record.annotations) {
+    if (!annotation || !/^[A-Za-z0-9-]+$/.test(annotation.uid || '') || ids.has(annotation.uid) || !['webpage', 'pdf'].includes(annotation.sourceType) || !annotation.data) malformed()
+    ids.add(annotation.uid)
+    const data = annotation.data
+    if (!/^#[0-9a-f]{6}$/i.test(data.color || '')) malformed()
+    const before = annotationText(data.textBefore)
+    const text = annotationText(data.text)
+    const after = annotationText(data.textAfter)
+    const notes = annotationText(data.notes, true)
+    const color = data.color.slice(1)
+
+    if (annotation.sourceType === 'pdf') {
+      if (!Number.isSafeInteger(data.pageIndex) || data.pageIndex < 0) malformed()
+      append(`%% annotation: ${annotation.uid} | color: ${color} | sourceType: pdf | pageIndex: ${data.pageIndex} %%\n`)
+    } else {
+      append(`%% annotation: ${annotation.uid} | color: ${color} %%\n`)
+    }
+    append(`<pre>${before}</pre>\n<pre>${text}</pre>\n<pre>${after}</pre>\n\n`)
+
+    if (annotation.sourceType === 'pdf') {
+      if (data.rect !== undefined) append(`%% annotation-rect: ${JSON.stringify(data.rect)} %%\n`)
+      if (data.segmentRects !== undefined) append(`%% annotation-segments: ${JSON.stringify(data.segmentRects)} %%\n`)
+    }
+    if (notes) append(`${notes}\n\n`)
+  }
+
+  const result = chunks.join('')
+  // Keep the writer and the strict plugin-format reader in lockstep, including
+  // geometry validation and delimiter handling.
+  parseLegacy(result)
+  return result
 }
 
 function parse (text) {
-  if (typeof text !== 'string') malformed()
-  if (Buffer.byteLength(text) > maximumBytes) throw new Error('Annotation size limit exceeded')
-  if (!isMarkdown(text)) malformed()
-  const state = { text, offset: header.length }
-  const sourceMetadata = parseComment(state, '<!-- min-annotation-source: ')
-  if (!objectWithKeys(sourceMetadata, ['version', 'source']) || sourceMetadata.version !== 1 || typeof sourceMetadata.source !== 'string') malformed()
-  const annotations = []
-  while (state.offset < text.length) {
-    const heading = '## Highlight '
-    if (!text.startsWith(heading, state.offset)) malformed()
-    const headingEnd = text.indexOf('\n\n', state.offset + heading.length)
-    if (headingEnd < 0) malformed()
-    const uid = text.slice(state.offset + heading.length, headingEnd)
-    if (!uid) malformed()
-    state.offset = headingEnd + 2
-    const metadata = parseComment(state, '<!-- min-annotation: ')
-    const metadataKeys = metadata.sourceType === 'webpage' ? ['uid', 'sourceType', 'color'] : ['uid', 'sourceType', 'color', 'pageIndex', 'rect', 'segmentRects']
-    if (!objectWithKeys(metadata, metadataKeys) || metadata.uid !== uid) malformed()
-    const values = {}
-    for (const field of fields) {
-      const section = `### ${field}\n\n`
-      if (!text.startsWith(section, state.offset)) malformed()
-      state.offset += section.length
-      values[field] = parseCodeBlock(state, field === 'notes' ? 'markdown' : 'text')
-    }
-    annotations.push({
-      uid: metadata.uid,
-      sourceType: metadata.sourceType,
-      data: {
-        color: metadata.color,
-        text: values.text,
-        notes: values.notes,
-        textBefore: values.textBefore,
-        textAfter: values.textAfter,
-        pageIndex: metadata.pageIndex,
-        rect: metadata.rect,
-        segmentRects: metadata.segmentRects
-      }
-    })
-  }
-  return { version: 1, source: sourceMetadata.source, annotations }
+  if (typeof text !== 'string' || !isMarkdown(text)) malformed()
+  const parsed = parseLegacy(text)
+  return { version: 1, ...parsed }
 }
 
 function isMarkdown (text) {
-  return typeof text === 'string' && text.startsWith(header)
+  return typeof text === 'string' && /^\|\s*Field\s*\|\s*Value\s*\|\r?\n\|\s*-{3,}\s*\|\s*-{3,}\s*\|\r?\n/i.test(text)
 }
 
 module.exports = { stringify, parse, isMarkdown }

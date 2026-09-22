@@ -2,7 +2,7 @@ const path = require('path')
 const chokidar = require('chokidar')
 const { resolveVaultURL } = require('./vault.js')
 const { isHiddenPath } = require('./vaultSearchPaths.js')
-const { isInFolder, nativeMatch, normalizeFolder, defaultFolder } = require('./annotationPaths.js')
+const { isInFolder, normalizeFolder, defaultFolder } = require('./annotationPaths.js')
 
 // One watcher shared by path and annotation metadata indexes. No contents or
 // absolute paths leave main through picker results.
@@ -32,7 +32,7 @@ function createVaultFileIndex (root, annotationFolder = defaultFolder) {
         ignored: (file, stat) => {
           const relative = path.relative(root, file).split(path.sep).join('/')
           if (isHiddenPath(relative)) return true
-          return stat && stat.isFile() && !/\.(md|pdf)$/i.test(file) && !nativeMatch(relative, annotationFolder)
+          return stat && stat.isFile() && !/\.(md|pdf)$/i.test(file)
         }
       })
       const update = (file, stat) => {

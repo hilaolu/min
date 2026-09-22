@@ -14,7 +14,7 @@ test('web annotations persist, are discoverable, reject stale writes and retain 
   installPdfAnnotations({
     sourceType: 'webpage',
     ipc: { handle: (name, callback) => { assert.equal(name, 'web-annotations'); handler = callback } },
-    context: () => ({ root, source, generation: 1 })
+    context: () => ({ root, source, title: 'Web article', generation: 1 })
   })
   const event = { sender: { session: { isPersistent: () => true } }, senderFrame: {} }
   const annotation = { uid: 'web-id', sourceType: 'webpage', data: { color: '#ffcd45', text: 'quote', notes: '<script>not HTML</script>', textBefore: 'before', textAfter: 'after' } }
@@ -25,6 +25,11 @@ test('web annotations persist, are discoverable, reject stale writes and retain 
   assert.deepEqual((await handler(event, 'load')).annotations, [annotation])
   const found = await discover(root)
   assert.equal(found.resources[0].sourceType, 'webpage')
+  assert.equal(found.resources[0].title, 'Web article')
+  const markdown = fs.readFileSync(path.join(root, 'Archives/Annotations/example.com/%2Farticle.md'), 'utf8')
+  assert.match(markdown, /\| Title \| Web article \|/)
+  assert.match(markdown, /%% annotation: web-id \| color: ffcd45 %%/)
+  assert.doesNotMatch(markdown, /min-annotation|sourceType: pdf/)
   assert.deepEqual(found.resources[0].annotations, [annotation])
   assert.equal((await handler(event, 'save', { revision: null, annotations: [] })).ok, false)
   source = 'https://example.com/other'
