@@ -4,10 +4,12 @@ const os = require('node:os')
 const path = require('node:path')
 const electron = require('electron')
 const { app, webContents, dialog } = electron
+const { defaultFolder } = require('../main/annotationPaths.js')
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'min-vault-app-'))
 const root = path.join(temp, 'vault')
 const nextRoot = path.join(temp, 'next')
 const pdfSource = 'https://example.com/Report.pdf?version=2'
+const articlePath = path.join(root, defaultFolder, 'article.md')
 fs.mkdirSync(root)
 fs.mkdirSync(nextRoot)
 fs.writeFileSync(path.join(root, 'note.md'), '# Initial\n')
@@ -67,16 +69,17 @@ async function run () {
 <pre>quote</pre>
 <pre></pre>
 `
-  fs.writeFileSync(path.join(root, 'article.md'), webNote('Article'))
+  fs.writeFileSync(articlePath, webNote('Article'))
   await app.whenReady()
   const win = await until(() => main.windows.getAll()[0], 'browser window')
   const chrome = main.windows.getChromeContents(win)
   await until(() => !chrome.isLoading(), 'browser chrome')
   await until(() => chrome.executeJavaScript("!!document.getElementById('command-palette-input')").catch(() => false), 'command palette input')
   await assertPaletteResult(chrome, '>m note', 'note.md')
-  await assertPaletteResult(chrome, '>p Report', pdfSource)
+  // Annotation identity drops non-resource query parameters such as version.
+  await assertPaletteResult(chrome, '>p Report', 'https://example.com/Report.pdf')
   await assertPaletteResult(chrome, '>a reading', 'Article')
-  fs.writeFileSync(path.join(root, 'article.md'), webNote('Updated article'))
+  fs.writeFileSync(articlePath, webNote('Updated article'))
   // The watcher updates the next search, not a result list already displayed.
   await sleep(300)
   await assertPaletteResult(chrome, '>a reading', 'Updated article')

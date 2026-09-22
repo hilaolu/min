@@ -124,16 +124,9 @@ const availableCommands = [
     description: 'Search Google for the given string',
     shortcut: '>goo <query>',
     icon: 'carbon:search',
+    prefix: '>goo ',
     action: (query) => {
-      // Extract query from command palette input if not provided directly
-      let searchQuery = query
-      if (!searchQuery) {
-        var commandPalette = require('commandPalette.js')
-        const inputValue = commandPalette.input.value.trim()
-        if (inputValue.startsWith('>goo ')) {
-          searchQuery = inputValue.substring(5).trim()
-        }
-      }
+      const searchQuery = typeof query === 'string' ? query.trim() : ''
 
       if (searchQuery) {
         var searchbar = require('searchbar/searchbar.js')

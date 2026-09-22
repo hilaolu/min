@@ -2,8 +2,10 @@ const browserSession = require('tabState.js')
 const webviews = require('webviews.js')
 const settings = require('util/settings/settings.js')
 const remoteMenu = require('remoteMenuRenderer.js')
+const EventEmitter = require('events')
 
 const contentBlockingToggle = {
+  events: new EventEmitter(),
   enableBlocking: function (url) {
     if (!url) {
       return
@@ -83,7 +85,7 @@ const contentBlockingToggle = {
         {
           label: 'Report a Bug',
           click: function () {
-            require('browserUI.js').addTab({ url: 'https://github.com/minbrowser/min/issues/new?title=Content%20blocking%20issue%20on%20' + encodeURIComponent(url) }, { enterEditMode: false })
+            contentBlockingToggle.events.emit('tab-add-requested', { url: 'https://github.com/minbrowser/min/issues/new?title=Content%20blocking%20issue%20on%20' + encodeURIComponent(url) }, { enterEditMode: false })
           }
         }
       ]

@@ -5,10 +5,11 @@ var urlParser = require('util/urlParser.js')
 var keyboardNavigationHelper = require('util/keyboardNavigationHelper.js')
 var bookmarkStar = require('navbar/bookmarkStar.js')
 var contentBlockingToggle = require('navbar/contentBlockingToggle.js')
+let initialized = false
 
 const tabEditor = {
-  container: document.getElementById('tab-editor'),
-  input: document.getElementById('tab-editor-input'),
+  container: null,
+  input: null,
   star: null,
   isShown: false,
   show: function (tabId, editingValue, showSearchbar) {
@@ -78,6 +79,10 @@ const tabEditor = {
     webviews.hidePlaceholder('editMode')
   },
   initialize: function () {
+    if (initialized) return
+    tabEditor.container = document.getElementById('tab-editor')
+    tabEditor.input = document.getElementById('tab-editor-input')
+    initialized = true
     tabEditor.input.setAttribute('placeholder', 'Search or enter address')
 
     tabEditor.star = bookmarkStar.create()
@@ -121,7 +126,5 @@ const tabEditor = {
     })
   }
 }
-
-tabEditor.initialize()
 
 module.exports = tabEditor

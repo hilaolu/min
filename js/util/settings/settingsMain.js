@@ -119,7 +119,7 @@ function createFileStorage ({ filePath, fs, atomicWriter = writeFileAtomic }) {
   }
 }
 
-function createSettings ({ fs, getAllWebContents, ipc, storage, warn = console.warn }) {
+function createSettings ({ authorize = () => false, fs, getAllWebContents, ipc, storage, warn = console.warn }) {
   let values = normalize({})
   let persistenceQueue = Promise.resolve()
   let initialized = false
@@ -163,8 +163,15 @@ function createSettings ({ fs, getAllWebContents, ipc, storage, warn = console.w
   function broadcast (change) {
     if (!getAllWebContents) return
     getAllWebContents().forEach(function (contents) {
-      if (!contents.isDestroyed || !contents.isDestroyed()) {
-        contents.send('settings:changed', clone(change))
+      try {
+        if ((!contents.isDestroyed || !contents.isDestroyed()) &&
+            authorize({ sender: contents, senderFrame: contents.mainFrame }, 'read')) {
+          contents.send('settings:changed', clone(change))
+        }
+      } catch (error) {
+        // Persistence has already succeeded. A closing renderer must not turn
+        // that durable write into a reported failure or block other recipients.
+        warn('Unable to notify renderer of settings change:', error)
       }
     })
   }
@@ -175,7 +182,11 @@ function createSettings ({ fs, getAllWebContents, ipc, storage, warn = console.w
     return write
   }
 
-  function set (key, value) {
+  function denied () {
+    return errorResult('SETTINGS_CALLER_DENIED', 'Settings are only available to trusted internal pages')
+  }
+
+  function set (key, value, canWrite = () => true) {
     const definition = schema[key]
     if (!definition) {
       const result = errorResult('UNKNOWN_SETTING', `Unsupported setting: ${key}`)
@@ -196,6 +207,9 @@ function createSettings ({ fs, getAllWebContents, ipc, storage, warn = console.w
 
     const nextValue = clone(value)
     return queueWrite(async function () {
+      // A request can wait behind another durable write. Do not retain authority
+      // if its frame navigates or its owning tab/window closes in the meantime.
+      if (!canWrite()) return denied()
       const nextValues = snapshot()
       if (nextValue === undefined) delete nextValues[key]
       else nextValues[key] = nextValue
@@ -214,13 +228,19 @@ function createSettings ({ fs, getAllWebContents, ipc, storage, warn = console.w
 
   function installIPC () {
     ipc.on('settings:connect', function (event) {
-      event.returnValue = { revision, values: snapshot() }
+      event.returnValue = authorize(event, 'read')
+        ? { revision, values: snapshot() }
+        : { ...denied(), revision: 0, values: {} }
     })
     ipc.handle('settings:set', function (event, request) {
+      if (!authorize(event, 'write', request?.key)) return denied()
       if (!request || typeof request.key !== 'string') {
         return errorResult('INVALID_SETTINGS_REQUEST', 'A setting key is required')
       }
-      return set(request.key, request.value)
+      const frame = event.senderFrame
+      const url = frame.url
+      return set(request.key, request.value, () =>
+        authorize(event, 'write', request.key) && event.senderFrame === frame && frame.url === url)
     })
   }
 

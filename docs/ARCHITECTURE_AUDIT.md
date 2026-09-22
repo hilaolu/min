@@ -48,45 +48,74 @@ Limits: publication protection applies to `dist/bundle.js`, not the intermediate
 cross-process lock. Abrupt process termination can leave a temporary directory;
 this is not a crash-durable transaction.
 
-### 2. Renderer dependency cycles remain — follow-up
+### 2. Renderer dependency cycles — fixed
 
-A static literal-`require` inventory found two cyclic components within tracked
+A static literal-`require` inventory originally found two cyclic components within tracked
 `main/`, `js/`, and `scripts/` sources:
 
 - `browserUI.js`, `navbar/tabBar.js`, `navbar/tabEditor.js`, and
-  `navbar/contentBlockingToggle.js`. For example, browser UI imports the tab bar,
-  whose drop handler imports browser UI to create a tab.
+  `navbar/contentBlockingToggle.js`. Browser UI imported the tab bar, whose drop
+  handler imported browser UI to create a tab.
 - `commandPalette.js`, its two Vim command strategies, and
-  `commandPaletteCommands.js`. The Google command reads input by importing the
-  production palette singleton, while the palette imports the strategies that
-  load the command registry.
+  `commandPaletteCommands.js`. The Google command read input by importing the
+  production palette singleton, while the palette imported the strategies that
+  loaded the command registry.
 
-Some edges are lazy imports, so these are not all import-time execution cycles.
-Nevertheless, they make UI modules harder to instantiate independently. The tab
-bar/editor also access DOM elements during module loading. A focused follow-up
-should pass narrow action callbacks into these components and pass command
-arguments into actions rather than reading the owning palette singleton. Add
-independent-instance tests before changing initialization order.
+The tab bar and content-blocking button now emit tab-creation requests, which
+Browser UI handles through the same workflow as other tab actions. They no longer
+import their controller. The tab bar/editor's own DOM lookup and listener setup
+now run from explicit, idempotent `initialize()` calls in `js/default.js`.
 
-### 3. Settings authorization depends on the preload boundary — follow-up
+Google commands accept explicit queries rather than consulting the production
+palette singleton; selecting Google in the command menu prompts for a query.
+Generic command candidates capture their own arguments. Tests cover independent
+module instances, initialization, dropped URLs/files, bug-report requests, and
+query isolation.
 
-`js/util/settings/settingsMain.js` validates setting keys/values, but its
-`settings:connect` and `settings:set` handlers do not validate the sender/frame.
-`settingsPreload.js` gates the exposed API to internal pages; vault/file IPC has
-additional main-owned caller checks. This is a defense-in-depth inconsistency,
-not a demonstrated remote exploit.
+A follow-up static inventory of 167 source files and 448 dependency edges found
+no cycles or self-loops. This includes lazy literal requires but excludes dynamic
+loading and dependencies outside `main/`, `js/`, and `scripts/`. Other legacy UI
+modules still have import-time effects; this is not a wholesale renderer rewrite.
 
-Define an explicit settings caller policy in main, preserving the trusted chrome
-and internal-page consumers. Test denied subframes, unrelated web contents, and
-navigation before tightening access; simply allowing only the Settings page would
-break other legitimate consumers.
+### 3. Settings authorization depended on the preload boundary — fixed
 
-### 4. Runtime versions disagree — follow-up
+At audit time, `js/util/settings/settingsMain.js` validated setting keys/values,
+but its `settings:connect` and `settings:set` handlers did not validate the
+sender/frame. `settingsPreload.js` gated the exposed API to internal pages, unlike
+vault/file IPC's additional main-owned caller checks. The finding was a
+defense-in-depth inconsistency, not a demonstrated remote exploit.
 
-`.nvmrc` specifies Node 15.7.0, CI specifies Node 20, and the tests use `node:test`.
-`package.json` also declares Electron 42.0.1 in `electronVersion` but installs
-41.2.0 as its development dependency. Choose and document a supported toolchain
-matrix, then align development and packaging versions in a separate tested change.
+`main/settingsAccess.js`, wired at the composition root, now requires live,
+main-owned chrome/tab contents and their current main frame. Only packaged chrome,
+Settings, reader, and themed error pages may read settings. Chrome and Settings
+may write validated preferences; the reader may write only its three preferences;
+error pages are read-only. Unknown callers fail closed, including when no policy
+is configured.
+
+Snapshots, mutations, and broadcasts use that policy. Queued writes recheck
+ownership, frame identity, and URL before touching storage. Trusted main-process
+calls remain independent of renderer authorization. Per-renderer notification
+failures are logged without misreporting an already-durable write as failed or
+blocking updates to other recipients. Unit tests and a dedicated
+Electron test bypass preload gates to exercise denied foreign contents,
+subframes, navigation, and scoped updates against the main-process boundary.
+
+### 4. Runtime versions disagreed — fixed
+
+`.nvmrc` now selects Node 20, matching CI and the Nix development shell. The
+packaging Electron declaration now matches the installed development version,
+41.2.0, rather than selecting an untested 42.0.1 runtime. The README records the
+toolchain and upgrade checks. Tests guard local/CI Node-major consistency and
+development/packaging Electron-version equality. This aligns the existing tested
+runtime; it does not upgrade Electron or certify every target platform.
+
+### 5. Electron app acceptance fixture drift — fixed
+
+The failing annotated-PDF assertion expected a query parameter that the annotation
+identity policy intentionally removes. The web-annotation fixture also lived
+outside the configured annotation folder. The test now expects the canonical PDF
+URL and writes/updates web annotations under the default annotation folder. No
+production annotation behavior was changed to accommodate the test.
 
 ## Verification
 
@@ -99,17 +128,19 @@ matrix, then align development and packaging versions in a separate tested chang
   recovery from synchronous/asynchronous errors, and watcher integration with
   injected edit/add/remove events and initial-scan suppression (no background
   watcher is started).
-- After the change: all 311 Node tests, application lint, explicit script lint,
-  and `npm run build` passed on Linux with Node 20.19.5.
+- The initial build-pipeline change passed 311 Node tests, application lint,
+  explicit script lint, and `npm run build` on Linux with Node 20.19.5.
 - `DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronVaultApp.js`
   failed waiting for the annotated-PDF result from `>p Report` at line 77. Running
   the original tracked build script produced a byte-identical browser bundle and
-  reproduced the same failure. This pre-existing smoke-test blocker remains
-  unresolved; later assertions in that test were not reached.
-- The Electron smoke was not rerun after the watcher-event refinement, which
-  changes no application code.
+  reproduced the same failure. Finding 5 explains and fixes that fixture drift.
+- After the remaining fixes: all 324 Node tests, application lint, and the full
+  build passed. `test/electronSettings.js` and the complete
+  `test/electronVaultApp.js` both passed with `DISPLAY=:0` and `--no-sandbox`.
+  The tested Electron binary reports 41.2.0. Electron emitted existing GLib schema
+  and navigation-API deprecation warnings; neither test failed.
 - Other Electron suites, manual filesystem-watcher testing, cross-platform builds,
-  and release packaging were not run.
+  and release packaging have not been verified for these changes.
 
 Relevant commands: `npm test`, `npm run build`, and explicit Standard lint of
 `scripts/buildBrowser.js`, `scripts/buildQueue.js`, and `scripts/watch.js` (scripts

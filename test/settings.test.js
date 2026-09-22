@@ -48,7 +48,7 @@ test('Settings owns defaults and persists legacy migrations', async function () 
 
 test('Settings connection returns values and their authoritative revision together', async function () {
   const ipc = createIPC()
-  const settings = createSettings({ ipc, storage: createMemoryStorage('{}') })
+  const settings = createSettings({ authorize: () => true, ipc, storage: createMemoryStorage('{}') })
   await settings.initialize('/unused')
   await settings.set('siteTheme', false)
   const event = {}
@@ -95,6 +95,7 @@ test('Settings serializes durable changes, reports failures, and recovers its qu
     send: (channel, change) => sent.push({ channel, change })
   }
   const settings = createSettings({
+    authorize: () => true,
     getAllWebContents: () => [contents],
     ipc: createIPC(),
     storage

@@ -16,6 +16,7 @@ const createProxyPolicy = require('../js/util/proxy.js')
 const { createRendererHostFiles } = require('./rendererHostFiles.js')
 const createSessionPolicies = require('./sessionPolicies.js')
 const createSettings = require('../js/util/settings/settingsMain.js')
+const createSettingsAccess = require('./settingsAccess.js')
 const createTouchBar = require('./touchbar.js')
 const createUserAgentPolicy = require('./UASwitcher.js')
 const createViewManager = require('./viewManager.js')
@@ -105,6 +106,10 @@ function createMainProcess (options = {}) {
   })
 
   const settings = createSettings({
+    authorize: createSettingsAccess({
+      isChrome: contents => windows.getAll().some(window => windows.getChromeContents(window) === contents),
+      isTab: contents => Boolean(viewManagerRef.current?.getTabIDFromWebContents(contents))
+    }),
     fs,
     getAllWebContents: () => electron.webContents.getAllWebContents(),
     ipc

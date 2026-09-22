@@ -283,6 +283,10 @@ tabBar.events.on('tab-closed', function (id) {
   closeTab(id)
 })
 
+// Components request actions; only Browser UI owns the tab-creation workflow.
+tabBar.events.on('tab-add-requested', addTab)
+require('navbar/contentBlockingToggle.js').events.on('tab-add-requested', addTab)
+
 module.exports = {
   addTask,
   addTab,

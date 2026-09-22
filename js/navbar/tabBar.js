@@ -16,11 +16,12 @@ const permissionRequests = require('navbar/permissionRequests.js')
 const { getUpdateGroups, reconcileKeyedChildren } = require('navbar/tabBarProjection.js')
 
 var lastTabDeletion = 0 // TODO get rid of this
+let initialized = false
 
 const tabBar = {
-  navBar: document.getElementById('navbar'),
-  container: document.getElementById('tabs'),
-  containerInner: document.getElementById('tabs-inner'),
+  navBar: null,
+  container: null,
+  containerInner: null,
   tabElementMap: {}, // tabId: tab element
   events: new EventEmitter(),
   dragulaInstance: null,
@@ -303,56 +304,64 @@ const tabBar = {
   }
 }
 
-window.addEventListener('resize', tabBar.handleSizeChange)
+tabBar.initialize = function () {
+  if (initialized) return
+  tabBar.navBar = document.getElementById('navbar')
+  tabBar.container = document.getElementById('tabs')
+  tabBar.containerInner = document.getElementById('tabs-inner')
+  initialized = true
 
-settings.listen('showDividerBetweenTabs', function (dividerPreference) {
-  tabBar.handleDividerPreference(dividerPreference)
-})
+  window.addEventListener('resize', tabBar.handleSizeChange)
 
-/* tab loading and progress bar status */
-webviews.bindEvent('loading-started', function (tabId) {
-  progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'start')
-  browserSession.updateTab(tabId, { loaded: false })
-})
+  settings.listen('showDividerBetweenTabs', function (dividerPreference) {
+    tabBar.handleDividerPreference(dividerPreference)
+  })
 
-webviews.bindEvent('loading-stopped', function (tabId) {
-  progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'finish')
-  browserSession.updateTab(tabId, { loaded: true })
-})
+  /* tab loading and progress bar status */
+  webviews.bindEvent('loading-started', function (tabId) {
+    progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'start')
+    browserSession.updateTab(tabId, { loaded: false })
+  })
 
-browserSession.tasks.on('tab-updated', function (id, key) {
-  var updateKeys = ['title', 'secure', 'url', 'muted', 'hasAudio', 'loaded']
-  if (updateKeys.includes(key)) {
-    tabBar.updateTab(id, undefined, [key])
-  }
-})
+  webviews.bindEvent('loading-stopped', function (tabId) {
+    progressBar.update(tabBar.getTab(tabId).querySelector('.progress-bar'), 'finish')
+    browserSession.updateTab(tabId, { loaded: true })
+  })
 
-permissionRequests.onChange(function (tabId) {
-  if (browserSession.tabs.get(tabId)) {
-    tabBar.updateTab(tabId, undefined, ['permissions'])
-  }
-})
+  browserSession.tasks.on('tab-updated', function (id, key) {
+    var updateKeys = ['title', 'secure', 'url', 'muted', 'hasAudio', 'loaded']
+    if (updateKeys.includes(key)) {
+      tabBar.updateTab(id, undefined, [key])
+    }
+  })
 
-tabBar.initializeTabDragging()
+  permissionRequests.onChange(function (tabId) {
+    if (browserSession.tabs.get(tabId)) {
+      tabBar.updateTab(tabId, undefined, ['permissions'])
+    }
+  })
 
-tabBar.container.addEventListener('dragover', e => e.preventDefault())
+  tabBar.initializeTabDragging()
 
-tabBar.container.addEventListener('drop', e => {
-  e.preventDefault()
-  var data = e.dataTransfer
-  var url = data.files[0] ? rendererHost.getDroppedFileURL(data.files[0]) : data.getData('text')
-  if (!url) {
-    return
-  }
-  if (tabEditor.isShown || browserSession.tabs.isEmpty()) {
-    webviews.update(browserSession.tabs.getSelected(), url)
-    tabEditor.hide()
-  } else {
-    require('browserUI.js').addTab({
-      url,
-      private: browserSession.tabs.get(browserSession.tabs.getSelected()).private
-    }, { enterEditMode: false, openInBackground: !settings.get('openTabsInForeground') })
-  }
-})
+  tabBar.container.addEventListener('dragover', e => e.preventDefault())
+
+  tabBar.container.addEventListener('drop', e => {
+    e.preventDefault()
+    var data = e.dataTransfer
+    var url = data.files[0] ? rendererHost.getDroppedFileURL(data.files[0]) : data.getData('text')
+    if (!url) {
+      return
+    }
+    if (tabEditor.isShown || browserSession.tabs.isEmpty()) {
+      webviews.update(browserSession.tabs.getSelected(), url)
+      tabEditor.hide()
+    } else {
+      tabBar.events.emit('tab-add-requested', {
+        url,
+        private: browserSession.tabs.get(browserSession.tabs.getSelected()).private
+      }, { enterEditMode: false, openInBackground: !settings.get('openTabsInForeground') })
+    }
+  })
+}
 
 module.exports = tabBar

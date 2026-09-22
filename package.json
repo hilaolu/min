@@ -4,7 +4,7 @@
   "author": "PalmerAL",
   "version": "1.39.11",
   "description": "A fast, minimal browser that protects your privacy",
-  "electronVersion": "42.0.1",
+  "electronVersion": "41.2.0",
   "main": "main.build.js",
   "standard": {
     "globals": [
@@ -60,6 +60,7 @@
     "test:electron-vault": "electron test/electronVault.js",
     "test:electron-vault-pages": "electron test/electronVaultPages.js",
     "test:electron-vault-app": "electron test/electronVaultApp.js",
+    "test:electron-settings": "electron test/electronSettings.js",
     "lint:js": "standard --verbose \"js/**/*.js\" \"main/**/*.js\" \"test/**/*.js\" \"pages/markdown/*.js\" \"pages/vault/*.js\" \"pages/pdfViewer/*.js\" pages/settings/vaultSettings.js",
     "watch": "node ./scripts/watch.js",
     "startElectron": "electron . --development-mode",

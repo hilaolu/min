@@ -275,7 +275,8 @@ class VimCommandWithArgsStrategy extends CommandStateStrategy {
         description: cmd.description,
         icon: cmd.icon,
         shortcut: cmd.shortcut,
-        action: cmd.action
+        prefix: cmd.prefix,
+        action: cmd.action ? () => cmd.action(args) : undefined
       }))
     } catch (error) {
       console.error('Error loading available commands:', error)

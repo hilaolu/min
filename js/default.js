@@ -104,6 +104,8 @@ window.addEventListener('load', function () {
 
 const browserSession = require('tabState.js')
 browserSession.initialize()
+require('navbar/tabEditor.js').initialize()
+require('navbar/tabBar.js').initialize()
 require('tabState/windowSync.js').initialize({
   browserSession,
   browserUI: require('browserUI.js'),
