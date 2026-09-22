@@ -1,6 +1,6 @@
 // Runs only in the isolated preload world; no vault API is exposed to sites.
 if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
-  window.addEventListener('DOMContentLoaded', () => {
+  window.addEventListener('load', () => {
     const host = document.createElement('div')
     const shadow = host.attachShadow({ mode: 'closed' })
     document.documentElement.append(host)
@@ -29,6 +29,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     const editor = shadow.querySelector('#note-editor')
     const notes = editor.querySelector('textarea')
     const noteHosts = new Map()
+    const anchors = new Map()
     const uiHosts = new WeakSet([host])
     let editing = null
     let editRange = null
@@ -48,6 +49,20 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     const invoke = (operation, payload) => require('electron').ipcRenderer.invoke('web-annotations', operation, payload)
     const style = document.createElement('style')
     document.documentElement.append(style)
+
+    // Observe only while editing, solely to rescue a draft if its host is
+    // removed. Page mutations never trigger indexing or annotation rendering.
+    const draftObserver = new window.MutationObserver(() => {
+      if (!editor.hidden && !host.isConnected) {
+        document.documentElement.append(host)
+        editor.classList.add('detached')
+      }
+    })
+
+    function anchor (item) {
+      const range = anchors.get(item.uid)
+      return range && !range.collapsed && range.commonAncestorContainer.isConnected ? range : null
+    }
 
     function textIndex () {
       const walker = document.createTreeWalker(document.body, 4)
@@ -93,10 +108,9 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       clearHighlights()
       if (!window.CSS?.highlights || !window.Highlight) return
       if (!annotations.length) return
-      const index = textIndex()
       const groups = new Map()
       for (const item of annotations) {
-        const range = locate(item.data, index)
+        const range = anchor(item)
         if (!range || !/^#[0-9a-f]{6}$/i.test(item.data.color)) continue
         const color = item.data.color.toLowerCase()
         if (!groups.has(color)) groups.set(color, [])
@@ -114,8 +128,8 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     }
     async function save () {
       dirty = true
+      if (!sameSource()) { invalidateSource(); return }
       paint()
-      if (!sameSource()) ready = false
       if (saving || !ready) return
       saving = true
       while (dirty && ready) {
@@ -140,10 +154,9 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     // Closed shadow roots exclude note/editor text from anchoring and page CSS.
     function renderNotes () {
       const active = new Set()
-      let index = null
       for (const item of annotations) {
-        if (!index) index = textIndex()
-        const range = locate(item.data, index)
+        if (!item.data.notes && editing?.uid !== item.uid) continue
+        const range = anchor(item)
         if (!range) continue
         active.add(item.uid)
         let record = noteHosts.get(item.uid)
@@ -166,9 +179,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
           const end = range.cloneRange()
           end.collapse(false)
           end.insertNode(record.host)
-          // insertNode can split a text node. Rebuild only after a mutation,
-          // not once per annotation on every periodic refresh.
-          index = null
+          // All anchors are live Ranges resolved before any text-node splits.
         }
         if (record.note.textContent !== item.data.notes) record.note.textContent = item.data.notes
         record.note.onclick = () => openEditor(item)
@@ -203,7 +214,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       if (hasDraft() && editing !== item && !window.confirm('Discard unsaved note edits?')) return
       closeEditor()
       editing = item
-      editRange = locate(item.data, textIndex())
+      editRange = anchor(item)
       renderNotes()
       const record = noteHosts.get(item.uid)
       if (!record || !editRange) return
@@ -213,11 +224,13 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       editor.hidden = false
       record.note.hidden = true
       record.root.append(host)
+      draftObserver.observe(document.documentElement, { childList: true, subtree: true })
       notes.focus()
       notes.style.height = 'auto'
       notes.style.height = notes.scrollHeight + 'px'
     }
     function closeEditor () {
+      draftObserver.disconnect()
       editor.hidden = true
       editor.classList.remove('detached')
       if (host.parentNode !== document.documentElement) document.documentElement.append(host)
@@ -234,7 +247,15 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       try {
         const result = await invoke('load')
         if (!result.ok) throw new Error(result.error)
+        if (!sameSource()) { invalidateSource(); return }
         annotations = result.annotations
+        anchors.clear()
+        // One index per document load (or explicit Reload), not per annotation.
+        // Resolve every Range before inserting inline note hosts.
+        if (annotations.length) {
+          const index = textIndex()
+          for (const item of annotations) anchors.set(item.uid, locate(item.data, index))
+        }
         revision = result.revision
         dirty = false
         ready = true
@@ -298,9 +319,8 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     })
     function hitAnnotation (event) {
       if (!annotations.length) return
-      const index = textIndex()
       return annotations.find(item => {
-        const range = locate(item.data, index)
+        const range = anchor(item)
         return range && Array.from(range.getClientRects()).some(rect => event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom)
       })
     }
@@ -309,7 +329,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       const item = hitAnnotation(event)
       if (item) {
         editing = item
-        editRange = locate(item.data, textIndex())
+        editRange = anchor(item)
         editMenu.hidden = false
         positionMenu(editMenu, editRange, false)
       }
@@ -326,6 +346,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     }
     shadow.querySelector('#delete-note').onclick = () => {
       if (editing && ready && sameSource() && window.confirm('Delete this annotation?')) {
+        anchors.delete(editing.uid)
         annotations = annotations.filter(item => item !== editing)
         editing = null
         save()
@@ -341,6 +362,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       if (!ready || !selection?.text || !sameSource()) return
       const uid = Array.from(window.crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
       annotations.push({ uid, sourceType: 'webpage', data: { ...selection, color } })
+      anchors.set(uid, selectionRange.cloneRange())
       dismissPalette()
       window.getSelection().removeAllRanges()
       save()
@@ -354,8 +376,9 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       button.onclick = () => annotate(color)
       palette.append(button)
     }
-    // Re-anchor on dynamic pages; never save an old page's edits to a new URL.
-    setInterval(() => {
+    // Full reloads/redirects create a new preload and render once on load.
+    // Same-document URL changes invalidate old annotations without re-anchoring.
+    function invalidateSource () {
       if (!sameSource()) {
         ready = false
         dismissPalette()
@@ -363,11 +386,15 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
         for (const record of noteHosts.values()) record.note.hidden = true
         status.textContent = 'Page address changed. Reload the page to annotate it.'
         clearHighlights()
-      } else paint()
-    }, 1500)
+        anchors.clear()
+      }
+    }
+    if (window.navigation) window.navigation.addEventListener('currententrychange', invalidateSource)
+    window.addEventListener('popstate', invalidateSource)
+    window.addEventListener('hashchange', invalidateSource)
     window.addEventListener('beforeunload', event => {
       if (dirty || saving || hasDraft()) { event.preventDefault(); event.returnValue = '' }
     })
     load()
-  })
+  }, { once: true })
 }

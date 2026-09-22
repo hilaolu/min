@@ -3,9 +3,24 @@ const { app, BrowserWindow, ipcMain } = require('electron')
 const assert = require('node:assert/strict')
 const http = require('node:http')
 const path = require('node:path')
+const fs = require('node:fs')
+const os = require('node:os')
+const { once } = require('node:events')
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'min-web-annotations-test-'))
+const preload = path.join(temp, 'annotations.js')
+fs.writeFileSync(preload, 'window.annotationTestCounters = { indexes: 0, paints: 0 };\n' + fs.readFileSync(path.resolve(__dirname, '../js/preload/annotations.js'), 'utf8')
+  .replace('function textIndex () {', 'function textIndex () { window.annotationTestCounters.indexes++;')
+  .replace('function paint () {', 'function paint () { window.annotationTestCounters.paints++;'))
 let server
 app.whenReady().then(async () => {
-  server = http.createServer((request, response) => response.end('<html><body><p>before selected quote after</p></body></html>'))
+  server = http.createServer((request, response) => {
+    if (request.url === '/redirect') { response.writeHead(302, { Location: '/article' }); response.end(); return }
+    if (request.url === '/many') {
+      response.end('<html><body>' + Array.from({ length: 100 }, (_, i) => `<p>before selected quote ${i} after</p>`).join('') + '</body></html>')
+      return
+    }
+    response.end('<html><body><p>before selected quote after</p></body></html>')
+  })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   let loaded = false
   let saved
@@ -16,18 +31,29 @@ app.whenReady().then(async () => {
     }
     assert.equal(operation, 'load')
     loaded = true
-    return { ok: true, revision: null, annotations: [{ uid: 'test', sourceType: 'webpage', data: { color: '#ffcd45', text: 'selected quote', notes: 'note', textBefore: 'before ', textAfter: ' after' } }] }
+    return { ok: true, revision: null, annotations: saved || [{ uid: 'test', sourceType: 'webpage', data: { color: '#ffcd45', text: 'selected quote', notes: 'note', textBefore: 'before ', textAfter: ' after' } }] }
   })
-  const window = new BrowserWindow({ show: true, webPreferences: { preload: path.resolve(__dirname, '../js/preload/annotations.js'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
-  await window.loadURL(`http://127.0.0.1:${server.address().port}/`)
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const painted = await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: 'window.CSS.highlights.get("min-annotations-ffcd45")?.size || 0' }])
-    if (painted) break
-    await new Promise(resolve => setTimeout(resolve, 50))
+  const window = new BrowserWindow({ show: true, webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false } })
+  const counters = () => window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: '({ ...window.annotationTestCounters })' }])
+  async function waitForPaint (count) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if ((await counters()).paints === count) return
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    assert.equal((await counters()).paints, count, 'annotation paint count')
   }
+  await window.loadURL(`http://127.0.0.1:${server.address().port}/`)
+  await waitForPaint(1)
   assert.equal(loaded, true)
   assert.equal(await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: '[...window.CSS.highlights.get("min-annotations-ffcd45")][0].toString()' }]), 'selected quote')
   assert.equal(await window.webContents.executeJavaScript('typeof window.webAnnotations'), 'undefined')
+  assert.deepEqual(await counters(), { indexes: 1, paints: 1 })
+  await window.webContents.executeJavaScript(`
+    document.body.append(document.createElement('aside'));
+    for (let i = 0; i < 10; i++) document.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+  `)
+  await new Promise(resolve => setTimeout(resolve, 3200))
+  assert.deepEqual(await counters(), { indexes: 1, paints: 1 }, 'idle time, page mutations and unrelated clicks do not index or repaint')
   // DevTools can inspect the closed shadow root without exposing it to sites.
   const debug = window.webContents.debugger
   debug.attach('1.3')
@@ -51,6 +77,11 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 20))
     }
     assert.equal(await palette('return this.hidden'), hidden)
+  }
+  async function reloadAnnotations () {
+    const before = (await counters()).paints
+    await palette('this.getRootNode().querySelector("#reload").click()')
+    await waitForPaint(before + 1)
   }
   async function displayedNotes (clickText) {
     const { root } = await debug.sendCommand('DOM.getDocument', { depth: -1, pierce: true })
@@ -136,10 +167,12 @@ app.whenReady().then(async () => {
   await palette('this.getRootNode().querySelector("#reload").click()')
   assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me')
   assert.equal(await palette('return this.getRootNode().querySelector("#note-editor").hidden'), false)
-  // Periodic re-anchoring must preserve the editor and its unsaved draft.
+  // Idle time does not re-anchor or disturb an unsaved draft.
   await new Promise(resolve => setTimeout(resolve, 1600))
   assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me')
-  assert.equal((await displayedNotes()).length, 2)
+  assert.equal((await displayedNotes()).length, 1, 'empty notes do not create inline hosts')
+  await displayedNotes('note')
+  assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me', 'reopening the same note preserves its draft')
   // Losing the quote must not silently close the editor or discard its draft.
   await window.webContents.executeJavaScript('document.querySelector("p").textContent = "Content temporarily unavailable"')
   await new Promise(resolve => setTimeout(resolve, 1600))
@@ -150,11 +183,10 @@ app.whenReady().then(async () => {
   await window.webContents.executeJavaScript('document.querySelector("p").textContent = "before selected quote after"')
   await new Promise(resolve => setTimeout(resolve, 1600))
   assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me')
-  assert.equal(await palette('return getComputedStyle(this.getRootNode().querySelector("#note-editor")).position'), 'static')
-  await displayedNotes('note')
-  assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me', 'reopening the same note preserves its draft')
+  assert.equal(await palette('return getComputedStyle(this.getRootNode().querySelector("#note-editor")).position'), 'fixed', 'restoring page text does not re-anchor automatically')
   await palette('this.getRootNode().querySelector("#cancel-note").click()')
   assert.equal(saved[0].data.notes, 'note')
+  await reloadAnnotations()
   await clickHighlight()
   const longNote = 'First line\n' + 'A long note without truncation. '.repeat(60) + '\n<script>plain text</script>'
   await palette(`this.getRootNode().querySelector('#edit-note').click(); this.getRootNode().querySelector('#note-editor textarea').value = ${JSON.stringify(longNote)}; this.getRootNode().querySelector('#save-note').click()`)
@@ -186,6 +218,8 @@ app.whenReady().then(async () => {
   assert.equal(await palette('return this.getRootNode().querySelector("#note-editor").hidden'), true)
   await window.webContents.executeJavaScript('document.querySelector("p").textContent = "before selected quote after"')
   await new Promise(resolve => setTimeout(resolve, 1600))
+  assert.equal((await displayedNotes()).some(note => note.text === detachedNote), false, 'page mutation alone does not restore a note')
+  await reloadAnnotations()
   assert.equal((await displayedNotes()).find(note => note.text === detachedNote).hidden, false)
   await clickHighlight()
   await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: 'void (window.confirm = () => false)' }])
@@ -217,12 +251,35 @@ app.whenReady().then(async () => {
   })()`
   }]), 0, 'clicks without annotations do not scan page text')
   debug.detach()
+  // A full reload/redirect gets a fresh preload and anchors saved notes once.
+  saved = [{ uid: 'redirect-note', sourceType: 'webpage', data: { color: '#ffcd45', text: 'selected quote', notes: 'Restored after redirect', textBefore: 'before ', textAfter: ' after' } }]
+  for (const reload of [false, true]) {
+    if (reload) {
+      const finished = once(window.webContents, 'did-finish-load')
+      window.webContents.reload()
+      await finished
+    } else await window.loadURL(`http://127.0.0.1:${server.address().port}/redirect`)
+    assert.equal(new URL(window.webContents.getURL()).pathname, '/article')
+    await waitForPaint(1)
+    assert.deepEqual(await counters(), { indexes: 1, paints: 1 })
+    assert.equal(await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: '[...window.CSS.highlights.get("min-annotations-ffcd45")][0].toString()' }]), 'selected quote')
+  }
+  await window.webContents.executeJavaScript('history.pushState({}, "", "/different-article")')
+  assert.equal(await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: 'window.CSS.highlights.size' }]), 0, 'same-document navigation clears stale highlights without repainting')
+  assert.deepEqual(await counters(), { indexes: 1, paints: 1 })
+  saved = Array.from({ length: 100 }, (_, i) => ({ uid: 'many-' + i, sourceType: 'webpage', data: { color: '#ffcd45', text: 'selected quote ' + i, notes: 'Note ' + i, textBefore: 'before ', textAfter: ' after' } }))
+  await window.loadURL(`http://127.0.0.1:${server.address().port}/many`)
+  await waitForPaint(1)
+  assert.deepEqual(await counters(), { indexes: 1, paints: 1 }, '100 inline notes share one index')
+  assert.deepEqual(await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: '[...window.CSS.highlights.get("min-annotations-ffcd45")].map(range => range.toString())' }]), saved.map(item => item.data.text), 'inserting note hosts preserves all pre-resolved ranges')
   window.destroy()
-  console.log('PASS: persistent untruncated notes, inline editor Save/Cancel, deletion, palette and translucent underlines')
+  fs.rmSync(temp, { recursive: true, force: true })
+  console.log('PASS: render-on-load, redirect/reload, cached anchors, 100 inline notes, draft preservation and annotation editing')
   server.close()
   app.exit(0)
 }).catch(error => {
   console.error(error)
+  fs.rmSync(temp, { recursive: true, force: true })
   if (server) server.close()
   app.exit(1)
 })

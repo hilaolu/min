@@ -26,7 +26,12 @@ cannot write to the new destination.
 
 Highlights are restored using surrounding
 text; ambiguous or missing quotes remain in storage rather than highlighting
-an unrelated occurrence. Dynamic page text is periodically re-anchored.
+an unrelated occurrence. Saved annotations render once at the window `load`
+event. Full refreshes and redirects (including challenge-page redirects) load
+and render them again in the new document. There is no periodic re-anchoring:
+ordinary DOM changes do not rescan or repaint annotations. Refresh the page or
+use the annotation status panel's **Reload** to anchor newly loaded content.
+Creating, editing, and deleting annotations still updates the display immediately.
 
 Private tabs cannot read or write vault annotations. Conflicting disk edits stop
 saving instead of overwriting another writer; copy unsaved notes before using
