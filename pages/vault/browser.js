@@ -187,17 +187,17 @@ document.addEventListener('keydown', event => {
     showSearch()
     return
   }
-  if (!['j', 'k', 'h', 'l', 'g', 'G', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(key)) {
+  if (!['l', 'k', 'j', ';', 'g', 'G', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(key)) {
     lastG = 0
     return
   }
   event.preventDefault()
   files.focus({ preventScroll: true })
   if (key !== 'g') lastG = 0
-  if (key === 'j' || key === 'ArrowDown') select(selected + 1)
+  if (key === 'l' || key === 'ArrowDown') select(selected + 1)
   if (key === 'k' || key === 'ArrowUp') select(selected - 1)
-  if (key === 'h' || key === 'ArrowLeft') { if (parentURL) open(parentURL) }
-  if (key === 'l' || key === 'ArrowRight' || key === 'Enter') { if (entries[selected]) open(entries[selected].url) }
+  if (key === 'j' || key === 'ArrowLeft') { if (parentURL) open(parentURL) }
+  if (key === ';' || key === 'ArrowRight' || key === 'Enter') { if (entries[selected]) open(entries[selected].url) }
   if (key === 'G' || key === 'End') select(entries.length - 1)
   if (key === 'Home') select(0)
   if (key === 'g') {

@@ -193,7 +193,7 @@ async function run () {
     const observer = new MutationObserver(() => {})
     observer.observe(files, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-selected'] })
     const press = key => files.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
-    press('j')
+    press('l')
     const changedRows = [...new Set(observer.takeRecords().map(record => record.target.id))]
     press('Home')
     observer.takeRecords()
@@ -221,9 +221,9 @@ async function run () {
     const position = () => document.getElementById('position').textContent
     const positions = []
     press('k'); positions.push(position())
-    for (let i = 0; i < 6; i++) press('j')
+    for (let i = 0; i < 6; i++) press('l')
     positions.push(position())
-    press('j'); positions.push(position())
+    press('l'); positions.push(position())
     press('g'); press('g'); positions.push(position())
     press('G'); positions.push(position())
     return positions
@@ -237,7 +237,7 @@ async function run () {
     document.querySelector('#breadcrumb button').focus()
   })()`)
   assert.equal(await evaluate("document.activeElement.closest('#breadcrumb') !== null"), true)
-  await sendKey('j')
+  await sendKey('l')
   assert.deepEqual(await evaluate(`({
     focused: document.activeElement === document.getElementById('files'),
     position: document.getElementById('position').textContent
@@ -256,14 +256,14 @@ async function run () {
     'vault://Parent%20Dir/Nested%23/Alpha%20Space/'
   ])
   await evaluate("document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }))")
-  console.log('PASS boundary selection avoids duplicate preview and j/k take focus from header buttons')
+  console.log('PASS boundary selection avoids duplicate preview and l/k take focus from header buttons')
 
   await evaluate(`(() => {
     const files = document.getElementById('files')
     const press = key => files.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
     window.__vaultTest.clearOpens()
-    press('l')
-    press('Home'); press('j'); press('j'); press('Enter')
+    press(';')
+    press('Home'); press('l'); press('l'); press('Enter')
   })()`)
   assert.deepEqual(await evaluate('window.__vaultTest.opens()'), [
     'vault://Parent%20Dir/Nested%23/zeta%20%23.md',
@@ -285,7 +285,7 @@ async function run () {
     window.__vaultTest.clearOpens()
     document.querySelectorAll('#breadcrumb button').forEach(button => button.click())
     const files = document.getElementById('files')
-    files.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true, cancelable: true }))
+    files.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }))
     return window.__vaultTest.opens()
   })()`)
   assert.deepEqual(paths, [
@@ -294,7 +294,7 @@ async function run () {
     'vault://Parent%20Dir/Nested%23/',
     'vault://Parent%20Dir/'
   ])
-  console.log('PASS j/k and gg/G boundaries, h parent, l/Enter, click, and double-click URLs')
+  console.log('PASS l/k and gg/G boundaries, j parent, ;/Enter, click, and double-click URLs')
 
   const setCurrentAndRefresh = async (result, ready, label) => {
     const calls = await evaluate('window.__vaultTest.listCalls()')
@@ -312,7 +312,7 @@ async function run () {
     breadcrumb: Array.from(document.querySelectorAll('#breadcrumb button'), element => element.textContent)
   })`)
   assert.deepEqual(empty, { busy: 'false', files: 0, preview: 'No entry selected', parent: 'Vault root', position: '0 / 0', breadcrumb: ['vault://'] })
-  await evaluate("window.__vaultTest.clearOpens(); document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true, cancelable: true }))")
+  await evaluate("window.__vaultTest.clearOpens(); document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }))")
   assert.deepEqual(await evaluate('window.__vaultTest.opens()'), [], 'h is a no-op at the vault root')
 
   await setCurrentAndRefresh({ ok: false, error: 'Fixture directory denied' }, "document.getElementById('status').textContent === 'Fixture directory denied'", 'directory error')
@@ -471,7 +471,7 @@ async function run () {
   assert.equal(await evaluate("document.getElementById('fuzzy-dialog').open"), true)
   assert.equal(await evaluate('window.__vaultTest.searchCalls().length'), 0)
   await evaluate("document.getElementById('fuzzy-close').focus()")
-  await sendKey('j')
+  await sendKey('l')
   assert.equal(await evaluate('document.activeElement.id'), 'fuzzy-close', 'dialog keys do not navigate files')
   await evaluate("document.getElementById('fuzzy-close').click()")
   assert.equal(await evaluate('document.activeElement.id'), 'search-open', 'cancel restores focus')
