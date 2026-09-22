@@ -124,6 +124,46 @@ async function run () {
   assert.equal(initial.locale, 'en_US')
   assert.equal(initial.keyMap, 'vim')
   assert.equal(initial.source, '# Hello')
+  await evaluate(`(() => {
+    const view = cherry.getCodeMirror()
+    view.dispatch({ selection: { anchor: 2 } })
+    window.vimTestKey = (key, ctrlKey = false) => view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey, bubbles: true, cancelable: true }))
+    vimTestKey(';')
+  })()`)
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 3, '; moves right without recursively mapping l')
+  await evaluate("vimTestKey('j')")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 2, 'j moves left')
+  await evaluate("vimTestKey(';', true)")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 6, 'Ctrl+; moves to end')
+  await evaluate("vimTestKey('j', true)")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 0, 'Ctrl+j moves to start')
+  await evaluate("vimTestKey('i'); vimTestKey('j'); vimTestKey('j')")
+  assert.equal(await evaluate('cherry.getCodeMirror().cm.state.vim.insertMode'), true, 'jj must not exit insert mode')
+  await evaluate("vimTestKey('c', true)")
+  assert.equal(await evaluate('cherry.getCodeMirror().cm.state.vim.insertMode'), false, 'Ctrl+c exits insert mode')
+  assert.equal(await evaluate('cherry.getCodeMirror().state.doc.toString()'), '# Hello')
+  await evaluate(`(() => {
+    const view = cherry.getCodeMirror()
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: Array(20).fill('one two three').join('\\n') }, selection: { anchor: 0 } })
+  })()`)
+  await sleep(100)
+  await evaluate("vimTestKey('l')")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 14, 'l moves down')
+  await evaluate("vimTestKey('k')")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 0, 'k moves up')
+  await evaluate("vimTestKey('l', true)")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 112, 'Ctrl+l moves down eight lines')
+  await evaluate("vimTestKey('k', true)")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 0, 'Ctrl+k moves up eight lines')
+  await evaluate("vimTestKey('c', true)")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.selection.main.head'), 6, 'Ctrl+c moves two word ends')
+  await evaluate("vimTestKey('d')")
+  assert.equal(await evaluate('cherry.getCodeMirror().state.doc.line(1).text'), 'one tw three', 'd deletes a character rather than starting an operator')
+  await evaluate(`(() => {
+    const view = cherry.getCodeMirror()
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '# Hello' }, selection: { anchor: 0 } })
+  })()`)
+  console.log('PASS hardcoded Vim movement, deletion, and insert escape mappings')
   assert.deepEqual(initial.pressed, [
     ['editOnly', 'false', false],
     ['edit&preview', 'true', false],
@@ -249,7 +289,7 @@ async function run () {
 
   for (const theme of ['dark', 'light']) {
     nativeTheme.themeSource = theme
-    await until(() => evaluate(`document.querySelector('#editor .cherry').classList.contains('theme__${theme === 'dark' ? 'dark' : 'default'}')`), `${theme} editor theme`)
+    await until(() => evaluate("document.querySelector('#editor .cherry').classList.contains('theme__default')"), 'hardcoded light editor theme')
     assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), theme === 'dark' ? 'rgb(24, 29, 38)' : 'rgb(248, 249, 251)')
   }
   nativeTheme.themeSource = 'system'
@@ -261,7 +301,7 @@ async function run () {
     const footer = document.querySelector('footer').getBoundingClientRect()
     return editor.height > 300 && editor.bottom <= footer.top + 1 && footer.bottom <= innerHeight + 1
   })()`), true, 'editor and save status fit the narrow viewport')
-  console.log('PASS live light/dark themes and narrow editor layout')
+  console.log('PASS fixed light editor theme and narrow editor layout')
 }
 
 run().then(() => finish(0), error => {
