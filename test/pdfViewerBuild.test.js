@@ -1,0 +1,25 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs/promises')
+const path = require('node:path')
+const { test } = require('node:test')
+const buildPDFViewer = require('../scripts/buildPDFViewer.js')
+
+test('PDF build emits a self-contained minified bundle, one WASM and licenses', async () => {
+  await buildPDFViewer()
+  const root = path.resolve(__dirname, '..')
+  const directory = path.join(root, 'dist/pdfViewer')
+  assert.deepEqual((await fs.readdir(directory)).sort(), ['LICENSES.txt', 'pdfium.wasm', 'viewer.js', 'viewer.js.LEGAL.txt'])
+  const meta = JSON.parse(await fs.readFile(path.join(root, 'dist/pdfViewer-meta.json'), 'utf8'))
+  const output = meta.outputs['dist/pdfViewer/viewer.js']
+  // Models has a guarded Node crypto fallback; Chromium uses Web Crypto instead.
+  assert.deepEqual(output.imports.filter(item => item.kind !== 'require-call' || item.path !== 'crypto'), [], 'no external JS chunks or npm imports')
+  assert.ok(output.bytes < 2500000, 'guard against unminified/duplicate JS')
+  const original = await fs.readFile(path.join(root, 'node_modules/@embedpdf/snippet/dist/pdfium.wasm'))
+  assert.deepEqual(await fs.readFile(path.join(directory, 'pdfium.wasm')), original)
+  const licenses = await fs.readFile(path.join(directory, 'LICENSES.txt'), 'utf8')
+  assert.match(licenses, /@embedpdf\/snippet\/LICENSE/)
+  assert.match(licenses, /@embedpdf\/pdfium\/LICENSE.pdfium/)
+  assert.match(licenses, /preact\/LICENSE/)
+  const html = await fs.readFile(path.join(root, 'pages/pdfViewer/index.html'), 'utf8')
+  assert.match(html, /src="\.\.\/\.\.\/dist\/pdfViewer\/viewer.js"/)
+})

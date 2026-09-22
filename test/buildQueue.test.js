@@ -104,7 +104,7 @@ test('build queue continues queued work after an asynchronous failure', async fu
   assert.equal(builds, 3)
 })
 
-function createWatcherHarness (build) {
+function createWatcherHarness (build, buildPDFViewer = () => {}) {
   const errors = []
   const watchers = new Map()
   const modules = {
@@ -119,6 +119,7 @@ function createWatcherHarness (build) {
     './buildMain.js': () => {},
     './buildPreload.js': () => {},
     './buildBrowserStyles.js': () => {},
+    './buildPDFViewer.js': buildPDFViewer,
     './buildQueue.js': createBuildQueue,
     './buildBrowser.js': build
   }
@@ -131,7 +132,7 @@ function createWatcherHarness (build) {
     },
     console: { log: () => {}, error: (...args) => errors.push(args) }
   })
-  return { errors, ...watchers.get(path.resolve(__dirname, '../js')) }
+  return { errors, watchers, ...watchers.get(path.resolve(__dirname, '../js')) }
 }
 
 test('browser watcher awaits queued builds and recovers when a missing file is added', async function () {
@@ -174,4 +175,18 @@ test('browser watcher observes file edits, additions and removals but ignores th
   assert.deepEqual(errors, [])
   assert.equal(watcher.listenerCount('addDir'), 0)
   assert.equal(watcher.listenerCount('unlinkDir'), 0)
+})
+
+test('PDF watcher rebuilds the bundled viewer and reports build errors', async function () {
+  let builds = 0
+  const failure = new Error('PDF build failed')
+  const { watchers, errors } = createWatcherHarness(() => {}, () => {
+    if (++builds === 1) throw failure
+  })
+  const { watcher, options } = watchers.get(path.resolve(__dirname, '../pages/pdfViewer/embedViewer.js'))
+  assert.equal(options.ignoreInitial, true)
+  await watcher.listeners('change')[0]()
+  await watcher.listeners('change')[0]()
+  assert.equal(builds, 2)
+  assert.deepEqual(errors, [['Error while building PDF viewer:', failure]])
 })

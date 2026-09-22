@@ -6,6 +6,7 @@ const Arch = builder.Arch
 
 require('./createPackage.js')('linux', {arch: Arch.x64}).then(function (path) {
   const options = {
+    compression: 'maximum',
     linux: {
       target: ['AppImage'],
       icon: 'icons/icon256.png',

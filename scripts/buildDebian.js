@@ -6,6 +6,7 @@ const createPackage = require('./createPackage.js')
 
 async function afterPackageBuilt (path, arch) {
   var installerOptions = {
+    compression: 'xz',
     artifactName: 'min-${version}-${arch}.deb',
     packageName: 'min',
     icon: 'icons/icon256.png',
@@ -37,6 +38,7 @@ async function afterPackageBuilt (path, arch) {
   console.log('Creating package (this may take a while)')
 
   const options = {
+    compression: 'maximum',
     linux: {
       target: ['deb']
     },

@@ -18,6 +18,7 @@ function toArch (platform) {
 }
 require('./createPackage.js')('linux', { arch: Arch.x64 }).then(function (path) {
   var installerOptions = {
+    compression: 'xz',
     artifactName: 'min-${version}-${arch}.rpm',
     packageName: 'Min',
     icon: 'icons/icon256.png',
@@ -32,6 +33,7 @@ require('./createPackage.js')('linux', { arch: Arch.x64 }).then(function (path) 
   console.log('Creating package (this may take a while)')
 
   const options = {
+    compression: 'maximum',
     linux: {
       target: ['rpm']
     },

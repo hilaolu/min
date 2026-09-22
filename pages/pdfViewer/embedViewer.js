@@ -1,6 +1,6 @@
 /* global Blob, Option, crypto, location, vaultDisplayPath, pdfNoteLayout */
-import EmbedPDF, { PdfAnnotationSubtype, LockModeType } from '../../node_modules/@embedpdf/snippet/dist/embedpdf.js'
-import { PdfBlendMode, PdfStandardFont, PdfTextAlignment, PdfVerticalAlignment } from '../../node_modules/@embedpdf/models/dist/index.js'
+import EmbedPDF, { PdfAnnotationSubtype, LockModeType } from '@embedpdf/snippet'
+import { PdfBlendMode, PdfStandardFont, PdfTextAlignment, PdfVerticalAlignment } from '@embedpdf/models'
 
 const source = new URLSearchParams(location.search).get('url')
 const ui = Object.fromEntries(['viewer', 'status', 'highlight', 'annotations', 'note', 'color', 'save', 'delete', 'retry', 'export', 'import', 'download'].map(id => [id, document.getElementById(id)]))
@@ -328,11 +328,13 @@ async function start () {
   const viewer = EmbedPDF.init({
     type: 'container',
     target: ui.viewer,
-    wasmUrl: new URL('../../node_modules/@embedpdf/snippet/dist/pdfium.wasm', location.href).href,
+    wasmUrl: new URL('../../dist/pdfViewer/pdfium.wasm', location.href).href,
     worker: true,
     fonts: { ui: null, signature: null },
     theme: { preference: 'system' },
     fontFallback: { fonts: {} },
+    // Stamp tools are disabled; don't download their default asset library.
+    stamp: { manifests: [], defaultLibrary: false },
     documentManager: { maxDocuments: 1 },
     tabBar: 'never',
     // Other tools would imply persistence we do not provide.

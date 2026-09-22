@@ -4,6 +4,7 @@ const Arch = builder.Arch
 
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses')
 const path = require('path')
+const minifyReleaseJavaScript = require('./minifyReleaseJavaScript.js')
 
 function toPath (platform, arch) {
   if (platform == 'win32') {
@@ -43,6 +44,10 @@ function toPath (platform, arch) {
 module.exports = function (platform, extraOptions) {
   // https://github.com/electron-userland/electron-builder/issues/6365#issuecomment-1186038034
   const afterPack = async context => {
+    const appDirectory = path.join(context.packager.getResourcesDir(context.appOutDir), 'app')
+    const sizes = await minifyReleaseJavaScript(appDirectory)
+    console.log(`Release JS: ${sizes.files} files, ${sizes.before} -> ${sizes.after} bytes`)
+
     const ext = {
       darwin: '.app',
       win32: '.exe',
@@ -77,6 +82,10 @@ module.exports = function (platform, extraOptions) {
       '!**/icons/source',
       '!tab-picker/**',
       '!dist/app',
+      '!dist/pdfViewer-meta.json',
+      '!pages/pdfViewer/embedViewer.js',
+      // EmbedPDF is bundled by buildPDFViewer; ship only dist/pdfViewer assets.
+      '!**/node_modules/@embedpdf/**',
       // this is copied during the build
       '!**/icons/icon.icns',
       '!scripts/',
