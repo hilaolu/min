@@ -402,16 +402,23 @@ async function run () {
       await evaluate("document.getElementById('note').value = 'Inline note'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('save').click()")
       await until(() => evaluate("document.getElementById('annotation-editor').hidden"), 'saving closes inline note editor')
       assert.equal((await evaluate('window.pdfAnnotations.load()')).annotations[0].data.notes, 'Inline note')
+      const getNoteRect = "(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().find(a => a.commitState !== 'deleted' && a.object.custom?.vaultNoteFor)?.object.rect; })()"
+      const shortRect = await evaluate(getNoteRect)
+      await evaluate("document.getElementById('note').value = 'A longer note with several words. '.repeat(6); document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('save').click()")
+      await until(async () => (await evaluate(getNoteRect))?.size.height > shortRect.size.height, 'editing an automatic note grows its box')
+      await until(() => evaluate("!document.getElementById('save').disabled"), 'long note save complete')
+      await evaluate("document.getElementById('note').value = 'Inline note'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('save').click()")
+      await until(async () => (await evaluate(getNoteRect))?.size.height === shortRect.size.height, 'shortening an automatic note shrinks its box')
       await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('span')).some(el => el.textContent === 'Inline note' && el.getBoundingClientRect().height > 0)"), 'saved note is displayed over the PDF')
       const noteBox = await evaluate("(() => { const el = Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('span')).find(el => el.textContent === 'Inline note'); const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()")
       contents.sendInputEvent({ type: 'mouseDown', ...noteBox, button: 'left', clickCount: 1 })
       contents.sendInputEvent({ type: 'mouseUp', ...noteBox, button: 'left', clickCount: 1 })
-      const getBox = "(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().find(a => a.object.custom?.vaultNoteFor).object; })()"
+      const getBox = "(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().find(a => a.commitState !== 'deleted' && a.object.custom?.vaultNoteFor).object; })()"
       const autoBox = await evaluate(getBox)
       assert.deepEqual(await evaluate(`(async () => {
         const r = await document.querySelector('embedpdf-container').registry
         const api = r.getPlugin('annotation').provides()
-        const box = api.getAnnotations().find(a => a.object.custom?.vaultNoteFor).object
+        const box = api.getAnnotations().find(a => a.commitState !== 'deleted' && a.object.custom?.vaultNoteFor).object
         const highlight = api.getAnnotations().find(a => a.object.id === box.custom.vaultNoteFor).object
         return [api.isAnnotationStructurallyLocked(box), api.isAnnotationContentLocked(box), api.isAnnotationInteractive(highlight), api.isAnnotationInteractive({ ...box, id: 'not-a-vault-note' })]
       })()`), [false, true, false, false], 'only display companions allow geometry changes; text and source annotations stay protected')

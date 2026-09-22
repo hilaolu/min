@@ -1,4 +1,4 @@
-/* global Blob, Option, crypto, location, vaultDisplayPath */
+/* global Blob, Option, crypto, location, vaultDisplayPath, pdfNoteLayout */
 import EmbedPDF, { PdfAnnotationSubtype, LockModeType } from '../../node_modules/@embedpdf/snippet/dist/embedpdf.js'
 import { PdfBlendMode, PdfStandardFont, PdfTextAlignment, PdfVerticalAlignment } from '../../node_modules/@embedpdf/models/dist/index.js'
 
@@ -13,6 +13,7 @@ let documentId
 let pageCount = 0
 let pages = []
 let noteBoxes = new Map()
+let noteLayouts = new Map()
 let searchScope
 let commands
 let searchGeneration = 0
@@ -94,6 +95,7 @@ function showNote () {
 }
 function render () {
   const layouts = new Map(Array.from(noteBoxes, ([uid, box]) => [uid, scope.getAnnotationById(box.id)?.object.rect]))
+  const nextLayouts = new Map()
   for (const item of rendered) scope.deleteAnnotation(item.data.pageIndex, item.uid)
   for (const box of noteBoxes.values()) scope.deleteAnnotation(box.pageIndex, box.id)
   noteBoxes = new Map()
@@ -133,11 +135,17 @@ function render () {
     const right = highlight.origin.x + highlight.size.width + 6
     const x = right + width <= page.size.width ? right : Math.max(0, Math.min(highlight.origin.x, page.size.width - width))
     const y = right + width <= page.size.width ? highlight.origin.y : highlight.origin.y + highlight.size.height + 6
+    const automatic = {
+      origin: { x, y: Math.max(0, Math.min(y, page.size.height - height)) },
+      size: { width, height }
+    }
+    const layout = pdfNoteLayout(automatic, noteLayouts.get(item.uid), layouts.get(item.uid))
+    nextLayouts.set(item.uid, layout)
     noteBoxes.set(item.uid, {
       id: 'min-note-' + crypto.randomUUID(),
       type: PdfAnnotationSubtype.FREETEXT,
       pageIndex: item.data.pageIndex,
-      rect: layouts.get(item.uid) || { origin: { x, y: Math.max(0, Math.min(y, page.size.height - height)) }, size: { width, height } },
+      rect: { origin: { ...layout.rect.origin }, size: { ...layout.rect.size } },
       // Native handles may change geometry, but note text is edited through the vault UI.
       flags: ['lockedContents'],
       contents,
@@ -152,6 +160,7 @@ function render () {
       custom: { vaultNoteFor: item.uid }
     })
   }
+  noteLayouts = nextLayouts
   scope.importAnnotations(annotations.map(item => ({
     annotation: {
       id: item.uid,
