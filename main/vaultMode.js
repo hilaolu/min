@@ -182,6 +182,8 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
     async function scan (url, recursive) {
       const folder = await resolveVaultURL(url, record.root)
       for (const name of await fs.promises.readdir(folder.absolutePath)) {
+        // Skip hidden directories before recursion so their contents stay hidden too.
+        if (name.startsWith('.')) continue
         try {
           const file = await resolveVaultURL(folder.vaultURL + encodeURIComponent(name), record.root)
           if (!['directory', 'markdown', 'file'].includes(file.kind)) continue

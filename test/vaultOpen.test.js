@@ -6,6 +6,54 @@ const test = require('node:test')
 const EventEmitter = require('node:events')
 const createVaultMode = require('../main/vaultMode.js')
 
+test('explorer excludes hidden files and folders from listings and recursive search', async t => {
+  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'min-vault-list-'))
+  t.after(() => fs.rmSync(userDataPath, { recursive: true, force: true }))
+  const root = path.join(userDataPath, '.vault')
+  for (const name of [
+    'note.md',
+    'ordinary.file.txt',
+    '.note.md',
+    '.config',
+    '.hidden/note.md',
+    'visible/note.md',
+    'visible/.note.md',
+    'visible/.hidden/note.md'
+  ]) {
+    const file = path.join(root, name)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, '')
+  }
+  fs.writeFileSync(path.join(userDataPath, 'vault-root.json'), JSON.stringify({ root }))
+  const handlers = new Map()
+  const contents = Object.assign(new EventEmitter(), {
+    id: 1,
+    mainFrame: { url: '' },
+    getURL () { return this.mainFrame.url },
+    isDestroyed: () => false
+  })
+  const mode = createVaultMode({
+    userDataPath,
+    ipc: { handle: (name, handler) => handlers.set(name, handler) },
+    dialog: {},
+    isTab: sender => sender === contents
+  })
+  t.after(() => mode.destroy())
+  contents.mainFrame.url = await mode.navigate(contents, 'vault://')
+  const event = { sender: contents, senderFrame: contents.mainFrame }
+  const list = async (query, directory) => {
+    const result = await handlers.get('vault:list')(event, query, directory)
+    assert.equal(result.ok, true)
+    return result.entries.map(entry => entry.relativePath).sort()
+  }
+  assert.deepEqual(await list('', 'vault://'), ['note.md', 'ordinary.file.txt', 'visible'])
+  assert.deepEqual(await list('', 'vault://visible/'), ['visible/note.md'])
+  assert.deepEqual(await list('note'), ['note.md', 'visible/note.md'])
+  assert.deepEqual(await list('hidden'), [])
+  assert.deepEqual(await list('config'), [])
+  assert.deepEqual(await list('file'), ['ordinary.file.txt'])
+})
+
 test('explorer opens Markdown in new tabs without replacing its directory', async t => {
   const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'min-vault-open-'))
   t.after(() => fs.rmSync(userDataPath, { recursive: true, force: true }))
