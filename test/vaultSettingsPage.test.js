@@ -25,14 +25,18 @@ function element () {
   }
 }
 
-function fixture () {
+function fixture (withAnnotations = false) {
   const elements = {
     'vault-root-form': element(),
     'vault-root-path': element(),
     'select-vault-root': element(),
     'vault-root-status': element()
   }
+  if (withAnnotations) {
+    for (const id of ['annotation-folder-form', 'annotation-folder-path', 'save-annotation-folder', 'annotation-folder-status']) elements[id] = element()
+  }
   return {
+    elements,
     document: { getElementById: id => elements[id] },
     form: elements['vault-root-form'],
     input: elements['vault-root-path'],
@@ -40,6 +44,33 @@ function fixture () {
     status: elements['vault-root-status']
   }
 }
+
+test('annotation folder Settings loads without replacing edits, saves and reports failures', async () => {
+  const page = fixture(true)
+  const result = deferred()
+  const form = page.elements['annotation-folder-form']
+  const input = page.elements['annotation-folder-path']
+  const button = page.elements['save-annotation-folder']
+  const status = page.elements['annotation-folder-status']
+  const initialization = initializeVaultSettings(page.document, {
+    getRoot: async () => ({ ok: true, directory: '/vault' }),
+    getAnnotationFolder: () => result.promise,
+    setAnnotationFolder: async folder => folder === '../outside' ? { ok: false, error: 'Invalid folder' } : { ok: true, folder }
+  })
+  assert.equal(button.disabled, true)
+  input.value = 'Research/Annotations'
+  await input.dispatch('input')
+  result.resolve({ ok: true, folder: 'Annotations' })
+  await initialization
+  assert.equal(input.value, 'Research/Annotations')
+  await form.dispatch('submit')
+  assert.match(status.textContent, /^Saved/)
+  assert.equal(button.disabled, false)
+  input.value = '../outside'
+  await form.dispatch('submit')
+  assert.equal(status.textContent, 'Invalid folder')
+  assert.equal(input.disabled, false)
+})
 
 test('loads the initially saved vault path', async () => {
   const page = fixture()

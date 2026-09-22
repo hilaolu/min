@@ -323,7 +323,7 @@ test('PDF index observes JSON migration, Markdown saves and empty deletion autho
   const rect = { origin: { x: 1, y: 2 }, size: { width: 3, height: 4 } }
   const annotations = [{ uid: 'pdf-id', sourceType: 'pdf', data: { text: 'quote', notes: '', textBefore: '', textAfter: '', color: '#ffeb3b', pageIndex: 0, rect, segmentRects: [rect] } }]
   assert.deepEqual((await index.searchAnnotations('p', '')).entries, [])
-  const directory = path.join(root, '.min-annotations')
+  const directory = path.join(root, 'Annotations')
   await fs.mkdir(directory)
   const jsonFile = path.join(directory, require('crypto').createHash('sha256').update(source).digest('hex') + '.json')
   const json = JSON.stringify({ version: 1, source, annotations })

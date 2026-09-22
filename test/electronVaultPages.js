@@ -421,7 +421,7 @@ async function run () {
       await load('vault://a.txt', "document.body.innerText.includes('alpha')")
       await load('vault://reference.pdf', pdfReady)
       assert.equal(await evaluate("document.getElementById('note').value"), 'Guarded note', 'Save-on-leave persists PDF note')
-      const storagePath = path.join(root, '.min-annotations', fs.readdirSync(path.join(root, '.min-annotations'))[0])
+      const storagePath = path.join(root, 'Annotations', fs.readdirSync(path.join(root, 'Annotations'))[0])
       assert.equal(path.extname(storagePath), '.md')
       const external = annotationMarkdown.parse(fs.readFileSync(storagePath, 'utf8'))
       external.annotations[0].data.notes = 'External note'

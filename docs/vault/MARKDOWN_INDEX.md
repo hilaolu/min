@@ -44,7 +44,9 @@ title, URL, tags and annotation counts are retained, not highlight text/geometry
 PDF source availability is checked again before returning results. Local PDFs
 remain supported, but remote PDFs need no local PDF copy.
 
-New PDF saves go to `.min-annotations/<sha256(source URL)>.md`. The versioned
+New PDF saves go to `<annotation store path>/<sha256(source URL)>.md`, relative
+to the vault. The folder defaults to `Annotations` and is configurable in
+Settings → Vault; its entire subtree is excluded from `>m`. The versioned
 Markdown format stores readable fenced quote/context/note sections and hidden
 source/geometry metadata. It round-trips whitespace, markup and PDF coordinates
 without loss. Source query parameters are preserved; fragments are excluded

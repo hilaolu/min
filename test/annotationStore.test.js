@@ -36,7 +36,7 @@ function annotation (uid = 'annotation-1', changes = {}) {
 
 function annotationFile (root, pdfSource = source, extension = 'md') {
   const digest = crypto.createHash('sha256').update(pdfSource).digest('hex')
-  return path.join(root, '.min-annotations', `${digest}.${extension}`)
+  return path.join(root, 'Annotations', `${digest}.${extension}`)
 }
 
 test('saves and loads PDF geometry, text, notes, colors, and IDs', async t => {
@@ -135,14 +135,14 @@ test('enforces annotation count, encoded-size, and field-length schema limits', 
 test('denies symlinked annotation directories and files', async t => {
   const root = profile(t)
   const outside = profile(t)
-  const directory = path.join(root, '.min-annotations')
+  const directory = path.join(root, 'Annotations')
   fs.symlinkSync(outside, directory, 'dir')
   const store = createStore(root, source)
   await assert.rejects(store.read(), /Unsafe annotation directory/)
   await assert.rejects(store.save([annotation()], null), /Unsafe annotation directory/)
 
   const fileRoot = profile(t)
-  const fileDirectory = path.join(fileRoot, '.min-annotations')
+  const fileDirectory = path.join(fileRoot, 'Annotations')
   fs.mkdirSync(fileDirectory)
   const target = path.join(outside, 'target.json')
   fs.writeFileSync(target, '{}')
@@ -153,7 +153,7 @@ test('denies symlinked annotation directories and files', async t => {
 
 test('rejects a source-mismatched record without rewriting it', async t => {
   const root = profile(t)
-  fs.mkdirSync(path.join(root, '.min-annotations'))
+  fs.mkdirSync(path.join(root, 'Annotations'))
   const file = annotationFile(root, source, 'json')
   const original = JSON.stringify({ version: 1, source: 'https://other.example/file.pdf', annotations: [] })
   fs.writeFileSync(file, original)
@@ -166,7 +166,7 @@ test('rejects a source-mismatched record without rewriting it', async t => {
 
 test('migrates an unchanged legacy JSON revision to Markdown without changing JSON bytes', async t => {
   const root = profile(t)
-  const directory = path.join(root, '.min-annotations')
+  const directory = path.join(root, 'Annotations')
   const jsonFile = annotationFile(root, source, 'json')
   const markdownFile = annotationFile(root)
   const items = [annotation('legacy-id')]
@@ -185,7 +185,7 @@ test('migrates an unchanged legacy JSON revision to Markdown without changing JS
 
 test('an empty Markdown record wins over JSON and makes the JSON revision stale', async t => {
   const root = profile(t)
-  const directory = path.join(root, '.min-annotations')
+  const directory = path.join(root, 'Annotations')
   const jsonFile = annotationFile(root, source, 'json')
   const markdownFile = annotationFile(root)
   const jsonText = JSON.stringify({ version: 1, source, annotations: [annotation('legacy-id')] })
@@ -207,7 +207,7 @@ test('cancels before writing when current returns false, including after an awai
   const root = profile(t)
   const store = createStore(root, source)
   await assert.rejects(store.save([annotation()], null, () => false), /Document or vault changed/)
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
 
   let checks = 0
   await assert.rejects(
@@ -219,7 +219,7 @@ test('cancels before writing when current returns false, including after an awai
 
 test('preserves malformed on-disk data on read and attempted save', async t => {
   const root = profile(t)
-  fs.mkdirSync(path.join(root, '.min-annotations'))
+  fs.mkdirSync(path.join(root, 'Annotations'))
   const file = annotationFile(root, source, 'json')
   const original = '{ this is not JSON\n'
   fs.writeFileSync(file, original)
@@ -240,7 +240,7 @@ test('missing vault is an error, while missing annotation storage is empty', asy
 
 test('rejects invalid UTF-8 and oversized files without replacing their bytes', async t => {
   const root = profile(t)
-  fs.mkdirSync(path.join(root, '.min-annotations'))
+  fs.mkdirSync(path.join(root, 'Annotations'))
   const file = annotationFile(root, source, 'json')
   const store = createStore(root, source)
   const text = JSON.stringify({ version: 1, source, annotations: [annotation('utf8')] })

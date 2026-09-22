@@ -55,7 +55,7 @@ Useful note
 }
 function nativeFile (root, nativeSource = source, extension = 'md') {
   const digest = crypto.createHash('sha256').update(nativeSource).digest('hex')
-  return path.join(root, '.min-annotations', `${digest}.${extension}`)
+  return path.join(root, 'Annotations', `${digest}.${extension}`)
 }
 function fixture (t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'min-annotated-search-'))
@@ -83,7 +83,7 @@ test('discovers archived legacy annotations, not raw PDFs, and opens the PDF wra
     assert.deepEqual((await search(root, query)).entries, [])
   }
   assert.equal(fs.readFileSync(filename, 'utf8'), legacy())
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
 })
 
 test('discovers and ranks webpage annotations separately, opens original URLs, and routes mixed records to PDF', async t => {
@@ -134,7 +134,7 @@ test('legacy annotations hydrate through IPC; native edits and empty stores over
   const event = { sender, senderFrame: frame }
   const loaded = await handler(event, 'load')
   assert.deepEqual(loaded, { ok: true, revision: null, annotations: [annotation] })
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
   const saved = await handler(event, 'save', { revision: null, annotations: [] })
   assert.equal(saved.ok, true)
   assert.deepEqual((await handler(event, 'load')).annotations, [])
@@ -153,7 +153,7 @@ test('native annotations are discoverable without legacy records; stale scans fa
 test('legacy native JSON remains discoverable, while Markdown is authoritative even when empty or malformed', async t => {
   const { root, filename } = fixture(t)
   fs.unlinkSync(filename)
-  const directory = path.join(root, '.min-annotations')
+  const directory = path.join(root, 'Annotations')
   fs.mkdirSync(directory)
   const jsonFile = nativeFile(root, source, 'json')
   const markdownFile = nativeFile(root)

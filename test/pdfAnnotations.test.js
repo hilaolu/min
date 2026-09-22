@@ -114,7 +114,7 @@ test('rejects legacy imports whose source is not the current PDF', async t => {
   await handler({ sender }, 'load')
   const result = await handler({ sender }, 'import', legacy('https://other.example/document.pdf'))
   assert.deepEqual(result, { ok: false, error: 'Legacy annotation URL does not match this PDF' })
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
 })
 
 test('rejects a stale context observed after an asynchronous load', async t => {
@@ -140,8 +140,8 @@ test('save requires a load binding and cannot cross root generations', async t =
   assert.equal((await handler({ sender }, 'save', payload)).ok, false)
   assert.equal((await handler({ sender }, 'load')).ok, true)
   generation++
-  assert.match((await handler({ sender }, 'save', payload)).error, /Reload PDF/)
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.match((await handler({ sender }, 'save', payload)).error, /Reload annotations/)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
 })
 
 test('local PDF read is source-bound, validates PDF bytes and works privately without a vault', async t => {
@@ -158,7 +158,7 @@ test('local PDF read is source-bound, validates PDF bytes and works privately wi
   assert.match((await handler({ sender }, 'read-file')).error, /Not a PDF/)
   pdfSource = 'https://example.com/document.pdf'
   assert.match((await handler({ sender }, 'read-file')).error, /Not a local PDF/)
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
 })
 
 test('versioned backup JSON imports losslessly without writing before confirmation', async t => {
@@ -170,5 +170,5 @@ test('versioned backup JSON imports losslessly without writing before confirmati
   assert.deepEqual(await handler({ sender }, 'import', JSON.stringify(backup)), { ok: true, annotations: [annotation()] })
   backup.version = 2
   assert.equal((await handler({ sender }, 'import', JSON.stringify(backup))).ok, false)
-  assert.equal(fs.existsSync(path.join(root, '.min-annotations')), false)
+  assert.equal(fs.existsSync(path.join(root, 'Annotations')), false)
 })

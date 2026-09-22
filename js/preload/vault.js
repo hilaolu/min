@@ -12,7 +12,9 @@ if (process.isMainFrame && window.location.href.split('?')[0] === 'min://app/pag
 if (process.isMainFrame && window.location.href === 'min://app/pages/settings/index.html') {
   require('electron').contextBridge.exposeInMainWorld('vaultSettings', {
     getRoot: () => require('electron').ipcRenderer.invoke('vault:get-root'),
-    selectRoot: directory => require('electron').ipcRenderer.invoke('vault:select-root', directory)
+    selectRoot: directory => require('electron').ipcRenderer.invoke('vault:select-root', directory),
+    getAnnotationFolder: () => require('electron').ipcRenderer.invoke('vault:get-annotation-folder'),
+    setAnnotationFolder: folder => require('electron').ipcRenderer.invoke('vault:set-annotation-folder', folder)
   })
 }
 

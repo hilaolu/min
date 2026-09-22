@@ -44,7 +44,8 @@ verification. This is not annotation persistence acceptance.
 Implemented for PDF records in `main/annotationStore.js` and
 `main/pdfAnnotations.js`. Contract:
 
-- Files: `<vault>/.min-annotations/<sha256(source URL)>.json`.
+- Files now use `<vault>/<annotation store path>/<sha256(source URL)>.md`;
+  the configured folder defaults to `Annotations` (Settings → Vault).
 - Envelope: `{version:1, source, annotations}`; each record carries `uid`,
   `sourceType:'pdf'`, and plugin-shaped `data` (text/context, notes, color,
   zero-based page index and native EmbedPDF rect/segmentRects).

@@ -19,7 +19,7 @@ function installPdfAnnotations ({ ipc, context, sourceType = 'pdf' }) {
       const current = () => {
         try {
           const next = context(event, operation)
-          return next.root === captured.root && next.generation === captured.generation && next.source === captured.source
+          return next.root === captured.root && next.generation === captured.generation && next.source === captured.source && next.annotationFolder === captured.annotationFolder
         } catch (_) { return false }
       }
       if (operation === 'read-file') {
@@ -48,15 +48,15 @@ function installPdfAnnotations ({ ipc, context, sourceType = 'pdf' }) {
       if (!event.sender.session?.isPersistent()) throw new Error('Vault annotations are disabled in private tabs')
       if (operation !== 'load') {
         const binding = bindings.get(event.sender)
-        if (!binding || binding.frame !== event.senderFrame || binding.root !== captured.root || binding.generation !== captured.generation || binding.source !== source) throw new Error('Reload PDF annotations after the document or vault changes')
+        if (!binding || binding.frame !== event.senderFrame || binding.root !== captured.root || binding.generation !== captured.generation || binding.source !== source || binding.annotationFolder !== captured.annotationFolder) throw new Error('Reload annotations after the document or vault changes')
       }
-      const store = createStore(captured.root, source)
+      const store = createStore(captured.root, source, captured.annotationFolder)
       let result
       if (operation === 'load') {
         result = await store.read()
         if (!current()) throw new Error('Document or vault changed')
         if (result.revision === null) {
-          const legacy = await discover(captured.root, current)
+          const legacy = await discover(captured.root, current, undefined, captured.annotationFolder)
           const resource = legacy.resources.find(item => item.source === source && item.sourceType === sourceType)
           if (resource) result.annotations = resource.annotations
           else if (legacy.truncated || legacy.invalidSources.has(source)) throw new Error('Annotation discovery incomplete; check legacy records in the vault')
@@ -73,7 +73,7 @@ function installPdfAnnotations ({ ipc, context, sourceType = 'pdf' }) {
       } else throw new Error('Unknown annotation operation')
       if (!current()) throw new Error('Document or vault changed')
       if (result.annotations.some(item => item.sourceType !== sourceType)) throw new Error('Annotation source type mismatch')
-      if (operation === 'load') bindings.set(event.sender, { frame: event.senderFrame, root: captured.root, generation: captured.generation, source })
+      if (operation === 'load') bindings.set(event.sender, { frame: event.senderFrame, root: captured.root, generation: captured.generation, source, annotationFolder: captured.annotationFolder })
       return { ok: true, ...result }
     } catch (error) {
       return { ok: false, error: error.message }

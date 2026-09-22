@@ -45,7 +45,7 @@ function eventFor (contents, frame = contents.mainFrame) {
 
 test('pdf annotation IPC enforces the viewer, tab, frame, source, and session authority', async t => {
   const { handler, root } = harness(t)
-  const annotations = path.join(root, '.min-annotations')
+  const annotations = path.join(root, 'Annotations')
   const viewer = 'min://app/pages/pdfViewer/index.html?url=https://example.com/document.pdf'
   const tab = sender(viewer)
 
@@ -116,6 +116,6 @@ test('root change admits only the prepared PDF Save to the old vault before swit
   settings.id = 2
   const result = await handlers.get('vault:select-root')(eventFor(settings), nextRoot)
   assert.equal(result.ok, true, result.error)
-  assert.equal(fs.readdirSync(path.join(root, '.min-annotations')).length, 1)
-  assert.equal(fs.existsSync(path.join(nextRoot, '.min-annotations')), false)
+  assert.equal(fs.readdirSync(path.join(root, 'Annotations')).length, 1)
+  assert.equal(fs.existsSync(path.join(nextRoot, 'Annotations')), false)
 })

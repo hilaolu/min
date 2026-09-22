@@ -26,6 +26,13 @@
           <button id="select-vault-root" type="submit" disabled>Save</button>
         </form>
         <p id="vault-root-status" role="status"></p>
+        <form id="annotation-folder-form">
+          <label for="annotation-folder-path">Annotation store path</label>
+          <input id="annotation-folder-path" type="text" required autocomplete="off" spellcheck="false" placeholder="Annotations" aria-describedby="annotation-folder-help annotation-folder-status">
+          <button id="save-annotation-folder" type="submit" disabled>Save</button>
+        </form>
+        <p id="annotation-folder-help">Folder relative to the vault, created when annotations are saved. Excluded from &gt;m. Existing files are not moved; reload annotation tabs after changing this setting.</p>
+        <p id="annotation-folder-status" role="status"></p>
       </div>
     </div>
 

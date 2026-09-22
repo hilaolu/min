@@ -8,6 +8,7 @@ const annotationMarkdown = require('./annotationMarkdown.js')
 const parseLegacy = require('./annotationLegacy.js')
 const { isHiddenPath } = require('./vaultSearchPaths.js')
 const visitCandidates = require('./annotationCandidates.js')
+const annotationPaths = require('./annotationPaths.js')
 
 const MAX_RESULTS = 20
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0
@@ -63,9 +64,9 @@ async function readRecord (file) {
 }
 
 // Decode one candidate without mutating the aggregate resource/precedence state.
-async function decodeCandidate (file, root) {
+async function decodeCandidate (file, root, folder) {
   let recordSource
-  const nativeMatch = file.relativePath.match(/^\.min-annotations\/([a-f0-9]{64})\.(md|json)$/)
+  const nativeMatch = annotationPaths.nativeMatch(file.relativePath, folder)
   try {
     if (!file.stat.isFile() || (!nativeMatch && !/\.md$/i.test(file.relativePath))) return
     const text = await readRecord(file)
@@ -105,7 +106,8 @@ async function decodeCandidate (file, root) {
 
 // No writes or network requests. Legacy Markdown may live in a moved archive,
 // not just the plugin's default Annotations folder.
-async function discover (root, isCurrent = () => true, snapshot) {
+async function discover (root, isCurrent = () => true, snapshot, folder = annotationPaths.defaultFolder) {
+  folder = annotationPaths.normalizeFolder(folder)
   const resources = new Map()
   const ambiguous = new Set()
   const invalidSources = new Set()
@@ -114,7 +116,7 @@ async function discover (root, isCurrent = () => true, snapshot) {
   const diagnostics = []
 
   async function inspect (file, diagnostic) {
-    const decoded = await decodeCandidate(file, root)
+    const decoded = await decodeCandidate(file, root, folder)
     if (!decoded) return
     if (decoded.failed) {
       if (decoded.invalidSource) invalidSources.add(decoded.invalidSource)
@@ -144,7 +146,7 @@ async function discover (root, isCurrent = () => true, snapshot) {
       continue
     }
     try {
-      const stored = await createStore(root, source).read()
+      const stored = await createStore(root, source, folder).read()
       if (stored.revision !== null) {
         const previous = resources.get(source)
         const sourceType = stored.annotations[0]?.sourceType || previous?.sourceType || 'pdf'

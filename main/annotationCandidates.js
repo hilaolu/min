@@ -1,12 +1,12 @@
 const fs = require('fs')
 const { resolveVaultURL } = require('./vault.js')
-const { isHiddenPath, isAnnotationMetadata } = require('./vaultSearchPaths.js')
+const { isHiddenPath } = require('./vaultSearchPaths.js')
 
 const MAX_VISITED_ENTRIES = 20000
 const MAX_DEPTH = 32
 
 function excluded (relativePath) {
-  return (isHiddenPath(relativePath) && !isAnnotationMetadata(relativePath)) || relativePath.split('/').includes('node_modules')
+  return isHiddenPath(relativePath) || relativePath.split('/').includes('node_modules')
 }
 
 // Enumeration only. Callers own record decoding and resource precedence.

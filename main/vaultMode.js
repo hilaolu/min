@@ -5,11 +5,17 @@ const createAccess = require('./vaultAccess.js')
 const { canonicalRoot, resolveVaultURL } = require('./vault.js')
 const { parseVaultURL } = require('../js/util/vaultURL.js')
 const { createNote } = require('./vaultNotes.js')
+const { defaultFolder, normalizeFolder } = require('./annotationPaths.js')
 
 function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => false }) {
   // Deliberately not a generic setting: pages cannot mutate this through
   // settings:set, and the absolute root is never broadcast to other pages.
   const configPath = path.join(userDataPath, 'vault-root.json')
+  const annotationConfigPath = path.join(userDataPath, 'annotation-folder.json')
+  let annotationFolder = defaultFolder
+  try {
+    annotationFolder = normalizeFolder(JSON.parse(fs.readFileSync(annotationConfigPath, 'utf8')).folder)
+  } catch (_) {}
   let root = null
   let savedDirectory = ''
   let changing = false
@@ -38,7 +44,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       if (!current()) throw new Error('Vault changing')
       if (fileIndex?.failed) await closeFileIndex()
       if (!current()) throw new Error('Vault changing')
-      if (!fileIndex) fileIndex = require('./vaultFileIndex.js')(capturedRoot)
+      if (!fileIndex) fileIndex = require('./vaultFileIndex.js')(capturedRoot, annotationFolder)
       return kind === 'm'
         ? await fileIndex.search(query.trim(), current)
         : await fileIndex.searchAnnotations(kind, query.trim(), current)
@@ -78,7 +84,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       const source = url.searchParams.get('url')
       if (!source) throw new Error('Missing PDF source')
       if (new URL(source).protocol === 'vault:') current(event, ['pdf'])
-      return { root, source, generation: annotationGeneration }
+      return { root, source, generation: annotationGeneration, annotationFolder }
     }
   })
 
@@ -89,7 +95,7 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
       if (changing || !isTab(event.sender) || event.sender.isDestroyed?.() || event.senderFrame !== event.sender.mainFrame) throw new Error('Annotation caller denied')
       const url = new URL(event.senderFrame.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Annotation caller denied')
-      return { root, source: url.href, generation: annotationGeneration }
+      return { root, source: url.href, generation: annotationGeneration, annotationFolder }
     }
   })
 
@@ -247,6 +253,31 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
   ipc.handle('vault:get-root', event => {
     if (!isSettings(event)) return { ok: false, error: 'Caller denied' }
     return { ok: true, directory: savedDirectory }
+  })
+
+  ipc.handle('vault:get-annotation-folder', event => {
+    if (!isSettings(event)) return { ok: false, error: 'Caller denied' }
+    return { ok: true, folder: annotationFolder }
+  })
+
+  ipc.handle('vault:set-annotation-folder', async (event, folder) => {
+    if (!isSettings(event)) return { ok: false, error: 'Caller denied' }
+    if (changing) return { ok: false, error: 'A vault settings change is already in progress.' }
+    changing = true
+    try {
+      folder = normalizeFolder(folder)
+      if (folder === annotationFolder) return { ok: true, folder }
+      await require('./annotationStore.js').drain()
+      if (!isSettings(event)) throw new Error('Settings closed')
+      await writeFileAtomic(annotationConfigPath, JSON.stringify({ folder }))
+      annotationFolder = folder
+      annotationGeneration++
+      searchGeneration++
+      await closeFileIndex()
+      return { ok: true, folder }
+    } catch (error) {
+      return { ok: false, error: error.message }
+    } finally { changing = false }
   })
 
   ipc.handle('vault:select-root', async (event, directory) => {

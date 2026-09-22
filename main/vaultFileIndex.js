@@ -1,11 +1,13 @@
 const path = require('path')
 const chokidar = require('chokidar')
 const { resolveVaultURL } = require('./vault.js')
-const { isHiddenPath, isAnnotationMetadata } = require('./vaultSearchPaths.js')
+const { isHiddenPath } = require('./vaultSearchPaths.js')
+const { isInFolder, nativeMatch, normalizeFolder, defaultFolder } = require('./annotationPaths.js')
 
 // One watcher shared by path and annotation metadata indexes. No contents or
 // absolute paths leave main through picker results.
-function createVaultFileIndex (root) {
+function createVaultFileIndex (root, annotationFolder = defaultFolder) {
+  annotationFolder = normalizeFolder(annotationFolder)
   const entries = new Map()
   let watcher
   let failure
@@ -29,8 +31,8 @@ function createVaultFileIndex (root) {
         ignoreInitial: false,
         ignored: (file, stat) => {
           const relative = path.relative(root, file).split(path.sep).join('/')
-          if (isHiddenPath(relative)) return !isAnnotationMetadata(relative)
-          return stat && stat.isFile() && !/\.(md|pdf)$/i.test(file)
+          if (isHiddenPath(relative)) return true
+          return stat && stat.isFile() && !/\.(md|pdf)$/i.test(file) && !nativeMatch(relative, annotationFolder)
         }
       })
       const update = (file, stat) => {
@@ -99,7 +101,7 @@ function createVaultFileIndex (root) {
         if (!annotationSnapshot || annotationVersion !== captured) {
           annotationVersion = captured
           const files = Array.from(entries.values()).filter(entry => /\.(md|json)$/i.test(entry.relativePath))
-          annotationSnapshot = discover(root, () => !closed && !failure, files).then(result => ({
+          annotationSnapshot = discover(root, () => !closed && !failure, files, annotationFolder).then(result => ({
             ...result,
             // The picker needs metadata, not retained highlight text/geometry.
             resources: result.resources.map(({ annotations, ...resource }) => ({ ...resource, annotationCount: annotations.length }))
@@ -126,7 +128,7 @@ function createVaultFileIndex (root) {
       // Content edits invalidate annotation metadata, not filename membership.
       if (sortedVersion !== pathVersion) {
         sortedPaths = Array.from(entries.values())
-          .filter(entry => !isHiddenPath(entry.relativePath) && /\.md$/i.test(entry.relativePath))
+          .filter(entry => !isHiddenPath(entry.relativePath) && !isInFolder(entry.relativePath, annotationFolder) && /\.md$/i.test(entry.relativePath))
           .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
         sortedVersion = pathVersion
         previousSearch = null

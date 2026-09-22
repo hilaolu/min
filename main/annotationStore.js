@@ -3,6 +3,7 @@ const path = require('path')
 const crypto = require('crypto')
 const atomic = require('write-file-atomic')
 const annotationMarkdown = require('./annotationMarkdown.js')
+const { normalizeFolder, defaultFolder } = require('./annotationPaths.js')
 
 const maximumBytes = 1024 * 1024
 const queues = new Map()
@@ -44,17 +45,22 @@ function validateAnnotations (items) {
   })
 }
 
-function createStore (root, source) {
-  const directory = path.join(root, '.min-annotations')
+function createStore (root, source, folder = defaultFolder) {
+  folder = normalizeFolder(folder)
+  const directory = path.join(root, folder)
   const basename = path.join(directory, digest(source))
   const markdownFilename = basename + '.md'
   const jsonFilename = basename + '.json'
   async function checkDirectory (create) {
     const rootStat = await fs.promises.lstat(root).catch(() => { throw new Error('Vault unavailable') })
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('Vault unavailable')
-    if (create) await fs.promises.mkdir(directory).catch(error => { if (error.code !== 'EEXIST') throw error })
-    const stat = await fs.promises.lstat(directory)
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Unsafe annotation directory')
+    let current = root
+    for (const component of folder.split('/')) {
+      current = path.join(current, component)
+      if (create) await fs.promises.mkdir(current).catch(error => { if (error.code !== 'EEXIST') throw error })
+      const stat = await fs.promises.lstat(current)
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Unsafe annotation directory')
+    }
   }
   async function readFile (filename) {
     const stat = await fs.promises.lstat(filename)
