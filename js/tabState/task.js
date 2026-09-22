@@ -214,14 +214,6 @@ class TaskList {
     this.taskByTabId.set(tabId, task)
   }
 
-  reindexTaskTabs (taskId) {
-    const task = this.get(taskId)
-    for (const [tabId, owner] of this.taskByTabId) {
-      if (owner.id === taskId) this.taskByTabId.delete(tabId)
-    }
-    if (task) task.tabs.forEach(tab => this.taskByTabId.set(tab.id, task))
-  }
-
   rebuildIndexes () {
     this.taskById.clear()
     this.taskByTabId.clear()

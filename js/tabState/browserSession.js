@@ -597,13 +597,6 @@ class BrowserSession {
     return task ? task.tabs.get(tabId) : null
   }
 
-  getMostRecentTask () {
-    return this.taskList.slice().sort((left, right) => {
-      const activityOrder = this.taskList.getLastActivity(right.id) - this.taskList.getLastActivity(left.id)
-      return activityOrder || left.id.localeCompare(right.id)
-    })[0] || null
-  }
-
   getPersistedSnapshot () {
     return {
       tasks: this.taskList.map(task => ({

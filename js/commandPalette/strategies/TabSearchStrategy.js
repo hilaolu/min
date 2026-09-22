@@ -6,6 +6,7 @@ const browserSession = require('../../tabState.js')
  */
 
 const { CommandStateStrategy } = require('../CommandStateStrategy.js')
+const tabCandidate = require('../tabCandidate.js')
 
 class TabSearchStrategy extends CommandStateStrategy {
   constructor () {
@@ -46,23 +47,7 @@ class TabSearchStrategy extends CommandStateStrategy {
         return title.includes(searchQuery) || url.includes(searchQuery)
       })
 
-      const candidates = matchedTabs.map(tab => ({
-        id: `tab-${tab.id}`,
-        title: tab.title || 'New Tab',
-        description: tab.url || 'min://newtab',
-        icon: 'carbon:document',
-        action: () => {
-          try {
-            var browserUI = require('browserUI.js')
-            browserUI.switchToTab(tab.id)
-          } catch (e) {
-            console.error('Error switching to tab:', e)
-          }
-        }
-      }))
-
-      // No direct DOM updates; overlay will render candidates
-      return candidates
+      return matchedTabs.map(tabCandidate)
     } catch (e) {
       console.error('Error searching tabs:', e)
       return []

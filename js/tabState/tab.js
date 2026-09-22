@@ -149,18 +149,6 @@ class TabList {
     this.parentTaskList.emit('tab-selected', id, this.taskId)
   }
 
-  moveBy (id, offset) {
-    var currentIndex = this.getIndex(id)
-    var newIndex = currentIndex + offset
-    var newIndexTab = this.getAtIndex(newIndex)
-    if (newIndexTab) {
-      var currentTab = this.getAtIndex(currentIndex)
-      this.splice(currentIndex, 1, newIndexTab)
-      this.splice(newIndex, 1, currentTab)
-    }
-    // This doesn't need to dispatch an event because splice will dispatch already
-  }
-
   count () {
     return this.tabs.length
   }
@@ -179,16 +167,6 @@ class TabList {
 
   forEach (fun) {
     return this.tabs.forEach(fun)
-  }
-
-  splice (...args) {
-    const containingTask = this.taskId
-
-    this.parentTaskList.emit('tab-splice', containingTask, ...args)
-    const result = this.tabs.splice.apply(this.tabs, args)
-    this.rebuildIndex()
-    this.parentTaskList.reindexTaskTabs(this.taskId)
-    return result
   }
 
   rebuildIndex () {

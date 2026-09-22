@@ -53,8 +53,7 @@ function createPreviewImageManager ({ canCapture, capture, captureOptions, getTa
     capture: capturePreview,
     clear,
     get,
-    invalidate,
-    isCapturePending: tabId => inFlight.has(tabId)
+    invalidate
   }
 }
 

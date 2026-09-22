@@ -146,7 +146,6 @@ class StrategyManager {
     if (this.currentStrategy) {
       try {
         this.currentStrategy.onExit(context)
-        this.currentStrategy.deactivate()
       } catch (error) {
         console.error(`Error exiting strategy ${this.currentStrategy.stateName}:`, error)
       }
@@ -156,7 +155,6 @@ class StrategyManager {
     this.currentStrategy = newStrategy
 
     try {
-      newStrategy.activate()
       newStrategy.onEnter(context, data)
 
       // Update UI
@@ -176,10 +174,8 @@ class StrategyManager {
       // Fallback to previous strategy or default
       if (previousStrategy && previousStrategy !== newStrategy) {
         this.currentStrategy = previousStrategy
-        previousStrategy.activate()
       } else if (this.fallbackStrategy && this.fallbackStrategy !== newStrategy) {
         this.currentStrategy = this.fallbackStrategy
-        this.fallbackStrategy.activate()
       }
     }
   }

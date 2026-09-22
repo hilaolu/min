@@ -66,6 +66,33 @@ test('moving a Tab between Tasks updates both Tasks atomically', function () {
   assert.equal(session.tasks.get(targetTaskId).tabs.count(), 2)
 })
 
+test('relative tab reordering preserves selection and indexes and records only actual moves', function () {
+  const { session, tabId: first, taskId } = createReadySession()
+  session.updateTab(first, { url: 'https://first.example' })
+  const second = session.openTab({ url: 'https://second.example' }, { taskId }).tabId
+  const third = session.openTab({ url: 'https://third.example' }, { taskId }).tabId
+  const changes = captureChanges(session)
+
+  for (const [offset, index, order] of [
+    [-1, 1, [first, third, second]],
+    [-100, 0, [third, first, second]],
+    [-1, 0, [third, first, second]],
+    [100, 2, [first, second, third]],
+    [1, 2, [first, second, third]]
+  ]) {
+    assert.equal(session.moveTabBy(third, offset), index)
+    assert.deepEqual(session.tabs.get().map(tab => tab.id), order)
+    assert.equal(session.tabs.getSelected(), third)
+    assert.equal(session.tabs.getIndex(third), index)
+    assertIndexesMatchState(session)
+  }
+  assert.deepEqual(changes.map(change => [change.type, change.tabId, change.index]), [
+    ['tab-reordered', third, 1],
+    ['tab-reordered', third, 0],
+    ['tab-reordered', third, 2]
+  ])
+})
+
 test('selecting a Task maintains one selected Task per Browser Window', function () {
   const { session, taskId } = createReadySession()
   const otherTaskId = session.createTask()

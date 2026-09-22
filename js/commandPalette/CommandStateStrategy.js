@@ -35,7 +35,6 @@ class CommandStateStrategy {
   constructor (stateName, priority = 0) {
     this.stateName = stateName
     this.priority = priority
-    this.isActive = false
   }
 
   /**
@@ -83,20 +82,6 @@ class CommandStateStrategy {
   handleKeydown (event, context) {
     // Default implementation does nothing
     return false
-  }
-
-  /**
-   * Activate this strategy
-   */
-  activate () {
-    this.isActive = true
-  }
-
-  /**
-   * Deactivate this strategy
-   */
-  deactivate () {
-    this.isActive = false
   }
 
   /**
