@@ -140,6 +140,19 @@ app.whenReady().then(async () => {
   await new Promise(resolve => setTimeout(resolve, 1600))
   assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me')
   assert.equal((await displayedNotes()).length, 2)
+  // Losing the quote must not silently close the editor or discard its draft.
+  await window.webContents.executeJavaScript('document.querySelector("p").textContent = "Content temporarily unavailable"')
+  await new Promise(resolve => setTimeout(resolve, 1600))
+  assert.equal(await palette('return this.getRootNode().querySelector("#note-editor").hidden'), false)
+  assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me')
+  assert.equal(await palette('return getComputedStyle(this.getRootNode().querySelector("#note-editor")).position'), 'fixed')
+  assert.equal(await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: '(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented })()' }]), true)
+  await window.webContents.executeJavaScript('document.querySelector("p").textContent = "before selected quote after"')
+  await new Promise(resolve => setTimeout(resolve, 1600))
+  assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me')
+  assert.equal(await palette('return getComputedStyle(this.getRootNode().querySelector("#note-editor")).position'), 'static')
+  await displayedNotes('note')
+  assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), 'discard me', 'reopening the same note preserves its draft')
   await palette('this.getRootNode().querySelector("#cancel-note").click()')
   assert.equal(saved[0].data.notes, 'note')
   await clickHighlight()
@@ -160,7 +173,20 @@ app.whenReady().then(async () => {
   await displayedNotes(longNote)
   assert.equal(await palette('return this.getRootNode().querySelector("#note-editor").hidden'), false)
   assert.equal(await palette('return this.getRootNode().querySelector("#note-input").value'), longNote)
-  await palette('this.getRootNode().querySelector("#cancel-note").click()')
+  const detachedNote = longNote + '\nSaved without an anchor'
+  await palette(`this.getRootNode().querySelector('#note-input').value = ${JSON.stringify(detachedNote)}`)
+  await window.webContents.executeJavaScript('document.querySelector("p").textContent = "Content temporarily unavailable"')
+  await new Promise(resolve => setTimeout(resolve, 1600))
+  await palette('this.getRootNode().querySelector("#save-note").click()')
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (saved[0].data.notes === detachedNote) break
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.equal(saved[0].data.notes, detachedNote)
+  assert.equal(await palette('return this.getRootNode().querySelector("#note-editor").hidden'), true)
+  await window.webContents.executeJavaScript('document.querySelector("p").textContent = "before selected quote after"')
+  await new Promise(resolve => setTimeout(resolve, 1600))
+  assert.equal((await displayedNotes()).find(note => note.text === detachedNote).hidden, false)
   await clickHighlight()
   await window.webContents.executeJavaScriptInIsolatedWorld(999, [{ code: 'void (window.confirm = () => false)' }])
   await palette('this.getRootNode().querySelector("#delete-note").click()')
@@ -174,7 +200,22 @@ app.whenReady().then(async () => {
   }
   assert.equal(saved.length, 1)
   assert.notEqual(saved[0].uid, 'test')
-  assert.equal((await displayedNotes()).some(note => note.text === longNote), false)
+  assert.equal((await displayedNotes()).some(note => note.text === detachedNote), false)
+  await clickHighlight()
+  await palette('this.getRootNode().querySelector("#delete-note").click()')
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (!saved.length) break
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.equal(saved.length, 0)
+  assert.equal(await window.webContents.executeJavaScriptInIsolatedWorld(999, [{
+    code: `(() => {
+    const original = document.createTreeWalker;
+    let scans = 0;
+    document.createTreeWalker = function (...args) { scans++; return original.apply(this, args) };
+    try { document.querySelector('p').click(); return scans } finally { document.createTreeWalker = original }
+  })()`
+  }]), 0, 'clicks without annotations do not scan page text')
   debug.detach()
   window.destroy()
   console.log('PASS: persistent untruncated notes, inline editor Save/Cancel, deletion, palette and translucent underlines')

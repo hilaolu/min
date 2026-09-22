@@ -114,8 +114,19 @@ function render () {
       const next = line ? line + ' ' + word : word
       if (line && measure.measureText(next).width > width) {
         lines++
-        line = word
-      } else line = next
+        line = ''
+      } else if (line) {
+        line = next
+        continue
+      }
+      // Long URLs and text without spaces still wrap within the preview box.
+      for (const character of word) {
+        if (line && measure.measureText(line + character).width > width) {
+          lines++
+          line = ''
+        }
+        line += character
+      }
     }
     const height = Math.min(lines * 15 + 8, 100, page.size.height)
     const highlight = item.data.rect

@@ -13,6 +13,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       #palette[hidden], #edit-menu[hidden], #note-editor[hidden] { display: none; }
       #note-editor { display: inline-block; vertical-align: top; box-sizing: border-box; width: 320px; max-width: calc(100vw - 32px); padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #333; font: 14px system-ui, sans-serif; }
       #note-editor label { display: block; margin-bottom: 6px; }
+      #note-editor.detached { position: fixed; right: 12px; bottom: 12px; z-index: 2147483647; }
       #note-editor textarea { box-sizing: border-box; width: 100%; min-height: 80px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; margin-bottom: 8px; }
       .actions { display: flex; gap: 10px; justify-content: flex-end; } .actions button { margin: 0; padding: 8px 16px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; }
       #save-note { background: #007bff; color: white; border: none; } #save-note:hover { background: #0056b3; }
@@ -174,10 +175,21 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
         record.note.hidden = !item.data.notes || (!editor.hidden && editing?.uid === item.uid)
         record.note.style.borderColor = item.data.color
         record.note.style.backgroundColor = item.data.color + '22'
+        if (!editor.hidden && editing?.uid === item.uid) {
+          editor.classList.remove('detached')
+          if (host.parentNode !== record.root) record.root.append(host)
+        }
       }
       for (const [uid, record] of noteHosts) {
         if (active.has(uid)) continue
-        if (record.root.contains(host)) closeEditor()
+        if (record.root.contains(host)) {
+          if (hasDraft()) {
+            // Dynamic pages may remove the quote while a note is being edited.
+            // Keep the draft visible and saveable even without an inline anchor.
+            document.documentElement.append(host)
+            editor.classList.add('detached')
+          } else closeEditor()
+        }
         record.host.remove()
         noteHosts.delete(uid)
       }
@@ -187,6 +199,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     }
     function openEditor (item) {
       if (!sameSource()) return
+      if (hasDraft() && editing === item) { notes.focus(); return }
       if (hasDraft() && editing !== item && !window.confirm('Discard unsaved note edits?')) return
       closeEditor()
       editing = item
@@ -206,6 +219,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
     }
     function closeEditor () {
       editor.hidden = true
+      editor.classList.remove('detached')
       if (host.parentNode !== document.documentElement) document.documentElement.append(host)
       for (const record of noteHosts.values()) record.note.hidden = !record.note.textContent
     }
@@ -283,6 +297,7 @@ if (process.isMainFrame && /^https?:$/.test(window.location.protocol)) {
       if (!isAnnotationUI(event)) { dismissPalette(); editMenu.hidden = true }
     })
     function hitAnnotation (event) {
+      if (!annotations.length) return
       const index = textIndex()
       return annotations.find(item => {
         const range = locate(item.data, index)

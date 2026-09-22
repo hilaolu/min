@@ -458,6 +458,17 @@ async function run () {
       const legacy = '| Field | Value |\n| --- | --- |\n| Title | Reference |\n| URL | vault://reference.pdf |\n| Tags | #annotation |\n\n## Annotations\n\n' +
         '%% annotation: pdf-test-id | color: ffcd45 | sourceType: pdf | pageIndex: 0 %%\n<pre></pre>\n<pre>Test highlight</pre>\n<pre></pre>\n\n' +
         `%% annotation-rect: ${JSON.stringify(rect)} %%\n%% annotation-segments: ${JSON.stringify([rect])} %%\nOriginal note\n`
+      for (const [index, note] of ['https://example.com/' + 'abcdefghij'.repeat(15), '中文注释'.repeat(30)].entries()) {
+        const uid = 'wrapping-note-' + index
+        const fixture = legacy.replace('pdf-test-id', uid).replace('Original note', note)
+        await evaluate(`(() => { const input = document.getElementById('import'); const transfer = new DataTransfer(); transfer.items.add(new File([${JSON.stringify(fixture)}], 'wrapping.md')); input.files = transfer.files; input.dispatchEvent(new Event('change')); })()`)
+        await until(() => evaluate(`document.getElementById('status').textContent === 'Saved to vault' && document.getElementById('annotations').value === '${uid}'`), 'long note imported')
+        const box = await evaluate(`(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().find(a => a.object.custom?.vaultNoteFor === '${uid}').object; })()`)
+        assert.equal(box.contents, note)
+        assert.ok(box.rect.size.height > 23 && box.rect.size.height <= 100, 'unbroken text gets a bounded multiline preview')
+        await evaluate("document.getElementById('delete').click()")
+        await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'wrapping fixture removed')
+      }
       await evaluate(`(() => { const input = document.getElementById('import'); const transfer = new DataTransfer(); transfer.items.add(new File([${JSON.stringify(legacy)}], 'legacy.md')); input.files = transfer.files; input.dispatchEvent(new Event('change')); })()`)
       await until(() => evaluate("document.getElementById('status').textContent === 'Saved to vault' && document.getElementById('annotations').value === 'pdf-test-id'"), 'legacy PDF import and save').catch(async error => { throw new Error(error.message + ': ' + await evaluate("document.getElementById('status').textContent")) })
       assert.equal(await evaluate("document.getElementById('note').value"), 'Original note')
