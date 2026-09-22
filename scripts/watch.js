@@ -10,16 +10,24 @@ const buildMain = require('./buildMain.js')
 const buildBrowser = require('./buildBrowser.js')
 const buildPreload = require('./buildPreload.js')
 const buildBrowserStyles = require('./buildBrowserStyles.js')
+const createBuildQueue = require('./buildQueue.js')
+
+const rebuildBrowser = createBuildQueue(function () {
+  console.log('rebuilding browser')
+  return buildBrowser()
+}, function (error) {
+  console.error('Error while building browser:', error)
+})
 
 chokidar.watch(mainDir).on('change', function () {
   console.log('rebuilding main')
   buildMain()
 })
 
-chokidar.watch(jsDir, { ignored: preloadDir }).on('change', function () {
-  console.log('rebuilding browser')
-  buildBrowser()
-})
+chokidar.watch(jsDir, { ignored: preloadDir, ignoreInitial: true })
+  .on('add', rebuildBrowser)
+  .on('change', rebuildBrowser)
+  .on('unlink', rebuildBrowser)
 
 chokidar.watch(preloadDir).on('change', function () {
   console.log('rebuilding preload script')

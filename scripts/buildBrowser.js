@@ -1,6 +1,7 @@
 const browserify = require('browserify')
 const path = require('path')
 const fs = require('fs')
+const { pipeline } = require('stream/promises')
 
 const rootDir = path.resolve(__dirname, '../')
 const jsDir = path.resolve(__dirname, '../js')
@@ -12,7 +13,7 @@ const fileList = [
   'js/default.js'
 ]
 
-function buildBrowser () {
+async function buildBrowser () {
   fs.mkdirSync(path.dirname(intermediateOutput), { recursive: true })
 
   /* concatenate legacy modules */
@@ -30,16 +31,23 @@ function buildBrowser () {
     ignoreMissing: false
   })
 
-  const stream = fs.createWriteStream(outFile, { encoding: 'utf-8' })
-  instance.bundle()
-    .on('error', function (e) {
-      console.warn('\x1b[31m' + 'Error while building: ' + e.message + '\x1b[30m')
-    })
-    .pipe(stream)
+  // Publish only after both streams finish. A failed build must not truncate
+  // the last working bundle, and callers must be able to await completion.
+  const temporaryDirectory = await fs.promises.mkdtemp(path.join(path.dirname(outFile), '.browser-build-'))
+  const temporaryOutput = path.join(temporaryDirectory, 'bundle.js')
+  try {
+    await pipeline(instance.bundle(), fs.createWriteStream(temporaryOutput, { encoding: 'utf-8' }))
+    await fs.promises.rename(temporaryOutput, outFile)
+  } finally {
+    await fs.promises.rm(temporaryDirectory, { recursive: true, force: true })
+  }
 }
 
 if (module.parent) {
   module.exports = buildBrowser
 } else {
-  buildBrowser()
+  buildBrowser().catch(function (error) {
+    console.error('Error while building browser:', error)
+    process.exitCode = 1
+  })
 }

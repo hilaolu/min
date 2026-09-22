@@ -22,7 +22,7 @@ function writeModule (rootDirectory, name, source) {
   fs.writeFileSync(path.join(moduleDirectory, 'index.js'), source)
 }
 
-test('buildBrowser creates its output directory in a clean checkout', function () {
+function createBuildFixture (browserifySource) {
   const rootDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'min-build-browser-'))
   temporaryDirectories.push(rootDirectory)
 
@@ -34,7 +34,7 @@ test('buildBrowser creates its output directory in a clean checkout', function (
   )
   fs.writeFileSync(path.join(rootDirectory, 'js/default.js'), 'window.min = true\n')
 
-  writeModule(rootDirectory, 'browserify', `
+  writeModule(rootDirectory, 'browserify', browserifySource || `
     const fs = require('node:fs')
     const { Readable } = require('node:stream')
 
@@ -55,10 +55,29 @@ test('buildBrowser creates its output directory in a clean checkout', function (
       }
     }
   `)
-  const result = spawnSync(process.execPath, ['scripts/buildBrowser.js'], {
+  return rootDirectory
+}
+
+function runBuild (rootDirectory, args = ['scripts/buildBrowser.js']) {
+  return spawnSync(process.execPath, args, {
     cwd: rootDirectory,
-    encoding: 'utf-8'
+    encoding: 'utf-8',
+    timeout: 10000
   })
+}
+
+function writePreviousBundle (rootDirectory) {
+  fs.mkdirSync(path.join(rootDirectory, 'dist'))
+  fs.writeFileSync(path.join(rootDirectory, 'dist/bundle.js'), 'last good bundle')
+}
+
+function assertNoTemporaryOutputs (rootDirectory) {
+  assert.deepEqual(fs.readdirSync(path.join(rootDirectory, 'dist')).sort(), ['build.js', 'bundle.js'])
+}
+
+test('buildBrowser creates its output directory in a clean checkout', function () {
+  const rootDirectory = createBuildFixture()
+  const result = runBuild(rootDirectory)
 
   assert.equal(result.status, 0, result.stderr)
   assert.equal(
@@ -69,6 +88,111 @@ test('buildBrowser creates its output directory in a clean checkout', function (
     fs.readFileSync(path.join(rootDirectory, 'dist/bundle.js'), 'utf-8'),
     'browser bundle'
   )
+  assertNoTemporaryOutputs(rootDirectory)
+})
+
+test('buildBrowser is awaitable and publishes only a complete bundle', function () {
+  const rootDirectory = createBuildFixture(`
+    const { Readable } = require('node:stream')
+    let release
+    let started
+    const gate = new Promise(resolve => { release = resolve })
+    const starting = new Promise(resolve => { started = resolve })
+    module.exports = function () {
+      return {
+        bundle: () => Readable.from((async function * () {
+          yield 'first chunk;'
+          setImmediate(started)
+          await gate
+          yield 'last chunk'
+        })())
+      }
+    }
+    module.exports.starting = starting
+    module.exports.release = () => release()
+  `)
+  writePreviousBundle(rootDirectory)
+  const result = runBuild(rootDirectory, ['-e', `
+    const assert = require('node:assert/strict')
+    const fs = require('node:fs')
+    const browserify = require('browserify')
+    const buildBrowser = require('./scripts/buildBrowser.js')
+    async function check () {
+      const building = buildBrowser()
+      assert.equal(typeof building?.then, 'function', 'buildBrowser must return a promise')
+      let completed = false
+      building.then(() => { completed = true })
+      await browserify.starting
+      assert.equal(completed, false)
+      assert.equal(fs.readFileSync('dist/bundle.js', 'utf8'), 'last good bundle')
+      browserify.release()
+      await building
+      assert.equal(fs.readFileSync('dist/bundle.js', 'utf8'), 'first chunk;last chunk')
+    }
+    check().catch(error => { console.error(error); process.exitCode = 1 })
+  `])
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(fs.readFileSync(path.join(rootDirectory, 'dist/bundle.js'), 'utf8'), 'first chunk;last chunk')
+  assertNoTemporaryOutputs(rootDirectory)
+})
+
+test('buildBrowser fails the CLI and preserves the last good bundle on a bundler error', function () {
+  const rootDirectory = createBuildFixture(`
+    const { Readable } = require('node:stream')
+    module.exports = () => ({
+      bundle: () => Readable.from((async function * () {
+        yield 'incomplete bundle'
+        throw new Error('synthetic bundle failure')
+      })())
+    })
+  `)
+  writePreviousBundle(rootDirectory)
+  const result = runBuild(rootDirectory)
+
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stderr, /synthetic bundle failure/)
+  assert.equal(fs.readFileSync(path.join(rootDirectory, 'dist/bundle.js'), 'utf8'), 'last good bundle')
+  assertNoTemporaryOutputs(rootDirectory)
+})
+
+test('buildBrowser rejects unresolved dependencies with real Browserify', function () {
+  const rootDirectory = createBuildFixture(`module.exports = require(${JSON.stringify(require.resolve('browserify'))})`)
+  fs.writeFileSync(path.join(rootDirectory, 'js/default.js'), "require('./missing-dependency.js')\n")
+  writePreviousBundle(rootDirectory)
+  const result = runBuild(rootDirectory)
+
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stderr, /missing-dependency/)
+  assert.equal(fs.readFileSync(path.join(rootDirectory, 'dist/bundle.js'), 'utf8'), 'last good bundle')
+  assertNoTemporaryOutputs(rootDirectory)
+})
+
+test('buildBrowser handles output stream errors without publishing a partial bundle', function () {
+  const rootDirectory = createBuildFixture(`
+    const fs = require('node:fs')
+    const { Readable, Writable } = require('node:stream')
+    fs.createWriteStream = () => new Writable({
+      write (chunk, encoding, callback) { callback(new Error('synthetic write failure')) }
+    })
+    module.exports = () => ({ bundle: () => Readable.from(['browser bundle']) })
+  `)
+  const result = runBuild(rootDirectory)
+
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.match(result.stderr, /synthetic write failure/)
+  assert.deepEqual(fs.readdirSync(path.join(rootDirectory, 'dist')), ['build.js'])
+})
+
+test('buildBrowser cleans temporary output when publishing fails', function () {
+  const rootDirectory = createBuildFixture()
+  fs.mkdirSync(path.join(rootDirectory, 'dist/bundle.js'), { recursive: true })
+  fs.writeFileSync(path.join(rootDirectory, 'dist/bundle.js/keep'), 'unrelated file')
+  const result = runBuild(rootDirectory)
+
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.equal(fs.readFileSync(path.join(rootDirectory, 'dist/bundle.js/keep'), 'utf8'), 'unrelated file')
+  assertNoTemporaryOutputs(rootDirectory)
 })
 
 test('Browser Chrome bundle does not depend on the removed Node bridge', function () {
