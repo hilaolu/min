@@ -163,8 +163,17 @@ function createVaultMode ({ userDataPath, ipc, dialog, isTab, isChrome = () => f
   handle('save', ['markdown'], (record, contents, text) => record.note.save(text))
   handle('open', ['markdown', 'browser'], async (record, contents, url) => {
     if (typeof url !== 'string') throw new Error('Invalid URL')
-    if (/^https?:\/\//.test(url)) return host.openExternal(contents, url)
+    if (/^https?:\/\//.test(url)) return host.openNewTab(contents, url)
     parseVaultURL(url)
+    if (record.kind === 'browser') {
+      const file = await resolveVaultURL(url, record.root)
+      // Resolving the entry is asynchronous; the explorer may have left meanwhile.
+      if (changing || root !== record.root || records.get(contents.id) !== record || contents.isDestroyed()) {
+        throw new Error('VAULT_CALLER_DENIED')
+      }
+      // Keep the directory browser available when opening a note.
+      if (file.kind === 'markdown') return host.openNewTab(contents, url)
+    }
     return host.open(contents, url)
   })
   handle('list', ['browser'], async (record, contents, query = '', directory = record.url) => {

@@ -82,9 +82,18 @@ async function run () {
   await assertPaletteResult(chrome, '>a reading', 'Updated article')
   console.log('PASS bundled indexed >m, >p and >a; external Markdown metadata update')
   if (process.argv.includes('--picker-only')) return
-  main.windows.send(win, 'addTab', { url: 'vault://note.md' })
+  main.windows.send(win, 'addTab', { url: 'vault://' })
+  const explorer = await until(() => webContents.getAllWebContents().find(c => c.getURL().startsWith('min://app/pages/vault/index.html')), 'explorer tab')
+  await until(() => explorer.executeJavaScript("Array.from(document.querySelectorAll('#files .entry')).some(row => row.title === 'note.md')").catch(() => false), 'explorer listing')
+  const explorerURL = explorer.getURL()
+  await explorer.executeJavaScript("Array.from(document.querySelectorAll('#files .entry')).find(row => row.title === 'note.md').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")
   const note = await until(() => webContents.getAllWebContents().find(c => c.getURL().startsWith('min://app/pages/markdown/index.html')), 'real tab routing')
   await until(() => note.executeJavaScript('typeof cherry !== "undefined" && !!cherry').catch(() => false), 'Cherry ready')
+  assert.notEqual(note.id, explorer.id)
+  assert.equal(explorer.getURL(), explorerURL)
+  assert.equal((await explorer.executeJavaScript("vaultPage.listCurrent('')")).ok, true)
+  console.log('PASS explorer double-click opens Markdown in a separate tab and preserves directory access')
+  if (process.argv.includes('--explorer-only')) return
   await note.executeJavaScript("cherry.setMarkdown('# Dirty')")
   let before = prompts
   win.close()

@@ -7,7 +7,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
   if (vault?.configure) {
     vault.configure({
       open: (contents, url) => loadURLInView(getTabIDFromWebContents(contents), url),
-      openExternal: (contents, url) => sendTabContentEvent(viewMap[getTabIDFromWebContents(contents)], getTabIDFromWebContents(contents), 'new-tab-requested', { url, openInForeground: true }),
+      openNewTab: (contents, url) => sendTabContentEvent(viewMap[getTabIDFromWebContents(contents)], getTabIDFromWebContents(contents), 'new-tab-requested', { url, openInForeground: true }),
       close: contents => new Promise((resolve, reject) => {
         if (contents.isDestroyed()) return resolve()
         const timer = setTimeout(() => reject(new Error('Vault tab did not close')), 10000)
