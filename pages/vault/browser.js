@@ -37,6 +37,7 @@ function renderEntries (items, previous, fuzzy = false) {
     element.id = 'entry-' + i
     element.tabIndex = -1
     element.setAttribute('role', 'option')
+    element.setAttribute('aria-selected', 'false')
     element.onclick = () => { select(i); files.focus() }
     element.ondblclick = () => open(entry.url)
     files.append(element)
@@ -89,11 +90,15 @@ const preview = createVaultPreview({
 function select (index) {
   const next = entries.length ? Math.max(0, Math.min(entries.length - 1, index)) : -1
   const changed = next !== selected
+  if (changed && selected >= 0) {
+    files.children[selected].classList.remove('selected')
+    files.children[selected].setAttribute('aria-selected', 'false')
+  }
   selected = next
-  Array.from(files.children).forEach((element, i) => {
-    element.classList.toggle('selected', i === selected)
-    element.setAttribute('aria-selected', String(i === selected))
-  })
+  if (changed && selected >= 0) {
+    files.children[selected].classList.add('selected')
+    files.children[selected].setAttribute('aria-selected', 'true')
+  }
   if (selected >= 0) {
     files.setAttribute('aria-activedescendant', 'entry-' + selected)
     files.children[selected].scrollIntoView({ block: 'nearest' })

@@ -3,6 +3,7 @@ const path = require('path')
 const crypto = require('crypto')
 const atomic = require('write-file-atomic')
 const annotationMarkdown = require('./annotationMarkdown.js')
+const { validRect } = require('./annotationGeometry.js')
 const { normalizeFolder, defaultFolder } = require('./annotationPaths.js')
 
 const maximumBytes = 1024 * 1024
@@ -13,11 +14,7 @@ function validateAnnotations (items) {
   if (!Array.isArray(items) || items.length > 1000 || Buffer.byteLength(JSON.stringify(items)) > maximumBytes) throw new Error('Annotation size limit exceeded')
   const ids = new Set()
   function rect (value) {
-    if (!value || !value.origin || !value.size) throw new Error('Invalid PDF rectangle')
-    for (const n of [value.origin.x, value.origin.y, value.size.width, value.size.height]) {
-      if (!Number.isFinite(n) || Math.abs(n) > 1000000) throw new Error('Invalid PDF rectangle')
-    }
-    if (value.size.width < 0 || value.size.height < 0) throw new Error('Invalid PDF rectangle')
+    if (!validRect(value)) throw new Error('Invalid PDF rectangle')
     return { origin: { x: value.origin.x, y: value.origin.y }, size: { width: value.size.width, height: value.size.height } }
   }
   return items.map(item => {

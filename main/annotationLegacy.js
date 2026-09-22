@@ -1,3 +1,4 @@
+const { validRect: validGeometry } = require('./annotationGeometry.js')
 const MAX_INPUT_BYTES = 1024 * 1024
 
 function invalid (message) {
@@ -62,8 +63,7 @@ function validRect (value) {
   if (!isObject(value) || !hasOnlyKeys(value, ['origin', 'size'])) return false
   if (!isObject(value.origin) || !hasOnlyKeys(value.origin, ['x', 'y'])) return false
   if (!isObject(value.size) || !hasOnlyKeys(value.size, ['width', 'height'])) return false
-  if (![value.origin.x, value.origin.y, value.size.width, value.size.height].every(Number.isFinite)) return false
-  return value.size.width > 0 && value.size.height > 0
+  return validGeometry(value)
 }
 
 function readGeometry (line, name) {

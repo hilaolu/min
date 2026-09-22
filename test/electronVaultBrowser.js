@@ -188,6 +188,23 @@ async function run () {
   assert.deepEqual(initialUI.parent, [['Parent Dir/Nested#', true], ['Parent Dir/Other', false]])
   console.log('PASS directory-first alphabetical sorting and encoded breadcrumb rendering')
 
+  const selectionMutations = await evaluate(`(() => {
+    const files = document.getElementById('files')
+    const observer = new MutationObserver(() => {})
+    observer.observe(files, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-selected'] })
+    const press = key => files.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    press('j')
+    const changedRows = [...new Set(observer.takeRecords().map(record => record.target.id))]
+    press('Home')
+    observer.takeRecords()
+    press('k')
+    const boundaryWrites = observer.takeRecords().length
+    observer.disconnect()
+    return { changedRows, boundaryWrites }
+  })()`)
+  assert.deepEqual(selectionMutations, { changedRows: ['entry-0', 'entry-1'], boundaryWrites: 0 })
+  console.log('PASS selection only mutates old/new rows and boundary movement leaves rows untouched')
+
   const boundaryPreview = await evaluate(`(() => {
     window.__vaultTest.clearDirectoryCalls()
     document.getElementById('files').dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true, cancelable: true }))

@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 
 const parseLegacy = require('../main/annotationLegacy.js')
+const { validateAnnotations } = require('../main/annotationStore.js')
 
 const webMarkdown = `| Field | Value |
 | --- | --- |
@@ -72,6 +73,51 @@ test('extracts PDF geometry instead of adding geometry comments to notes', funct
     size: { width: 107.8, height: 14.6 }
   })
   assert.equal(annotation.data.segmentRects.length, 2)
+})
+
+test('legacy and stored rectangles share numeric boundaries for bounds and segments', () => {
+  const base = parseLegacy(pdfMarkdown).annotations[0]
+  // Specify expected outcomes independently of the validator implementation.
+  const cases = [
+    [-1000001, false, false], [-1000000, true, false], [-1, true, false],
+    [0, true, true], [0.5, true, true], [1000000, true, true], [1000001, false, false],
+    [NaN, false, false], [Infinity, false, false], [-Infinity, false, false],
+    [null, false, false], ['1', false, false], [true, false, false]
+  ]
+  for (const [group, key] of [['origin', 'x'], ['origin', 'y'], ['size', 'width'], ['size', 'height']]) {
+    for (const [value, validOrigin, validSize] of cases) {
+      const rect = { origin: { x: 0, y: 0 }, size: { width: 1, height: 1 } }
+      rect[group][key] = value
+      const valid = group === 'origin' ? validOrigin : validSize
+      for (const field of ['rect', 'segmentRects']) {
+        const geometry = field === 'rect' ? rect : [rect]
+        const marker = field === 'rect' ? 'rect' : 'segments'
+        const markdown = pdfMarkdown.replace(new RegExp(`%% annotation-${marker}: .+ %%`), `%% annotation-${marker}: ${JSON.stringify(geometry)} %%`)
+        const items = [{ ...base, data: { ...base.data, [field]: geometry } }]
+        const label = `${field}.${group}.${key} = ${String(value)}`
+        if (valid) {
+          assert.deepEqual(validateAnnotations(parseLegacy(markdown).annotations), items, label)
+          assert.deepEqual(validateAnnotations(items), items, label)
+        } else {
+          assert.throws(() => parseLegacy(markdown), /invalid .* geometry/, label)
+          assert.throws(() => validateAnnotations(items), /Invalid PDF rectangle/, label)
+        }
+      }
+    }
+  }
+})
+
+test('legacy geometry still rejects unknown keys while storage strips them', () => {
+  const expected = parseLegacy(pdfMarkdown).annotations
+  for (const group of [null, 'origin', 'size']) {
+    const items = parseLegacy(pdfMarkdown).annotations
+    const rect = items[0].data.rect
+    const target = group ? rect[group] : rect
+    target.extra = true
+    assert.deepEqual(validateAnnotations(items), expected)
+    const markdown = pdfMarkdown.replace(/%% annotation-rect: .+ %%/, `%% annotation-rect: ${JSON.stringify(rect)} %%`)
+    assert.throws(() => parseLegacy(markdown), /invalid rect geometry/)
+  }
 })
 
 test('rejects duplicate IDs, malformed geometry, and missing metadata', function () {
