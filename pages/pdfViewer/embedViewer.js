@@ -1,16 +1,15 @@
-/* global Blob, Option, crypto, location, vaultDisplayPath, pdfNoteLayout */
+/* global Option, crypto, location, vaultDisplayPath, pdfNoteLayout */
 import EmbedPDF, { PdfAnnotationSubtype, LockModeType } from '@embedpdf/snippet'
 import { PdfBlendMode, PdfStandardFont, PdfTextAlignment, PdfVerticalAlignment } from '@embedpdf/models'
 
 const source = new URLSearchParams(location.search).get('url')
-const ui = Object.fromEntries(['viewer', 'status', 'highlight', 'annotations', 'note', 'color', 'save', 'delete', 'retry', 'export', 'import', 'download'].map(id => [id, document.getElementById(id)]))
+const ui = Object.fromEntries(['viewer', 'viewer-message', 'status', 'annotations', 'note', 'color', 'save', 'delete', 'retry'].map(id => [id, document.getElementById(id)]))
 let annotations = []
 let revision = null
 let pending = null
 let scope
 let selection
 let documentId
-let pageCount = 0
 let pages = []
 let noteBoxes = new Map()
 let noteLayouts = new Map()
@@ -75,10 +74,12 @@ document.addEventListener('keydown', event => { if (event.key === 'Escape') { hi
 window.addEventListener('scroll', hidePalette, true)
 window.addEventListener('resize', () => { hidePalette(); if (!editor.hidden) positionPopup(editor) })
 
-function status (text) { ui.status.textContent = text }
+function status (text) {
+  ui.status.textContent = text
+  ui['viewer-message'].hidden = !text
+}
 function controls () {
   if (!writable || busy || pending || noteDirty) hidePalette()
-  for (const id of ['highlight', 'import']) ui[id].disabled = !writable || busy || Boolean(pending) || noteDirty
   for (const id of ['save', 'delete']) ui[id].disabled = !writable || busy || Boolean(pending) || !ui.annotations.value
   ui.retry.disabled = !pending || busy
   if (!pending) ui.retry.hidden = true
@@ -186,13 +187,12 @@ function render () {
 
 async function commit (items, selectedId) {
   if (busy) return
-  if (items.some(item => item.data.pageIndex >= pageCount)) return status('Import not saved: a highlight refers to a page outside this PDF.')
   busy = true
   let finishSave
   savingDone = new Promise(resolve => { finishSave = resolve })
   pending = items
   controls()
-  status('Saving to vault…')
+  status('')
   try {
     const result = await window.pdfAnnotations.save({ annotations: items, revision })
     if (!result.ok) throw new Error(result.error)
@@ -205,13 +205,10 @@ async function commit (items, selectedId) {
       ui.annotations.value = selectedId
       showNote()
     }
-    status('Saved to vault')
+    status('')
   } catch (error) {
-    if (pending) {
-      ui.retry.hidden = false
-      ui.export.closest('details').open = true
-    }
-    status(pending ? 'Not saved: ' + error.message + ' Retry or export before leaving this tab.' : 'Saved, but the display could not refresh. Reopen this PDF: ' + error.message)
+    if (pending) ui.retry.hidden = false
+    status(pending ? 'Not saved: ' + error.message + ' Retry before leaving this tab.' : 'Saved, but the display could not refresh. Reopen this PDF: ' + error.message)
   } finally {
     busy = false
     finishSave()
@@ -248,7 +245,6 @@ async function highlightSelection (color, editNote = false) {
     }
   } catch (error) { status(error.message) } finally { creating = false }
 }
-ui.highlight.onclick = () => highlightSelection(ui.color.value)
 ui.save.onclick = async () => {
   const item = selected()
   if (item) await commit(annotations.map(ann => ann.uid === item.uid ? { ...ann, data: { ...ann.data, notes: ui.note.value, color: ui.color.value } } : ann))
@@ -259,33 +255,11 @@ ui.retry.onclick = () => { if (pending) commit(pending) }
 ui.annotations.onchange = showNote
 ui.note.oninput = ui.color.oninput = () => {
   noteDirty = true
-  status('Unsaved changes. Choose Save to save your note and color.')
+  status('')
   controls()
 }
-ui.export.onclick = () => {
-  const items = (pending || annotations).map(item => item.uid === ui.annotations.value && noteDirty ? { ...item, data: { ...item.data, notes: ui.note.value, color: ui.color.value } } : item)
-  const blob = new Blob([JSON.stringify({ version: 1, source, annotations: items }, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'pdf-highlights.json'
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 10000)
-}
-ui.import.onchange = async () => {
-  try {
-    const file = ui.import.files[0]
-    if (!file || file.size > 1024 * 1024) throw new Error('Choose a Markdown or JSON file smaller than 1 MiB')
-    const result = await window.pdfAnnotations.importLegacy(await file.text())
-    if (!result.ok) throw new Error(result.error)
-    const ids = new Set(annotations.map(item => item.uid))
-    if (result.annotations.some(item => ids.has(item.uid))) throw new Error('Duplicate highlight IDs; import canceled')
-    await commit(annotations.concat(result.annotations))
-  } catch (error) { status('Import failed: ' + error.message) } finally { ui.import.value = '' }
-}
-ui.download.onclick = () => window.postMessage({ message: 'downloadFile', url: source })
 window.parentProcessActions = {
-  downloadPDF: () => ui.download.click(),
+  downloadPDF: () => window.postMessage({ message: 'downloadFile', url: source }),
   printPDF: () => commands?.execute('document.print'),
   startFindInPage: () => searchScope?.startSearch(),
   endFindInPage: () => { searchGeneration++; if (searchScope) searchScope.stopSearch() },
@@ -356,7 +330,6 @@ async function start () {
   const manager = registry.getPlugin('document-manager').provides()
   const opened = await manager.openDocumentBuffer({ buffer, name: document.title, autoActivate: true }).toPromise()
   const pdf = await opened.task.toPromise()
-  pageCount = pdf.pageCount
   pages = pdf.pages
   documentId = opened.documentId
   searchScope = registry.getPlugin('search').provides().forDocument(documentId)
@@ -417,7 +390,7 @@ async function start () {
     revision = result.revision
     render()
     writable = true
-    status('Select text to annotate. Drag or resize note boxes; double-click to edit. Layout resets on reopen.')
+    status('')
   } else status(result.error + '. PDF reading remains available.')
   controls()
   document.body.dataset.pdfBackend = 'embedpdf'

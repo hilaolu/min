@@ -343,10 +343,8 @@ async function run () {
     const pdfReady = "document.body.dataset.pdfReady === 'true'"
     await load('vault://reference.pdf', pdfReady)
     assert.equal(await evaluate('document.title'), 'reference.pdf', 'root-level vault PDF retains its filename')
-    assert.equal(await evaluate("document.querySelector('details').open"), false, 'backup tools start collapsed')
-    await evaluate("document.querySelector('summary').click()")
-    assert.equal(await evaluate("document.getElementById('export').getBoundingClientRect().height > 0"), true, 'backup tools can be revealed')
-    await evaluate("document.querySelector('summary').click()")
+    assert.equal(await evaluate("document.querySelector('footer, #highlight, #export, #import, #download')"), null, 'PDF footer and backup controls are removed')
+    if (!privateMode) assert.equal(await evaluate("document.getElementById('viewer-message').hidden"), true, 'writable PDF has no viewer message')
     views.get(id).setBounds({ x: 0, y: 0, width: 390, height: 800 })
     await until(() => evaluate('innerWidth === 390'), 'narrow PDF viewport')
     assert.equal(await evaluate(`(() => {
@@ -364,9 +362,24 @@ async function run () {
     await load('min://app/pages/pdfViewer/index.html?url=' + encodeURIComponent('vault://reference.pdf'), pdfReady)
     assert.equal(await evaluate("fetch('vault://reference.pdf').then(r => r.headers.get('content-type'))"), 'application/pdf')
     if (privateMode) {
-      assert.equal(await evaluate("document.getElementById('highlight').disabled"), true)
+      assert.deepEqual(await evaluate("[document.getElementById('save').disabled, document.getElementById('delete').disabled, document.getElementById('selection-palette').hidden]"), [true, true, true], 'private PDF disables editing and hides the palette')
       assert.match((await evaluate('window.pdfAnnotations.load()')).error, /private tabs/)
     } else {
+      const seedPDFAnnotations = async text => {
+        const result = await evaluate(`(async () => {
+          const parsed = await window.pdfAnnotations.importLegacy(${JSON.stringify(text)})
+          const loaded = await window.pdfAnnotations.load()
+          const saved = parsed.ok && loaded.ok
+            ? await window.pdfAnnotations.save({ annotations: parsed.annotations, revision: loaded.revision })
+            : null
+          return { parsed, loaded, saved }
+        })()`)
+        assert.equal(result.parsed.ok, true, result.parsed.error)
+        assert.equal(result.loaded.ok, true, result.loaded.error)
+        assert.equal(result.saved?.ok, true, result.saved?.error)
+        await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+        await load('vault://reference.pdf', pdfReady)
+      }
       await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).some(img => img.complete && img.naturalWidth > 100)"), 'PDF page image ready for selection')
       const pageBox = await evaluate("(() => { const img = Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).find(img => img.naturalWidth > 100); const r = img.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()")
       const startX = Math.round(pageBox.x + pageBox.width * 0.1)
@@ -449,14 +462,14 @@ async function run () {
       assert.deepEqual(await evaluate('window.pdfAnnotations.load()'), savedBeforeMove, 'resizing note box does not write vault geometry')
       const resizedRect = (await evaluate(getBox)).rect
       await evaluate("document.getElementById('save').click()")
-      await until(() => evaluate("document.getElementById('status').textContent === 'Saved to vault'"), 'save after temporary layout change')
+      await until(() => evaluate('!window.pdfHighlightsState().dirty'), 'save after temporary layout change')
       assert.deepEqual((await evaluate(getBox)).rect, resizedRect, 'saving annotations preserves the temporary layout')
       await load('vault://a.txt', "document.body.innerText.includes('alpha')")
       await load('vault://reference.pdf', pdfReady)
       assert.deepEqual((await evaluate(getBox)).rect, autoBox.rect, 'reopening restores automatic size and position')
       await until(() => evaluate("!document.getElementById('delete').disabled"), 'saved highlight controls')
       await evaluate("document.getElementById('delete').click()")
-      await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'selection highlight removed')
+      await until(() => evaluate("document.getElementById('annotations').options.length === 1 && !window.pdfHighlightsState().dirty"), 'selection highlight removed')
       await until(() => evaluate("!document.querySelector('embedpdf-container').shadowRoot.textContent.includes('Inline note')"), 'deleting highlight removes its free-text box')
       assert.equal(await evaluate("document.getElementById('annotations').disabled"), true, 'empty highlight picker is disabled')
       assert.equal(await evaluate("document.getElementById('annotations').selectedOptions[0].textContent"), 'No highlights yet')
@@ -468,16 +481,16 @@ async function run () {
       for (const [index, note] of ['https://example.com/' + 'abcdefghij'.repeat(15), '中文注释'.repeat(30)].entries()) {
         const uid = 'wrapping-note-' + index
         const fixture = legacy.replace('pdf-test-id', uid).replace('Original note', note)
-        await evaluate(`(() => { const input = document.getElementById('import'); const transfer = new DataTransfer(); transfer.items.add(new File([${JSON.stringify(fixture)}], 'wrapping.md')); input.files = transfer.files; input.dispatchEvent(new Event('change')); })()`)
-        await until(() => evaluate(`document.getElementById('status').textContent === 'Saved to vault' && document.getElementById('annotations').value === '${uid}'`), 'long note imported')
+        await seedPDFAnnotations(fixture)
+        await until(() => evaluate(`!window.pdfHighlightsState().dirty && document.getElementById('annotations').value === '${uid}'`), 'long note imported')
         const box = await evaluate(`(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().find(a => a.object.custom?.vaultNoteFor === '${uid}').object; })()`)
         assert.equal(box.contents, note)
         assert.ok(box.rect.size.height > 23 && box.rect.size.height <= 100, 'unbroken text gets a bounded multiline preview')
         await evaluate("document.getElementById('delete').click()")
-        await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'wrapping fixture removed')
+        await until(() => evaluate("document.getElementById('annotations').options.length === 1 && !window.pdfHighlightsState().dirty"), 'wrapping fixture removed')
       }
-      await evaluate(`(() => { const input = document.getElementById('import'); const transfer = new DataTransfer(); transfer.items.add(new File([${JSON.stringify(legacy)}], 'legacy.md')); input.files = transfer.files; input.dispatchEvent(new Event('change')); })()`)
-      await until(() => evaluate("document.getElementById('status').textContent === 'Saved to vault' && document.getElementById('annotations').value === 'pdf-test-id'"), 'legacy PDF import and save').catch(async error => { throw new Error(error.message + ': ' + await evaluate("document.getElementById('status').textContent")) })
+      await seedPDFAnnotations(legacy)
+      await until(() => evaluate("!window.pdfHighlightsState().dirty && document.getElementById('annotations').value === 'pdf-test-id'"), 'legacy PDF import and save').catch(async error => { throw new Error(error.message + ': ' + await evaluate("document.getElementById('status').textContent")) })
       assert.equal(await evaluate("document.getElementById('note').value"), 'Original note')
       const loaded = await evaluate('window.pdfAnnotations.load()')
       assert.equal(loaded.annotations.length, 1)
@@ -511,6 +524,8 @@ async function run () {
       fs.writeFileSync(storagePath, annotationMarkdown.stringify(external))
       await evaluate("document.getElementById('note').value = 'Recoverable conflict'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('save').click()")
       await until(() => evaluate("document.getElementById('status').textContent.startsWith('Not saved:')"), 'visible PDF save conflict')
+      assert.equal(await evaluate("document.getElementById('viewer-message').hidden"), false, 'conflict error overlay is visible')
+      assert.equal(await evaluate("document.getElementById('retry').hidden"), false, 'conflict retry is visible')
       assert.equal(await evaluate("document.getElementById('note').value"), 'Recoverable conflict')
       answer = 0
       assert.equal(await command('lifecycle.destroy'), false, 'failed Save prevents PDF close')

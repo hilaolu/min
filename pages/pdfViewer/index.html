@@ -13,28 +13,20 @@
   <body>
     <main id="viewer" aria-label="PDF viewer"></main>
     <div id="selection-palette" role="toolbar" aria-label="Annotate selection" hidden></div>
-    <footer aria-label="Annotation status and backup">
-      <p id="status" role="status">Loading PDF…</p>
-      <button id="highlight" class="primary" disabled hidden>Highlight selection</button>
-      <section id="annotation-editor" role="dialog" aria-label="Edit highlight" hidden>
-        <label>Highlight <select id="annotations" disabled><option value="">No highlights yet</option></select></label>
-        <label>Edit Note <textarea id="note" rows="3" maxlength="100000" placeholder="Enter your notes here..." disabled></textarea></label>
-        <label class="color-field">Highlight color <input id="color" type="color" value="#ffcd45" disabled></label>
-        <div class="actions">
-          <button id="delete" disabled>Delete</button>
-          <button id="close-note">Cancel</button>
-          <button id="save" class="primary" disabled>Save</button>
-        </div>
-      </section>
+    <section id="annotation-editor" role="dialog" aria-label="Edit highlight" hidden>
+      <label>Highlight <select id="annotations" disabled><option value="">No highlights yet</option></select></label>
+      <label>Edit Note <textarea id="note" rows="3" maxlength="100000" placeholder="Enter your notes here..." disabled></textarea></label>
+      <label class="color-field">Highlight color <input id="color" type="color" value="#ffcd45" disabled></label>
+      <div class="actions">
+        <button id="delete" disabled>Delete</button>
+        <button id="close-note">Cancel</button>
+        <button id="save" class="primary" disabled>Save</button>
+      </div>
+    </section>
+    <section id="viewer-message" role="status" hidden>
+      <p id="status"></p>
       <button id="retry" hidden disabled>Retry unsaved change</button>
-      <details>
-        <summary>Import &amp; backup</summary>
-        <button id="export">Export highlights / unsaved change</button>
-        <label>Import Markdown or JSON <input id="import" type="file" accept=".md,.json,text/markdown,application/json" disabled></label>
-        <p class="hint">Notes are saved in your vault; the original PDF stays unchanged. Drag or resize note boxes, or double-click to edit. Box layouts reset on reopen. Private tabs cannot access saved highlights.</p>
-      </details>
-      <button id="download">Download original PDF</button>
-    </footer>
+    </section>
     <script src="../../js/util/vaultURL.js"></script>
     <script src="noteLayout.js"></script>
     <script type="module" src="../../dist/pdfViewer/viewer.js"></script>

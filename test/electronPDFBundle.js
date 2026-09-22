@@ -54,6 +54,35 @@ async function run () {
   win = new BrowserWindow({ show: false, width: 1000, height: 800, webPreferences: { preload: path.join(temp, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } })
   await win.loadURL('min://app/pages/pdfViewer/index.html?url=file:///fixture.pdf')
   await until("document.body.dataset.pdfReady === 'true'")
+  const chrome = await win.webContents.executeJavaScript(`(() => {
+    const bounds = document.getElementById('viewer').getBoundingClientRect()
+    return {
+      hasFooter: Boolean(document.querySelector('footer')),
+      removedControls: ['import', 'export', 'download', 'highlight'].filter(id => document.getElementById(id)),
+      viewerTop: bounds.top,
+      viewerHeight: bounds.height,
+      windowHeight: window.innerHeight,
+      hasAnnotationEditor: Boolean(document.getElementById('annotation-editor'))
+    }
+  })()`)
+  assert.equal(chrome.hasFooter, false, 'viewer has no footer')
+  assert.deepEqual(chrome.removedControls, [], 'removed PDF controls are absent')
+  assert.equal(chrome.viewerTop, 0, 'viewer starts at the top of the window')
+  assert.equal(chrome.viewerHeight, chrome.windowHeight, 'viewer fills the window height')
+  assert.equal(chrome.hasAnnotationEditor, true, 'annotation editor remains available')
+  assert.equal(await win.webContents.executeJavaScript("document.getElementById('viewer-message').hidden"), false, 'annotation load errors remain visible without a footer')
+  assert.match(await win.webContents.executeJavaScript("document.getElementById('status').textContent"), /Read-only smoke test/)
+  assert.equal(await win.webContents.executeJavaScript("document.getElementById('retry').hidden"), true, 'read-only errors do not offer a save retry')
+  const download = await win.webContents.executeJavaScript(`new Promise(resolve => {
+    function onMessage (event) {
+      if (event.source !== window || event.data?.message !== 'downloadFile') return
+      window.removeEventListener('message', onMessage)
+      resolve(event.data)
+    }
+    window.addEventListener('message', onMessage)
+    window.parentProcessActions.downloadPDF()
+  })`)
+  assert.deepEqual(download, { message: 'downloadFile', url: 'file:///fixture.pdf' }, 'browser download command works without a footer button')
   await until(`Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('img')).some(img => {
     if (!img.complete || !img.naturalWidth) return false
     const canvas = document.createElement('canvas'); canvas.width = img.naturalWidth; canvas.height = img.naturalHeight
