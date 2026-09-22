@@ -1,28 +1,34 @@
 html, body { height: 100%; }
-body { display: flex; }
-#viewer { flex: 1; min-width: 0; height: 100%; }
-aside { flex: 0 0 300px; width: 300px; padding: 24px 20px; overflow: auto; border-left: 1px solid var(--doc-line); scrollbar-width: thin; }
-h1 { margin: 4px 0 12px; font-size: 20px; letter-spacing: -.4px; font-weight: 600; }
-#status { margin: 0 0 18px; color: var(--doc-muted); font-size: 12px; overflow-wrap: anywhere; }
-#highlight, #download, #retry, #export { width: 100%; }
-section { margin: 20px 0 12px; padding-top: 4px; border-top: 1px solid var(--doc-line); }
-label { display: block; margin: 14px 0; font-size: 12px; font-weight: 600; }
-textarea, select { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; font-size: 13px; font-weight: 400; }
-textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
-textarea::placeholder { color: var(--doc-muted); }
+body { display: flex; flex-direction: column; overflow: hidden; }
+#viewer { flex: 1; min-width: 0; min-height: 0; height: 100%; }
+#selection-palette { position: fixed; z-index: 10000; display: flex; flex-direction: row; gap: 4px; max-width: calc(100vw - 34px); overflow-x: auto; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white; color: #222; font: 14px sans-serif; box-shadow: 0 2px 10px rgba(0,0,0,.1); color-scheme: light; }
+#selection-palette[hidden] { display: none; }
+#selection-palette button { min-height: 0; margin: 0; flex-shrink: 0; font: inherit; }
+#selection-palette button:not(.swatch) { padding: 0 6px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #333; }
+#selection-palette .swatch { box-sizing: content-box; flex: 0 0 20px; width: 20px; height: 20px; padding: 0; border: 1px solid #ddd; border-radius: 2px; }
+#selection-palette button:focus-visible, #annotation-editor button:focus-visible { outline: 2px solid #2474da; outline-offset: 2px; }
+footer { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-top: 1px solid var(--doc-line); }
+#annotation-editor { position: fixed; z-index: 10001; width: 320px; max-width: calc(100vw - 32px); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #333; font: 14px system-ui, sans-serif; color-scheme: light; }
+#annotation-editor[hidden], #highlight[hidden] { display: none; }
+#status { flex: 1; margin: 0; color: var(--doc-muted); font-size: 12px; overflow-wrap: anywhere; }
+label { display: block; margin: 0 0 6px; font-size: 14px; font-weight: 400; }
+textarea, select { display: block; width: 100%; margin-top: 6px; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #333; font: inherit; }
+textarea { resize: vertical; min-height: 80px; }
+textarea::placeholder { color: #666; }
 .color-field { display: flex; align-items: center; justify-content: space-between; }
-input[type=color] { width: 42px; height: 30px; padding: 3px; border: 1px solid var(--doc-line); border-radius: 6px; background: var(--doc-surface); }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.actions button { flex: 1; padding: 6px 8px; font-size: 12px; white-space: nowrap; }
-#delete { color: var(--doc-danger); background: transparent; }
+input[type=color] { width: 42px; height: 30px; padding: 3px; border: 1px solid #ddd; border-radius: 4px; background: white; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.actions button { margin: 0; padding: 8px 16px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font: inherit; white-space: nowrap; }
+#save { background: #007bff; color: white; border: none; }
+#save:hover:not(:disabled) { background: #0056b3; }
+#delete { color: #b33838; }
 #retry[hidden] { display: none; }
 #retry { margin: 4px 0 12px; }
-details { margin: 20px 0; border-top: 1px solid var(--doc-line); border-bottom: 1px solid var(--doc-line); }
+details { margin: 0; }
+details[open] { position: fixed; bottom: 45px; right: 8px; z-index: 10002; width: 280px; max-width: calc(100vw - 16px); max-height: calc(100vh - 53px); overflow: auto; padding: 12px; background: var(--doc-surface); border: 1px solid var(--doc-line); border-radius: 8px; }
 summary { padding: 12px 0; cursor: pointer; color: var(--doc-muted); font-size: 12px; font-weight: 600; }
 input[type=file] { width: 100%; margin-top: 8px; padding: 6px; font-size: 12px; font-weight: 400; }
 #export, #download { font-size: 12px; }
 @media (max-width: 760px) {
-  body { flex-direction: column; }
-  #viewer { flex: 1 0 55vh; min-height: 280px; }
-  aside { flex: 0 0 auto; width: 100%; overflow: visible; padding: 20px; border-left: 0; border-top: 1px solid var(--doc-line); }
+  footer { flex-wrap: wrap; gap: 6px; }
 }

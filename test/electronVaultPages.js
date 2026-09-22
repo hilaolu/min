@@ -351,9 +351,8 @@ async function run () {
     await until(() => evaluate('innerWidth === 390'), 'narrow PDF viewport')
     assert.equal(await evaluate(`(() => {
       const viewer = document.getElementById('viewer').getBoundingClientRect()
-      const sidebar = document.querySelector('aside').getBoundingClientRect()
-      return viewer.height >= 280 && sidebar.top >= viewer.bottom - 1 && document.documentElement.scrollWidth <= innerWidth
-    })()`), true, 'narrow PDF stacks highlights below a usable reading area')
+      return viewer.height >= 280 && viewer.width === innerWidth && !document.querySelector('aside') && document.getElementById('annotation-editor').hidden && document.documentElement.scrollWidth <= innerWidth
+    })()`), true, 'narrow PDF keeps full-width reading area without an annotation sidebar')
     views.get(id).setBounds({ x: 0, y: 0, width: 1000, height: 800 })
     await until(() => evaluate('innerWidth === 1000'), 'restore PDF viewport')
     await command('find.start', { text: 'Highlight', options: {} })
@@ -381,12 +380,77 @@ async function run () {
       }
       contents.sendInputEvent({ type: 'mouseUp', x: endX, y: textY, button: 'left', clickCount: 1 })
       await until(() => evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('selection').provides().getFormattedSelection().length > 0; })()"), 'real PDF text selection')
-      await evaluate("document.getElementById('highlight').click()")
+      await until(() => evaluate("!document.getElementById('selection-palette').hidden"), 'inline selection palette')
+      assert.deepEqual(await evaluate(`(() => {
+        const palette = getComputedStyle(document.getElementById('selection-palette'))
+        const swatch = getComputedStyle(document.querySelector('#selection-palette .swatch'))
+        return [palette.borderRadius, palette.flexWrap, swatch.width, swatch.height, swatch.borderRadius]
+      })()`), ['4px', 'nowrap', '20px', '20px', '2px'], 'PDF palette matches web annotation geometry')
+      await evaluate("document.querySelector('#selection-palette .swatch').click()")
       await until(async () => (await evaluate('window.pdfAnnotations.load()')).annotations.length === 1, 'selection highlight saved')
       assert.match((await evaluate('window.pdfAnnotations.load()')).annotations[0].data.text, /Highlight/)
+      assert.equal((await evaluate('window.pdfAnnotations.load()')).annotations[0].data.color, '#ffeb3b')
+      assert.equal(await evaluate("document.getElementById('selection-palette').hidden"), true)
+      contents.sendInputEvent({ type: 'mouseDown', x: startX + 20, y: textY, button: 'left', clickCount: 1 })
+      contents.sendInputEvent({ type: 'mouseUp', x: startX + 20, y: textY, button: 'left', clickCount: 1 })
+      await until(() => evaluate("!document.getElementById('annotation-editor').hidden"), 'click highlight opens inline note editor')
+      assert.deepEqual(await evaluate(`(() => {
+        const editor = getComputedStyle(document.getElementById('annotation-editor'))
+        const save = getComputedStyle(document.getElementById('save'))
+        return [editor.padding, editor.borderRadius, editor.backgroundColor, save.backgroundColor]
+      })()`), ['8px', '4px', 'rgb(255, 255, 255)', 'rgb(0, 123, 255)'], 'PDF note editor matches web annotation styling')
+      await evaluate("document.getElementById('note').value = 'Inline note'; document.getElementById('note').dispatchEvent(new Event('input')); document.getElementById('save').click()")
+      await until(() => evaluate("document.getElementById('annotation-editor').hidden"), 'saving closes inline note editor')
+      assert.equal((await evaluate('window.pdfAnnotations.load()')).annotations[0].data.notes, 'Inline note')
+      await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('span')).some(el => el.textContent === 'Inline note' && el.getBoundingClientRect().height > 0)"), 'saved note is displayed over the PDF')
+      const noteBox = await evaluate("(() => { const el = Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('span')).find(el => el.textContent === 'Inline note'); const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()")
+      contents.sendInputEvent({ type: 'mouseDown', ...noteBox, button: 'left', clickCount: 1 })
+      contents.sendInputEvent({ type: 'mouseUp', ...noteBox, button: 'left', clickCount: 1 })
+      const getBox = "(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().find(a => a.object.custom?.vaultNoteFor).object; })()"
+      const autoBox = await evaluate(getBox)
+      assert.deepEqual(await evaluate(`(async () => {
+        const r = await document.querySelector('embedpdf-container').registry
+        const api = r.getPlugin('annotation').provides()
+        const box = api.getAnnotations().find(a => a.object.custom?.vaultNoteFor).object
+        const highlight = api.getAnnotations().find(a => a.object.id === box.custom.vaultNoteFor).object
+        return [api.isAnnotationStructurallyLocked(box), api.isAnnotationContentLocked(box), api.isAnnotationInteractive(highlight), api.isAnnotationInteractive({ ...box, id: 'not-a-vault-note' })]
+      })()`), [false, true, false, false], 'only display companions allow geometry changes; text and source annotations stay protected')
+      const savedBeforeMove = await evaluate('window.pdfAnnotations.load()')
+      await sleep(200)
+      contents.sendInputEvent({ type: 'mouseDown', ...noteBox, button: 'left', clickCount: 1 })
+      for (let offset = 5; offset <= 40; offset += 5) {
+        contents.sendInputEvent({ type: 'mouseMove', x: noteBox.x + offset, y: noteBox.y + offset, button: 'left', modifiers: ['leftButtonDown'] })
+        await sleep(20)
+      }
+      contents.sendInputEvent({ type: 'mouseUp', x: noteBox.x + 40, y: noteBox.y + 40, button: 'left', clickCount: 1 })
+      await until(async () => (await evaluate(getBox)).rect.origin.y !== autoBox.rect.origin.y, 'native note box drag changes its position')
+      assert.deepEqual(await evaluate('window.pdfAnnotations.load()'), savedBeforeMove, 'moving note box does not write vault geometry')
+      assert.equal(await evaluate('window.pdfHighlightsState().dirty'), false, 'temporary layout does not mark vault notes dirty')
+      contents.sendInputEvent({ type: 'mouseDown', x: noteBox.x + 40, y: noteBox.y + 40, button: 'left', clickCount: 2 })
+      contents.sendInputEvent({ type: 'mouseUp', x: noteBox.x + 40, y: noteBox.y + 40, button: 'left', clickCount: 2 })
+      await until(() => evaluate("!document.getElementById('annotation-editor').hidden"), 'double click moved free-text box opens the vault note editor')
+      assert.equal(await evaluate("document.getElementById('note').value"), 'Inline note')
+      await evaluate("document.getElementById('close-note').click()")
+      const corner = await evaluate("(() => { const el = Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('span')).find(el => el.textContent === 'Inline note'); const r = el.getBoundingClientRect(); return { x: Math.round(r.right), y: Math.round(r.bottom) }; })()")
+      contents.sendInputEvent({ type: 'mouseDown', ...corner, button: 'left', clickCount: 1 })
+      for (let offset = 5; offset <= 40; offset += 5) {
+        contents.sendInputEvent({ type: 'mouseMove', x: corner.x - offset, y: corner.y + offset, button: 'left', modifiers: ['leftButtonDown'] })
+        await sleep(20)
+      }
+      contents.sendInputEvent({ type: 'mouseUp', x: corner.x - 40, y: corner.y + 40, button: 'left', clickCount: 1 })
+      await until(async () => (await evaluate(getBox)).rect.size.width !== autoBox.rect.size.width, 'native resize handle changes note box size')
+      assert.deepEqual(await evaluate('window.pdfAnnotations.load()'), savedBeforeMove, 'resizing note box does not write vault geometry')
+      const resizedRect = (await evaluate(getBox)).rect
+      await evaluate("document.getElementById('save').click()")
+      await until(() => evaluate("document.getElementById('status').textContent === 'Saved to vault'"), 'save after temporary layout change')
+      assert.deepEqual((await evaluate(getBox)).rect, resizedRect, 'saving annotations preserves the temporary layout')
+      await load('vault://a.txt', "document.body.innerText.includes('alpha')")
+      await load('vault://reference.pdf', pdfReady)
+      assert.deepEqual((await evaluate(getBox)).rect, autoBox.rect, 'reopening restores automatic size and position')
       await until(() => evaluate("!document.getElementById('delete').disabled"), 'saved highlight controls')
       await evaluate("document.getElementById('delete').click()")
       await until(() => evaluate("document.getElementById('annotations').options.length === 1 && document.getElementById('status').textContent === 'Saved to vault'"), 'selection highlight removed')
+      await until(() => evaluate("!document.querySelector('embedpdf-container').shadowRoot.textContent.includes('Inline note')"), 'deleting highlight removes its free-text box')
       assert.equal(await evaluate("document.getElementById('annotations').disabled"), true, 'empty highlight picker is disabled')
       assert.equal(await evaluate("document.getElementById('annotations').selectedOptions[0].textContent"), 'No highlights yet')
       assert.equal(await evaluate("document.getElementById('retry').hidden"), true, 'retry stays hidden without an unsaved change')
@@ -406,6 +470,7 @@ async function run () {
       await load('vault://a.txt', "document.body.innerText.includes('alpha')")
       await load('vault://reference.pdf', pdfReady)
       assert.equal(await evaluate("document.getElementById('note').value"), 'Edited note')
+      await until(() => evaluate("Array.from(document.querySelector('embedpdf-container').shadowRoot.querySelectorAll('span')).some(el => el.textContent === 'Edited note' && el.getBoundingClientRect().height > 0)"), 'note box restored after reopening PDF')
       assert.equal(await evaluate("document.getElementById('color').value"), '#33aa77')
       const restored = await evaluate("(async () => { const r = await document.querySelector('embedpdf-container').registry; return r.getPlugin('annotation').provides().getAnnotations().filter(a => a.object.id === 'pdf-test-id').map(a => a.object); })()")
       assert.equal(restored.length, 1, 'highlight rehydrated into EmbedPDF, not just sidebar')
