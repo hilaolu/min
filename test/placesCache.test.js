@@ -177,3 +177,46 @@ test('empty and missing-ID deletions do not scan the cache', function () {
   assert.equal(cache.items.length, 1)
   assert.deepEqual(events, [])
 })
+
+test('bulk deletion keeps completed removals consistent when tag cleanup throws', function () {
+  const removalOrder = [0, 2, 3, 1]
+  const ids = [99, 0, 0, 2, 3, 1]
+  for (const sorted of [false, true]) {
+    for (const failedId of removalOrder) {
+      const { cache, events } = createCache()
+      for (let id = 0; id < 4; id++) cache.add(place(id), { sort: false })
+      if (sorted) cache.sort()
+      const items = cache.items
+      const original = items.slice()
+      const completed = new Set(removalOrder.slice(0, removalOrder.indexOf(failedId)))
+      const failure = new Error('Tag cleanup failed')
+      const removePage = cache.tagIndex.removePage
+      cache.tagIndex.removePage = item => {
+        if (item.id === failedId) throw failure
+        removePage(item)
+      }
+
+      assert.throws(() => cache.removeByIds(ids), error => error === failure)
+      assert.equal(cache.items, items)
+      assert.equal(cache.sorted, sorted)
+      const survivors = original.filter(item => !completed.has(item.id))
+      assert.deepEqual(cache.items, survivors)
+      survivors.forEach((item, index) => assert.equal(cache.items[index], item))
+      for (const item of original) {
+        const expected = completed.has(item.id) ? null : item
+        assert.equal(cache.getById(item.id), expected)
+        assert.equal(cache.getByURL(item.url), expected)
+      }
+      assert.deepEqual(events, [...completed].map(id => ['remove', place(id).url]))
+
+      // Retrying must not remove a completed record from the tag index twice.
+      cache.tagIndex.removePage = removePage
+      cache.removeByIds(ids)
+      assert.equal(cache.items, items)
+      assert.equal(cache.items.length, 0)
+      assert.equal(cache.byId.size, 0)
+      assert.equal(cache.byURL.size, 0)
+      assert.deepEqual(events, removalOrder.map(id => ['remove', place(id).url]))
+    }
+  }
+})

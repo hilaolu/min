@@ -84,22 +84,26 @@ class PlacesCache {
 
   removeByIds (ids) {
     const removed = new Set()
-    ids.forEach(id => {
-      const item = this.byId.get(id)
-      if (!item) return
-      this.tagIndex.removePage(item)
-      this.byURL.delete(item.url)
-      this.byId.delete(id)
-      removed.add(item)
-    })
-    if (removed.size === 0) return
-
-    // Compact once, keeping the array shared with the service and its ordering.
-    let retained = 0
-    for (const item of this.items) {
-      if (!removed.has(item)) this.items[retained++] = item
+    try {
+      ids.forEach(id => {
+        const item = this.byId.get(id)
+        if (!item) return
+        this.tagIndex.removePage(item)
+        this.byURL.delete(item.url)
+        this.byId.delete(id)
+        removed.add(item)
+      })
+    } finally {
+      // Keep completed removals consistent even if a later tag cleanup throws.
+      // Compact once, preserving the shared array and survivor ordering.
+      if (removed.size > 0) {
+        let retained = 0
+        for (const item of this.items) {
+          if (!removed.has(item)) this.items[retained++] = item
+        }
+        this.items.length = retained
+      }
     }
-    this.items.length = retained
   }
 
   reset () {

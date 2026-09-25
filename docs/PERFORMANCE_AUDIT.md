@@ -90,6 +90,15 @@ cache mutation, not IndexedDB deletion time. All 356 Node tests, app/script lint
 the Electron performance smoke and diff checks passed. The operation-count
 regression failed against the original repeated-scan implementation.
 
+Follow-up refinement: compaction now runs in `finally`, so a later tag-cleanup
+exception cannot leave already-removed records in the array but absent from its
+lookup maps. The original error still propagates. Regression coverage exercises
+each failure position, sorted/unsorted caches, and retry without duplicate tag
+removals. This is not a rollback of tag-index internals or database writes.
+All 366 Node tests, lint, build, Electron performance and diff checks passed;
+the repeated 20,000-entry/10,000-deletion benchmark measured 2.76 ms median.
+Packaging, Markdown and cross-platform tests were not rerun for this refinement.
+
 ### 3. Markdown packaging — unused variants excluded; runtime unchanged
 
 `scripts/createPackage.js` now excludes nine unused Cherry ESM/core/engine/stream
