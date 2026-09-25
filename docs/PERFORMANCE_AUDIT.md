@@ -133,16 +133,26 @@ document: notification counts are **[1, 0, 1, 1]**. All 360 Node tests, lint, bu
 Electron performance and diff checks passed after correcting a test formatting
 error. No wall-clock reader-detection speedup is claimed.
 
-### 5. Index search-result deduplication if larger result sets justify it
+### 5. Search-result deduplication — measured, index deferred
 
 `js/searchbar/searchbarPlugins.js:92` scans every plugin's result array for each
-new URL, giving quadratic insertion work across a result batch. A URL-key
-reference-count map could avoid the scans, but normal search result sets are small,
-so this is lower priority. Test plugin reset, top-answer replacement, text-fragment
-normalization and `allowDuplicates`; a naive global Set would mishandle these
-lifecycles. Measure first rather than adding state for an insignificant saving.
+new URL, giving quadratic insertion work across a result batch. The new
+`searchbarDeduplicationCPUOnly` workload runs the production plugin manager with
+stub DOM nodes and pre-normalized unique URL keys across three plugins. With five
+warm-ups/15 samples, Node VM medians were **0.05 ms for 10 results**, **0.28 ms for
+30**, and **159.07 ms for a 1,000-result stress batch**. This is bookkeeping CPU
+only, not real browser rendering or URL parsing.
 
-## Verification
+Current Places/full-text results share a four-item allowance, search suggestions
+are capped at three, and related instant answers at three. Large bookmark/history
+lists render directly rather than using this deduplicator. Task/bang command rows
+do not supply URLs and skip the duplicate check. There is no demonstrated large
+URL batch in those callers, so adding another persistent index is deferred.
+If result limits grow, revisit a URL-key reference-count map with tests for plugin
+reset, top-answer replacement, text-fragment normalization and `allowDuplicates`;
+a naive global Set would mishandle those lifecycles.
+
+## Bookmark-fix verification
 
 - Baseline: all 346 Node tests and JavaScript lint passed.
 - New tests first passed the three behavior comparisons and failed the two
@@ -159,5 +169,7 @@ lifecycles. Measure first rather than adding state for an insignificant saving.
   warning, but the test completed successfully.
 - Before/after benchmark runs and `git diff --check` passed.
 
-Other Electron suites, manual UI profiling, real-user history workloads, release
-packaging and cross-platform builds were not run for this change.
+Follow-up verification is recorded in the individual sections above. Manual UI
+profiling, real-user history workloads, full installer packaging and cross-platform
+builds were not run. Incremental overlay rendering and a smaller Cherry runtime
+remain explicitly deferred rather than being treated as completed optimizations.

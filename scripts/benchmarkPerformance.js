@@ -6,6 +6,7 @@ const { PlacesCache } = require('../js/places/placesCache.js')
 const { extractPageText } = require('../js/preload/textExtractor.js')
 const { schemaV1, schemaV2 } = require('../js/util/databaseSchema.js')
 const createTaskOverlayHarness = require('../test/fixtures/taskOverlayHarness.js')
+const searchbarDeduplicationHarness = require('../test/fixtures/searchbarDeduplicationHarness.js')
 
 global.oneDayInMS = 24 * 60 * 60 * 1000
 global.quickScore = { quickScore: () => 0 }
@@ -83,6 +84,13 @@ function benchmarkBookmarkTags (itemCount) {
     return { tags, resultCount, medianMs }
   })
   return { historyEntries: itemCount, bookmarks: bookmarks.length, distinctTags: Object.keys(tagIndex.tagCounts).length, queries }
+}
+
+function benchmarkSearchbarDeduplication (resultCount) {
+  const run = searchbarDeduplicationHarness(resultCount)
+  const medianMs = measureMedian(run)
+  if (run() !== resultCount) throw new Error('Unexpected result count')
+  return { resultCount, medianMs }
 }
 
 function createPlace (id, bodyLength = 300000) {
@@ -342,6 +350,7 @@ async function main () {
     placesDeletion: [1000, 20000].map(benchmarkPlacesDeletion),
     placeSuggestions: [1000, 10000, 20000].map(benchmarkSuggestions),
     places: benchmarkPlaces(),
+    searchbarDeduplicationCPUOnly: [10, 30, 1000].map(benchmarkSearchbarDeduplication),
     storage: await benchmarkStorage(),
     taskSummaryCPUOnly: benchmarkTaskSummaries()
   }
