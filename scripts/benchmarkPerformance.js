@@ -14,6 +14,8 @@ global.nonLetterRegex = /[^\s0-9A-Za-z]/g
 global.Dexie = { Promise }
 const placesSearch = require('../js/places/placesSearch.js')
 const fullTextSearch = require('../js/places/fullTextSearch.js')
+const tagIndex = require('../js/places/tagIndex.js')
+global.tokenize = fullTextSearch.tokenize
 
 function measure (work) {
   const start = performance.now()
@@ -61,6 +63,26 @@ function benchmarkTaskSummaries () {
     })
     return { tabs: tabCount, uniqueFavicons, medianMs, snapshotsPerRender: metrics.snapshots, sortsPerRender: metrics.sorts }
   }))
+}
+
+function benchmarkBookmarkTags (itemCount) {
+  tagIndex.reset()
+  global.historyInMemoryCache = Array.from({ length: itemCount }, (_, id) => ({
+    id,
+    url: `https://library.example/topic${id % 50}/${id}`,
+    title: `Topic${id % 50} category${id % 50} reference guide resource${id % 17}`,
+    isBookmarked: id % 11 !== 0,
+    tags: id % 3 === 0 ? ['reference'] : [`topic${id % 50}`, `group${id % 5}`],
+    lastVisit: id
+  }))
+  const bookmarks = global.historyInMemoryCache.filter(page => page.isBookmarked)
+  bookmarks.forEach(page => tagIndex.addPage(page))
+  const queries = [['topic7'], ['topic7', 'reference'], ['missing']].map(tags => {
+    let resultCount
+    const medianMs = measureMedian(() => { resultCount = tagIndex.getSuggestedItemsForTags(tags).length })
+    return { tags, resultCount, medianMs }
+  })
+  return { historyEntries: itemCount, bookmarks: bookmarks.length, distinctTags: Object.keys(tagIndex.tagCounts).length, queries }
 }
 
 function createPlace (id, bodyLength = 300000) {
@@ -294,6 +316,7 @@ async function benchmarkStorage () {
 
 async function main () {
   const report = {
+    bookmarkTags: [1000, 5000].map(benchmarkBookmarkTags),
     browserSessionRestore: [1000, 10000, 20000].map(benchmarkRestore),
     extraction: benchmarkExtraction(),
     fullText: await benchmarkFullText(),

@@ -188,6 +188,40 @@ async function runPlacesWorkload () {
       assert.equal(result.largestSort, result.limit)
       assert.equal(result.publicOnly, true)
     })
+    const bookmarkTags = await window.webContents.executeJavaScript(`(async function () {
+      const now = Date.now()
+      await db.places.bulkPut(Array.from({ length: 60 }, (_, index) => ({
+        id: 2001 + index,
+        url: 'https://bookmarks.example/' + index,
+        title: 'Topic reference guide',
+        tags: index % 2 === 0 ? ['topic'] : ['reference'],
+        visitCount: 1,
+        lastVisit: now - index * 1000,
+        isBookmarked: true,
+        extractedText: 'Bookmark body must not be returned',
+        searchIndex: []
+      })))
+      await loadHistoryInMemory()
+      const expected = historyInMemoryCache
+        .filter(page => page.isBookmarked && !page.tags.includes('topic'))
+        .map(page => ({ page, score: tagIndex.getAllTagsRanked(page).find(tag => tag.tag === 'topic')?.value || 0 }))
+        .filter(item => item.score >= 1.1)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 20)
+        .map(item => item.page.id)
+      let response
+      handleRequest({ action: 'getSuggestedItemsForTags', pageData: { tags: ['topic'] }, callbackId: 'bookmark-tags' }, value => { response = value })
+      return {
+        expected,
+        ids: response.result.map(item => item.id),
+        callbackId: response.callbackId,
+        publicOnly: response.result.every(item => !('searchTextCache' in item) && !('extractedText' in item) && !('score' in item))
+      }
+    })()`)
+    assert.deepEqual(bookmarkTags.ids, bookmarkTags.expected)
+    assert.equal(bookmarkTags.ids.length, 20)
+    assert.equal(bookmarkTags.callbackId, 'bookmark-tags')
+    assert.equal(bookmarkTags.publicOnly, true)
     const fullText = await window.webContents.executeJavaScript(`(async function () {
       try {
         const saved = await new Promise(resolve => handleRequest({
@@ -215,6 +249,7 @@ async function runPlacesWorkload () {
     assert.equal(fullText.metrics.bodiesStemmed, 1)
     assert.equal(fullText.indexedTokens, 20000)
     return {
+      bookmarkTags: { results: bookmarkTags.ids.length, publicOnly: bookmarkTags.publicOnly },
       ordinary: cases.map(({ limit, scoreCalculations, largestSort }) => ({ limit, scoreCalculations, largestSort })),
       fullText: { ...fullText.metrics, indexedTokens: fullText.indexedTokens }
     }

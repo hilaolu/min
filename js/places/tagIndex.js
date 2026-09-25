@@ -140,7 +140,7 @@ var tagIndex = {
     tagIndex.removePage(oldPage)
     tagIndex.addPage(newPage)
   },
-  getAllTagsRanked: function (page) {
+  getAllTagsRanked: function (page, requestedTags) {
     var tokens = tagIndex.getPageTokens(page)
 
     var scores = {}
@@ -148,7 +148,12 @@ var tagIndex = {
     var contributingTerms = {}
 
     for (const term of tokens) {
-      for (const tag in tagIndex.termTags[term]) {
+      const termTags = tagIndex.termTags[term]
+      if (!termTags) continue
+      // Bookmark searches need only the selected tags, not every tag associated
+      // with common title/URL terms. Keep zero-valued postings after removals.
+      for (const tag of requestedTags || Object.keys(termTags)) {
+        if (termTags[tag] === undefined) continue
         if (!scores[tag]) {
           scores[tag] = 0
         }
@@ -160,7 +165,7 @@ var tagIndex = {
         }
 
         if (tagIndex.tagCounts[tag] >= 2) {
-          const docsWithTag = tagIndex.termTags[term]?.[tag] || 0
+          const docsWithTag = termTags[tag] || 0
           scores[tag] += Math.pow(docsWithTag / (tagIndex.termDocCounts[term] || 1), 2) * (0.85 + 0.1 * Math.sqrt(tagIndex.termDocCounts[term]))
 
           contributingDocs[tag] += docsWithTag
@@ -190,11 +195,14 @@ var tagIndex = {
     return tagIndex.getAllTagsRanked(page).slice(0, 3).filter(p => p.value > 0.66).map(p => p.tag)
   },
   getSuggestedItemsForTags: function (tags) {
+    // Every selected tag must pass the scorer's minimum document count.
+    if (tags.length === 0 || tags.some(tag => !(tagIndex.tagCounts[tag] >= 2))) return []
+    const requestedTags = new Set(tags)
     var set = historyInMemoryCache
       .filter(i => i.isBookmarked)
       .filter(page => tags.some(tag => !page.tags.includes(tag)))
       .map(p => {
-        return { page: p, tags: tagIndex.getAllTagsRanked(p).filter(t => t.value >= 1.1) }
+        return { page: p, tags: tagIndex.getAllTagsRanked(p, requestedTags).filter(t => t.value >= 1.1) }
       })
 
     set = set.filter(function (result) {
