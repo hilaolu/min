@@ -50,18 +50,27 @@ establish a corresponding speedup for ordinary history search or browser startup
 
 ## Further opportunities
 
-### 1. Avoid rebuilding the entire task overlay
+### 1. Task overlay — search optimized; incremental rendering deferred
 
-`js/taskOverlay/taskOverlay.js:185` empties the DOM, destroys all Sortable
-instances, and rebuilds every task/tab. Visible `state-sync-change` events invoke
-it at line 396. Search also performs a document-wide selector lookup for each tab
-at line 294 and splits the same query inside the tab loop.
+Search previously performed a document-wide selector lookup for each task/tab,
+and split the same query inside the tab loop. `taskOverlaySearch.js` now uses two
+scoped DOM scans to create short-lived ID maps and tokenizes the query once.
+The maps are rebuilt per search, so drops, deletions and synchronized renders
+cannot leave retained references to detached DOM. Match ordering, visible focus,
+collapse expansion and the empty-query reset path are preserved.
 
-Use keyed task/tab element maps and batch relevant updates; at minimum, reuse
-element references and tokenize the query once. This needs real Electron
-layout/paint measurements with hundreds or thousands of tabs, plus focus,
-selection, dragging, and cross-window synchronization tests. Existing task-summary
-CPU benchmarks do not measure this DOM workload.
+The Electron smoke compares the old selector loop and new implementation in a
+real DOM, forcing layout after alternating queries (two warm-ups, seven samples).
+At 200 tabs, medians were **3.0 → 2.0 ms**; at 2,000, **120.4 → 16.9 ms**. Visible
+IDs and focused matches agree. These measurements exclude construction, paint
+and Sortable work. Four new Node tests cover filtering, bounded query counts,
+DOM replacement/removal/moves and input/reset integration. All 364 Node tests,
+lint, build, Electron performance and diff checks passed.
+
+`taskOverlay.render` still rebuilds all tasks and Sortable instances on show,
+empty search and visible synchronization events. Incremental rendering remains
+deferred: it needs full drag/focus/cross-window acceptance coverage, not just this
+isolated filter benchmark.
 
 ### 2. Compact history deletions in one pass — implemented
 

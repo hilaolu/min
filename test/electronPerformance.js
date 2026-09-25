@@ -6,6 +6,8 @@ const path = require('node:path')
 
 const { app, BrowserWindow, contentTracing, session, webContents } = require('electron')
 const createFilteringPolicy = require('../main/filtering.js')
+const filterTaskOverlay = require('../js/taskOverlay/taskOverlaySearch.js')
+const taskOverlaySearchWorkload = require('./fixtures/taskOverlaySearchWorkload.js')
 
 const performanceProfilePath = fs.mkdtempSync(path.join(os.tmpdir(), 'min-performance-'))
 app.setPath('userData', performanceProfilePath)
@@ -332,6 +334,15 @@ async function run () {
     filterWorkload = await runFilteringWorkload()
     const placesWorkload = await runPlacesWorkload()
     const readerWorkload = await runReaderWorkload(window)
+    await window.loadURL('data:text/html,<!doctype html><title>Task search fixture</title>')
+    const taskSearch = await window.webContents.executeJavaScript(`(${taskOverlaySearchWorkload.toString()})(${filterTaskOverlay.toString()})`)
+    taskSearch.forEach(({ tabCount, before, after }) => {
+      assert.deepEqual(after.visible, before.visible)
+      assert.deepEqual(after.focus, before.focus)
+      assert.equal(after.focus.length, 1)
+      assert.equal(after.resultCount, tabCount / 2)
+      assert.equal(before.resultCount, after.resultCount)
+    })
 
     const tracePath = await contentTracing.stopRecording()
     traceStopped = true
@@ -342,6 +353,7 @@ async function run () {
       filtering: filterWorkload,
       places: placesWorkload,
       reader: readerWorkload,
+      taskSearch: taskSearch.map(({ tabCount, before, after }) => ({ tabCount, beforeMs: before.medianMs, afterMs: after.medianMs })),
       previewBytes,
       previewSize: preview.getSize(),
       traceBytes

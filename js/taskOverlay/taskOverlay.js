@@ -12,6 +12,7 @@ var keyboardNavigationHelper = require('util/keyboardNavigationHelper.js')
 var Sortable = require('sortablejs')
 
 const createTaskContainer = require('taskOverlay/taskOverlayBuilder.js')
+const filterTaskOverlay = require('taskOverlay/taskOverlaySearch.js')
 
 var taskContainer = document.getElementById('task-area')
 var taskSwitcherButton = document.getElementById('switch-task-button')
@@ -284,41 +285,7 @@ var taskOverlay = {
         return
       }
 
-      var totalTabMatches = 0
-
-      browserSession.tasks.forEach(function (task) {
-        var taskContainer = document.querySelector(`.task-container[data-task="${task.id}"]`)
-
-        var taskTabMatches = 0
-        task.tabs.forEach(function (tab) {
-          var tabContainer = document.querySelector(`.task-tab-item[data-tab="${tab.id}"]`)
-
-          var searchText = (task.name + ' ' + tab.title + ' ' + tab.url).toLowerCase()
-
-          const searchMatches = search.split(' ').every(word => searchText.includes(word))
-          if (searchMatches) {
-            tabContainer.hidden = false
-            taskTabMatches++
-            totalTabMatches++
-
-            if (totalTabMatches === 1) {
-              // first match
-              tabContainer.classList.add('fakefocus')
-            } else {
-              tabContainer.classList.remove('fakefocus')
-            }
-          } else {
-            tabContainer.hidden = true
-          }
-        })
-
-        if (taskTabMatches === 0) {
-          taskContainer.hidden = true
-        } else {
-          taskContainer.hidden = false
-          taskContainer.classList.remove('collapsed')
-        }
-      })
+      filterTaskOverlay(taskContainer, browserSession.tasks, search)
     })
 
     input.addEventListener('keypress', function (e) {
