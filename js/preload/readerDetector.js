@@ -35,8 +35,12 @@ function pageIsReaderable () {
   }
 }
 
+// Reader availability is only promoted for this document, never revoked.
+var readerStatusSent = false
+
 function checkReaderStatus () {
-  if (pageIsReaderable()) {
+  if (!readerStatusSent && pageIsReaderable()) {
+    readerStatusSent = true
     ipc.send('canReader')
   }
 }

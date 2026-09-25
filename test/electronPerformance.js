@@ -258,6 +258,34 @@ async function runPlacesWorkload () {
   }
 }
 
+async function runReaderWorkload (window) {
+  let messages = 0
+  function onMessage (event, channel) { if (channel === 'canReader') messages++ }
+  window.webContents.on('ipc-message', onMessage)
+  const article = '<article>' + ('<p>' + 'article text '.repeat(40) + '</p>').repeat(10) + '</article>'
+  const deferredScript = 'window.readerDeferredState = document.readyState; document.body.innerHTML = ' + JSON.stringify(article)
+  const pages = [
+    article,
+    '<p>Not an article</p>',
+    '<head><script defer src="data:text/javascript,' + encodeURIComponent(deferredScript) + '"></script></head><body></body>',
+    article + '<!-- new document -->'
+  ]
+  const counts = []
+  try {
+    for (const [index, html] of pages.entries()) {
+      messages = 0
+      await window.loadURL('data:text/html,' + encodeURIComponent('<!doctype html>' + html))
+      const deferredState = await window.webContents.executeJavaScript('window.readerDeferredState || null')
+      if (index === 2) assert.equal(deferredState, 'interactive')
+      counts.push(messages)
+    }
+    assert.deepEqual(counts, [1, 0, 1, 1])
+    return { notificationsPerDocument: counts }
+  } finally {
+    window.webContents.removeListener('ipc-message', onMessage)
+  }
+}
+
 async function run () {
   let filterWorkload
   let traceStopped = false
@@ -303,6 +331,7 @@ async function run () {
 
     filterWorkload = await runFilteringWorkload()
     const placesWorkload = await runPlacesWorkload()
+    const readerWorkload = await runReaderWorkload(window)
 
     const tracePath = await contentTracing.stopRecording()
     traceStopped = true
@@ -312,6 +341,7 @@ async function run () {
       extractedCharacters: pageData.extractedText.length,
       filtering: filterWorkload,
       places: placesWorkload,
+      reader: readerWorkload,
       previewBytes,
       previewSize: preview.getSize(),
       traceBytes

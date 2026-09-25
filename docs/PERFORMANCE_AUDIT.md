@@ -97,14 +97,20 @@ Validate offline editing, diagrams, math, highlighting, assets and saved Markdow
 before replacing the runtime bundle. The PDF bundle already has a dedicated
 asset-pruning pipeline; do not assume repeating that work helps here.
 
-### 4. Avoid redundant positive reader detection
+### 4. Avoid redundant positive reader detection — implemented
 
-`js/preload/readerDetector.js:5` reads every paragraph's text; lines 48 and 51 run
-the scan at both `interactive` and `load`. Once a document has reported
-`canReader`, there is currently no negative status to revoke it. Consider skipping
-the second scan after a positive first result, while retaining the load-time retry
-for initially negative pages. Test deferred content, navigation and large articles
-before changing scheduling.
+`js/preload/readerDetector.js` previously scanned every paragraph at both
+`interactive` and `load`, even after reporting `canReader`. A per-document flag
+now skips the redundant positive scan/notification. Negative pages still retry
+at load; new documents start with fresh state. Detection thresholds are unchanged.
+
+The 25,000-paragraph regression performs 25,000 text reads instead of 50,000.
+Four new Node tests cover positive/negative pages, deferred content, navigation
+isolation, ready states and subframes. The Electron smoke loads a positive page,
+a negative page, an article populated by a deferred script, and another positive
+document: notification counts are **[1, 0, 1, 1]**. All 360 Node tests, lint, build,
+Electron performance and diff checks passed after correcting a test formatting
+error. No wall-clock reader-detection speedup is claimed.
 
 ### 5. Index search-result deduplication if larger result sets justify it
 
