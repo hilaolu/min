@@ -90,21 +90,33 @@ cache mutation, not IndexedDB deletion time. All 356 Node tests, app/script lint
 the Electron performance smoke and diff checks passed. The operation-count
 regression failed against the original repeated-scan implementation.
 
-### 3. Narrow the Markdown editor's shipped/runtime assets
+### 3. Markdown packaging — unused variants excluded; runtime unchanged
 
-`pages/markdown/index.html:26` loads Cherry's full UMD distribution. Locally that
-file is 13,011,135 bytes; the package also contains ESM, core, stream and engine
-variants. `scripts/createPackage.js` excludes source maps and minifies staged JS,
-but does not explicitly select just the required Cherry distribution/assets.
+`scripts/createPackage.js` now excludes nine unused Cherry ESM/core/engine/stream
+JS distributions. It retains the full UMD editor, CSS, all fonts, addons, package
+metadata and legal comments. Nothing changes in the development installation.
+The excluded files total **13,863,070 bytes (13.22 MiB)**. Applying the existing
+release minifier to copies of those nine files did not reduce them further, so
+these bytes are additional to the previous minification savings. Compressed
+installer size and whole-app package size have not been measured.
 
-First inspect a staged release and exclude unused variants while retaining
-licenses, CSS/fonts and dynamically loaded assets. Separately investigate a
-core-plus-required-plugins build to reduce parse/initialization work: the local
-core file is 2,313,477 bytes, but it is **not** assumed feature-equivalent to the
-full editor. These are development file sizes, not measured release savings.
-Validate offline editing, diagrams, math, highlighting, assets and saved Markdown
-before replacing the runtime bundle. The PDF bundle already has a dedicated
-asset-pruning pipeline; do not assume repeating that work helps here.
+The Node regression uses electron-builder's actual dependency-file matcher with
+the production configuration. `test/fixtures/stageMarkdown.js` copies the editor
+resources through that matcher and applies the production release minifier.
+`test/electronMarkdown.js` now accepts `--app-root=<staged directory>` and blocks
+HTTP(S) requests, asserting none are needed. Source and staged editor acceptance
+both passed, including keyboard behavior, edit/save/conflict handling and layout.
+Only `cherry-markdown.js` remains among the staged top-level distribution scripts.
+All 365 Node tests, lint, build, packaging-script syntax and diff checks passed.
+Both Electron runs emitted existing GLib and missing optional ECharts warnings.
+
+Reproduce asset staging with `node test/fixtures/stageMarkdown.js`, then run
+`DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronMarkdown.js
+--app-root=<directory from staging output>`. This does not build an installer.
+
+Replacing the full runtime with core-plus-selected-plugins remains deferred:
+core is not feature-equivalent, and would need additional diagram/math/asset
+compatibility tests. No editor parse-time improvement is claimed here.
 
 ### 4. Avoid redundant positive reader detection — implemented
 

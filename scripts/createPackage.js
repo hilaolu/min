@@ -86,6 +86,9 @@ module.exports = function (platform, extraOptions) {
       '!pages/pdfViewer/embedViewer.js',
       // EmbedPDF is bundled by buildPDFViewer; ship only dist/pdfViewer assets.
       '!**/node_modules/@embedpdf/**',
+      // Markdown loads the full UMD runtime; keep its CSS, fonts and addons, but
+      // not the unused ESM/core/engine/stream distribution variants.
+      '!**/node_modules/cherry-markdown/dist/cherry-markdown.{esm,core,core.esm,engine,engine.esm,engine.core,engine.core.esm,stream,stream.esm}.js',
       // this is copied during the build
       '!**/icons/icon.icns',
       '!scripts/',

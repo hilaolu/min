@@ -6,6 +6,9 @@ const path = require('node:path')
 const { app, BrowserWindow, ipcMain, nativeTheme, net, protocol, session } = require('electron')
 const createProtocol = require('../main/minInternalProtocol.js')
 
+const rootArgument = process.argv.find(arg => arg.startsWith('--app-root='))
+const rootDir = path.resolve(rootArgument ? rootArgument.slice('--app-root='.length) : path.join(__dirname, '..'))
+
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'min-markdown-'))
 const preload = path.join(temporary, 'preload.js')
 const saveChannel = 'markdown-smoke:save'
@@ -38,7 +41,7 @@ const bundle = createProtocol({
   net,
   path,
   protocol,
-  rootDir: path.resolve(__dirname, '..'),
+  rootDir,
   Response
 })
 
@@ -92,6 +95,12 @@ const deadline = setTimeout(() => {
 async function run () {
   await app.whenReady()
   bundle.install(session.defaultSession)
+  // Editor acceptance must not silently depend on downloading missing assets.
+  const networkRequests = []
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, respond) => {
+    networkRequests.push(details.url)
+    respond({ cancel: true })
+  })
 
   const window = new BrowserWindow({
     height: 700,
@@ -302,6 +311,7 @@ async function run () {
     return editor.height > 300 && editor.bottom <= footer.top + 1 && footer.bottom <= innerHeight + 1
   })()`), true, 'editor and save status fit the narrow viewport')
   console.log('PASS fixed light editor theme and narrow editor layout')
+  assert.deepEqual(networkRequests, [], 'the editor should work entirely from local assets')
 }
 
 run().then(() => finish(0), error => {
