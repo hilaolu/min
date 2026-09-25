@@ -1,5 +1,9 @@
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 const test = require('node:test')
+const vm = require('node:vm')
+const stemmer = require('stemmer')
 
 global.nonLetterRegex = /[^\s0-9A-Za-z]/g
 global.calculateHistoryScore = (item, boost = 0) => item.lastVisit * (1 + boost)
@@ -192,4 +196,92 @@ test('cooperative snippet generation stops superseded body work', async function
     () => cancelled
   )
   assert.equal(result, null)
+})
+
+function instrumentFullText (globals = {}, stem = stemmer) {
+  const context = {
+    module: { exports: {} },
+    nonLetterRegex: global.nonLetterRegex,
+    require: name => {
+      assert.equal(name, 'stemmer')
+      return stem
+    },
+    ...globals
+  }
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/places/fullTextSearch.js'), 'utf8'), context)
+  return context.module.exports
+}
+
+test('tokenization filters and caps tokens before doing expensive stemming', function () {
+  let stems = 0
+  const instrumented = instrumentFullText({}, word => { stems++; return stemmer(word) })
+  const result = instrumented.tokenize(('the ' + 'x'.repeat(101) + ' running ').repeat(20005))
+  assert.equal(result.length, 20000)
+  assert.ok(result.every(token => token === 'run'))
+  assert.equal(stems, 20000)
+  assert.deepEqual(fullText.tokenize("The RUNNING runner's café alpha-beta"), ['run', 'runner', 'caf', 'alpha', 'beta'])
+})
+
+// Deliberately simple reference: rescan each complete window, as before the
+// rolling counts optimization, including the rule that the last best tie wins.
+function referenceSnippet (text, query) {
+  const normalize = word => stemmer(word.toLowerCase().replace(global.nonLetterRegex, ''))
+  const search = new Set(query.split(/\s+/).map(normalize).filter(Boolean))
+  const words = (text.match(/\S+/g) || []).map(raw => ({ raw, normalized: normalize(raw) }))
+  let best
+  let bestScore = 0
+  for (let end = 1; end <= words.length; end++) {
+    const window = words.slice(Math.max(0, end - 18), end)
+    const score = new Set(window.filter(word => search.has(word.normalized)).map(word => word.normalized)).size
+    if (score > 0 && score >= bestScore) { best = window; bestScore = score }
+  }
+  if (!best) return null
+  const matching = best.map((word, index) => search.has(word.normalized) ? index : -1).filter(index => index >= 0)
+  const first = matching[0]
+  const last = matching[matching.length - 1]
+  return {
+    searchFragment: {
+      contextBefore: best[first - 1]?.raw,
+      fragment: best.slice(first, last + 1).map(word => word.raw).join(' '),
+      contextAfter: best[last + 1]?.raw
+    },
+    searchSnippet: best.slice(Math.max(0, first - 2), Math.min(best.length, last + 5)).map(word => word.raw).join(' ') + '...'
+  }
+}
+
+test('rolling snippet scoring preserves repeated tokens, window eviction, and last-best ties', function () {
+  const vocabulary = ['alpha', 'ALPHA!', 'betas', 'plain', 'words', 'running', 'runs', '!!!', "runner's", 'café']
+  let seed = 731
+  const randomWord = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return vocabulary[seed % vocabulary.length]
+  }
+  const texts = [
+    '', 'plain words', 'alpha', 'alpha alpha ' + 'plain '.repeat(17) + 'beta',
+    'alpha beta ' + 'plain '.repeat(18) + 'alpha plain beta',
+    ...Array.from({ length: 30 }, () => Array.from({ length: 80 }, randomWord).join(' \n\t'))
+  ]
+  for (const text of texts) {
+    for (const query of ['', '!!!', 'alpha', 'alpha alpha', 'alpha beta', 'run runner', 'missing', 'café']) {
+      assert.deepEqual(fullText.createSnippet(text, query), referenceSnippet(text, query), JSON.stringify({ text, query }))
+    }
+  }
+})
+
+test('snippet scanning allocates query sets once, not once per body word', function () {
+  let sets = 0
+  const instrumented = instrumentFullText({
+    Set: class extends Set {
+      constructor (values) { super(values); sets++ }
+    }
+  })
+  sets = 0
+  assert.ok(instrumented.createSnippet('alpha beta plain '.repeat(1000), 'alpha beta'))
+  assert.equal(sets, 1)
+})
+
+test('cooperative snippet generation returns the same result across yield boundaries', async function () {
+  const text = 'alpha plain '.repeat(1100) + 'beta alpha ending'
+  assert.deepEqual(await fullText.createSnippetAsync(text, 'alpha beta'), referenceSnippet(text, 'alpha beta'))
+  assert.equal(await fullText.createSnippetAsync(text, 'alpha beta', () => true), null)
 })

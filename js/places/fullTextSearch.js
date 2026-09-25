@@ -34,8 +34,8 @@ function tokenize (string) {
     .split(whitespaceRegex).filter(function (token) {
       return !stopWords.has(token) && token.length <= 100
     })
-    .map(token => stemmer(token))
     .slice(0, 20000)
+    .map(token => stemmer(token))
 }
 
 function getCandidateLimit (resultLimit) {
@@ -135,6 +135,7 @@ function createSnippetScan (text, searchText) {
   return {
     bestScore: 0,
     bestWindow: null,
+    matchCounts: new Map(),
     matches: text.matchAll(/\S+/g),
     searchWords,
     window: []
@@ -142,12 +143,22 @@ function createSnippetScan (text, searchText) {
 }
 
 function scanSnippetWord (scan, word) {
-  scan.window.push({ raw: word, normalized: normalizeSnippetWord(word) })
-  if (scan.window.length > 18) scan.window.shift()
-  const score = new Set(scan.window
-    .filter(item => scan.searchWords.has(item.normalized))
-    .map(item => item.normalized)).size
-  if (score > scan.bestScore || (score === scan.bestScore && score > 0)) {
+  const normalized = normalizeSnippetWord(word)
+  scan.window.push({ raw: word, normalized })
+  if (scan.searchWords.has(normalized)) {
+    scan.matchCounts.set(normalized, (scan.matchCounts.get(normalized) || 0) + 1)
+  }
+  // Track distinct matching tokens incrementally instead of filtering and
+  // rebuilding a set for all 18 words on every step. Repeats count only once.
+  if (scan.window.length > 18) {
+    const removed = scan.window.shift().normalized
+    const count = scan.matchCounts.get(removed)
+    if (count === 1) scan.matchCounts.delete(removed)
+    else if (count > 1) scan.matchCounts.set(removed, count - 1)
+  }
+  const score = scan.matchCounts.size
+  // Preserve the last window on positive-score ties.
+  if (score > 0 && score >= scan.bestScore) {
     scan.bestScore = score
     scan.bestWindow = scan.window.slice()
   }

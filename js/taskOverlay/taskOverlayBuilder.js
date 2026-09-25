@@ -159,7 +159,8 @@ var TaskOverlayBuilder = {
 
         var lastTabEl = document.createElement('span')
         lastTabEl.className = 'task-last-tab-title'
-        var lastTabTitle = task.tabs.get().sort((a, b) => b.lastActivity - a.lastActivity)[0].title
+        const orderedTabs = task.tabs.get().sort((a, b) => b.lastActivity - a.lastActivity)
+        var lastTabTitle = orderedTabs[0]?.title
 
         if (lastTabTitle) {
           lastTabTitle = searchbarUtils.getRealTitle(lastTabTitle)
@@ -170,20 +171,19 @@ var TaskOverlayBuilder = {
         }
         infoContainer.appendChild(lastTabEl)
 
-        var favicons = []
-        var faviconURLs = []
+        const favicons = []
+        const seenFaviconURLs = new Set()
 
-        task.tabs.get().sort((a, b) => b.lastActivity - a.lastActivity).forEach(function (tab) {
-          if (tab.favicon) {
+        orderedTabs.forEach(function (tab) {
+          if (tab.favicon && !seenFaviconURLs.has(tab.favicon.url)) {
             favicons.push(tab.favicon)
-            faviconURLs.push(tab.favicon.url)
+            seenFaviconURLs.add(tab.favicon.url)
           }
         })
 
         if (favicons.length > 0) {
           var faviconsEl = document.createElement('span')
           faviconsEl.className = 'task-favicons'
-          favicons = favicons.filter((i, idx) => faviconURLs.indexOf(i.url) === idx)
 
           favicons.forEach(function (favicon) {
             var img = document.createElement('img')

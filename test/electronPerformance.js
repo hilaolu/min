@@ -125,6 +125,104 @@ async function runFilteringWorkload () {
   }
 }
 
+async function runPlacesWorkload () {
+  const window = new BrowserWindow({
+    show: false,
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  })
+  try {
+    await window.loadFile(path.resolve(__dirname, '../js/places/placesService.html'))
+    const cases = await window.webContents.executeJavaScript(`(async function () {
+      await historyReady
+      const now = Date.now()
+      await db.places.bulkPut(Array.from({ length: 2000 }, (_, index) => ({
+        id: index + 1,
+        url: (index % 2 === 0 ? 'https://needle.example/' : 'https://example.com/') + index,
+        title: 'Needle page ' + index,
+        tags: [],
+        visitCount: index % 20,
+        lastVisit: now - (index % 101) * 1000,
+        isBookmarked: false,
+        extractedText: 'Body must not be returned',
+        searchIndex: []
+      })))
+      await loadHistoryInMemory()
+      const originalScore = calculateHistoryScore
+      const originalSort = Array.prototype.sort
+      const expected = historyInMemoryCache.map(item => ({
+        id: item.id,
+        score: originalScore(item, item.url.startsWith('https://needle') ? 10 : 0.4 + 0.075 * 'needle'.length)
+      })).sort((a, b) => b.score - a.score).map(item => item.id)
+      let scoreCalculations
+      let largestSort
+      calculateHistoryScore = (item, boost) => { scoreCalculations++; return originalScore(item, boost) }
+      Array.prototype.sort = function (compare) {
+        largestSort = Math.max(largestSort, this.length)
+        return originalSort.call(this, compare)
+      }
+      try {
+        return [4, 20, 1000].map(limit => {
+          scoreCalculations = 0
+          largestSort = 0
+          let response
+          handleRequest({ action: 'searchPlaces', text: 'needle', options: { limit }, callbackId: limit }, value => { response = value })
+          return {
+            limit,
+            scoreCalculations,
+            largestSort,
+            expected: expected.slice(0, limit),
+            ids: response.result.map(item => item.id),
+            callbackId: response.callbackId,
+            publicOnly: response.result.every(item => !('searchTextCache' in item) && !('extractedText' in item) && !('score' in item))
+          }
+        })
+      } finally {
+        calculateHistoryScore = originalScore
+        Array.prototype.sort = originalSort
+      }
+    })()`)
+    cases.forEach(result => {
+      assert.deepEqual(result.ids, result.expected)
+      assert.equal(result.callbackId, result.limit)
+      assert.equal(result.scoreCalculations, 2000)
+      assert.equal(result.largestSort, result.limit)
+      assert.equal(result.publicOnly, true)
+    })
+    const fullText = await window.webContents.executeJavaScript(`(async function () {
+      try {
+        const saved = await new Promise(resolve => handleRequest({
+          action: 'updatePlace',
+          pageData: {
+            url: 'https://example.com/full-text-fixture',
+            title: 'Full text fixture',
+            extractedText: 'plain '.repeat(2200) + 'before alpha between beta after'
+          }
+        }, resolve))
+        if (saved.error) throw new Error(saved.error.message)
+        return await new Promise((resolve, reject) => fullTextPlacesSearch('alpha beta', (results, error, metrics) => {
+          if (error) reject(error)
+          else resolve({ results, metrics, indexedTokens: tokenize('cat dog sun '.repeat(25000)).length })
+        }, { limit: 4 }))
+      } finally {
+        db.close()
+      }
+    })()`)
+    assert.equal(fullText.results.length, 1)
+    assert.deepEqual(fullText.results[0].searchFragment, {
+      contextBefore: 'before', fragment: 'alpha between beta', contextAfter: 'after'
+    })
+    assert.equal(fullText.metrics.documentsLoaded, 1)
+    assert.equal(fullText.metrics.bodiesStemmed, 1)
+    assert.equal(fullText.indexedTokens, 20000)
+    return {
+      ordinary: cases.map(({ limit, scoreCalculations, largestSort }) => ({ limit, scoreCalculations, largestSort })),
+      fullText: { ...fullText.metrics, indexedTokens: fullText.indexedTokens }
+    }
+  } finally {
+    window.destroy()
+  }
+}
+
 async function run () {
   let filterWorkload
   let traceStopped = false
@@ -169,6 +267,7 @@ async function run () {
     assert.ok(previewBytes <= 256 * 1024)
 
     filterWorkload = await runFilteringWorkload()
+    const placesWorkload = await runPlacesWorkload()
 
     const tracePath = await contentTracing.stopRecording()
     traceStopped = true
@@ -177,6 +276,7 @@ async function run () {
     console.log(JSON.stringify({
       extractedCharacters: pageData.extractedText.length,
       filtering: filterWorkload,
+      places: placesWorkload,
       previewBytes,
       previewSize: preview.getSize(),
       traceBytes

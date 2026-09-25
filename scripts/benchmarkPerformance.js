@@ -5,6 +5,7 @@ const BrowserSession = require('../js/tabState/browserSession.js')
 const { PlacesCache } = require('../js/places/placesCache.js')
 const { extractPageText } = require('../js/preload/textExtractor.js')
 const { schemaV1, schemaV2 } = require('../js/util/databaseSchema.js')
+const createTaskOverlayHarness = require('../test/fixtures/taskOverlayHarness.js')
 
 global.oneDayInMS = 24 * 60 * 60 * 1000
 global.quickScore = { quickScore: () => 0 }
@@ -18,6 +19,48 @@ function measure (work) {
   const start = performance.now()
   const result = work()
   return { elapsedMs: Number((performance.now() - start).toFixed(2)), result }
+}
+
+function measureMedian (work) {
+  for (let index = 0; index < 5; index++) work()
+  const samples = Array.from({ length: 15 }, () => measure(work).elapsedMs)
+  return samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)]
+}
+
+function benchmarkFullTextProcessing () {
+  const tokenization = [6000, 60000, 300000].map(characters => {
+    const text = 'cat dog sun '.repeat(characters / 12)
+    let retainedTokens
+    const medianMs = measureMedian(() => { retainedTokens = fullTextSearch.tokenize(text).length })
+    return { characters, inputWords: characters / 4, retainedTokens, medianMs }
+  })
+  const snippets = [
+    { name: 'no matches', text: 'plain words '.repeat(25000), query: 'alpha beta' },
+    { name: 'dense matches', text: 'alpha beta '.repeat(25000), query: 'alpha beta' },
+    { name: 'sparse matches', text: ('alpha beta ' + 'plain words '.repeat(100)).repeat(240), query: 'alpha beta' }
+  ].map(({ name, text, query }) => ({
+    name,
+    characters: text.length,
+    medianMs: measureMedian(() => fullTextSearch.createSnippet(text, query))
+  }))
+  return { tokenization, snippets }
+}
+
+function benchmarkTaskSummaries () {
+  return [200, 1000, 5000].flatMap(tabCount => [20, tabCount].map(uniqueFavicons => {
+    const tabs = Array.from({ length: tabCount }, (_, index) => ({
+      title: `Tab ${index}`,
+      lastActivity: (index * 37) % 101,
+      favicon: { url: `https://example.com/icon-${index % uniqueFavicons}`, luminance: index % 100 }
+    }))
+    const { render, metrics } = createTaskOverlayHarness(tabs)
+    const medianMs = measureMedian(() => {
+      metrics.snapshots = 0
+      metrics.sorts = 0
+      render()
+    })
+    return { tabs: tabCount, uniqueFavicons, medianMs, snapshotsPerRender: metrics.snapshots, sortsPerRender: metrics.sorts }
+  }))
 }
 
 function createPlace (id, bodyLength = 300000) {
@@ -59,13 +102,37 @@ function benchmarkPlaces () {
 function benchmarkOrdinarySearch (itemCount) {
   global.historyInMemoryCache = Array.from({ length: itemCount }, (_, index) => {
     const item = createPlace(index, 0)
+    // Mix prefix and title matches so query boosts change the cache's order.
+    if (index % 2 === 0) item.url = `https://benchmark.example.com/${index}`
+    else item.title = `Benchmark page ${index}`
     item.searchTextCache = placesSearch.getSearchTextCache(item)
     return item
-  })
-  const timing = measure(function () {
-    placesSearch.searchPlaces('no-match-query', function () {}, { limit: 4 })
-  })
-  return { elapsedMs: timing.elapsedMs, summaries: itemCount }
+  }).sort((a, b) => global.calculateHistoryScore(b) - global.calculateHistoryScore(a))
+  const score = global.calculateHistoryScore
+  let scoreCalculations = 0
+  global.calculateHistoryScore = (item, boost) => {
+    scoreCalculations++
+    return score(item, boost)
+  }
+  try {
+    const searches = [
+      { query: 'no-match-query', limit: 4 },
+      { query: 'benchmark', limit: 4 },
+      { query: 'benchmark', limit: 20 },
+      { query: 'benchmark', limit: 1000 },
+      { query: '', limit: 100 }
+    ].map(({ query, limit }) => {
+      let resultCount
+      const medianMs = measureMedian(() => {
+        scoreCalculations = 0
+        placesSearch.searchPlaces(query, results => { resultCount = results.length }, { limit })
+      })
+      return { query, limit, medianMs, resultCount, scoreCalculations }
+    })
+    return { summaries: itemCount, searches }
+  } finally {
+    global.calculateHistoryScore = score
+  }
 }
 
 function benchmarkSuggestions (itemCount) {
@@ -230,10 +297,12 @@ async function main () {
     browserSessionRestore: [1000, 10000, 20000].map(benchmarkRestore),
     extraction: benchmarkExtraction(),
     fullText: await benchmarkFullText(),
+    fullTextProcessing: benchmarkFullTextProcessing(),
     ordinarySearch: [1000, 10000, 20000].map(benchmarkOrdinarySearch),
     placeSuggestions: [1000, 10000, 20000].map(benchmarkSuggestions),
     places: benchmarkPlaces(),
-    storage: await benchmarkStorage()
+    storage: await benchmarkStorage(),
+    taskSummaryCPUOnly: benchmarkTaskSummaries()
   }
 
   console.log(JSON.stringify(report, null, 2))

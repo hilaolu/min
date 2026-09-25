@@ -24,7 +24,52 @@ function getSearchTextCache (item) {
 }
 
 function searchPlaces (searchText, callback, options) {
-  function processSearchItem (item) {
+  const matches = []
+  const requestedLimit = options && options.limit
+  const resultsLimit = Number.isFinite(requestedLimit) && requestedLimit >= 0
+    ? Math.floor(requestedLimit)
+    : 100
+  if (resultsLimit === 0) {
+    callback(matches)
+    return
+  }
+  let heapReady = false
+
+  function compareMatches (a, b) {
+    return b.score - a.score || a.order - b.order
+  }
+
+  function siftDown (match, index) {
+    while (index * 2 + 1 < matches.length) {
+      let child = index * 2 + 1
+      if (child + 1 < matches.length && compareMatches(matches[child + 1], matches[child]) > 0) child++
+      if (compareMatches(match, matches[child]) >= 0) break
+      matches[index] = matches[child]
+      index = child
+    }
+    matches[index] = match
+  }
+
+  function addMatch (item, boost, order) {
+    const score = calculateHistoryScore(item, boost)
+    if (matches.length < resultsLimit) {
+      matches.push({ item, score, order })
+      return
+    }
+    // Keep only the best results in a heap, with the worst at the root. Later
+    // equal-score matches cannot displace earlier ones from the stable order.
+    // Build it only on overflow: small searches can go straight to sorting.
+    if (!heapReady) {
+      for (let index = Math.floor(matches.length / 2) - 1; index >= 0; index--) {
+        siftDown(matches[index], index)
+      }
+      heapReady = true
+    }
+    if (score <= matches[0].score) return
+    siftDown({ item, score, order }, 0)
+  }
+
+  function processSearchItem (item, order) {
     if (limitToBookmarks && !item.isBookmarked) {
       return
     }
@@ -43,9 +88,9 @@ function searchPlaces (searchText, callback, options) {
     // if the url contains the search string, count as a match
     // prioritize matches near the beginning of the url
     if (tindex === 0) {
-      matches.push({ item, boost: itemStartBoost })
+      addMatch(item, itemStartBoost, order)
     } else if (tindex !== -1) {
-      matches.push({ item, boost: exactMatchBoost })
+      addMatch(item, exactMatchBoost, order)
     } else {
       // if all of the search words (split by spaces, etc) exist in the url, count it as a match, even if they are out of order
 
@@ -61,7 +106,7 @@ function searchPlaces (searchText, callback, options) {
         }
 
         if (substringMatch) {
-          matches.push({ item, boost: 0.125 * swl + (0.02 * stl) })
+          addMatch(item, 0.125 * swl + (0.02 * stl), order)
           return
         }
       }
@@ -69,7 +114,7 @@ function searchPlaces (searchText, callback, options) {
       if ((item.visitCount > 2 && item.lastVisit > oneWeekAgo) || item.lastVisit > oneDayAgo) {
         const score = Math.max(quickScore.quickScore(item.searchTextCache.url.substring(0, 100), st), quickScore.quickScore(item.searchTextCache.title.substring(0, 50), st))
         if (score > 0.3) {
-          matches.push({ item, boost: score * 0.33 })
+          addMatch(item, score * 0.33, order)
         }
       }
     }
@@ -78,7 +123,6 @@ function searchPlaces (searchText, callback, options) {
   const oneDayAgo = Date.now() - (oneDayInMS)
   const oneWeekAgo = Date.now() - (oneDayInMS * 7)
 
-  const matches = []
   const st = searchFormatURL(searchText)
   const stl = searchText.length
   const searchWords = st.split(' ')
@@ -87,24 +131,19 @@ function searchPlaces (searchText, callback, options) {
   const itemStartBoost = Math.min(2.5 * stl, 10)
   const exactMatchBoost = 0.4 + (0.075 * stl)
   const limitToBookmarks = options && options.searchBookmarks
-  const requestedLimit = options && options.limit
-  const resultsLimit = Number.isFinite(requestedLimit) && requestedLimit >= 0
-    ? requestedLimit
-    : 100
 
   if (searchText.indexOf(' ') !== -1) {
     substringSearchEnabled = true
   }
 
+  // Query boosts can change the cache order, so late entries must still compete.
   for (let i = 0; i < historyInMemoryCache.length; i++) {
-    processSearchItem(historyInMemoryCache[i])
+    processSearchItem(historyInMemoryCache[i], i)
   }
 
-  matches.sort(function (a, b) {
-    return calculateHistoryScore(b.item, b.boost) - calculateHistoryScore(a.item, a.boost)
-  })
+  matches.sort(compareMatches)
 
-  callback(matches.slice(0, resultsLimit).map(match => match.item))
+  callback(matches.map(match => match.item))
 }
 
 if (typeof window !== 'undefined') {
