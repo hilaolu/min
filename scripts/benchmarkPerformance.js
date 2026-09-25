@@ -157,6 +157,23 @@ function benchmarkOrdinarySearch (itemCount) {
   }
 }
 
+function benchmarkPlacesDeletion (itemCount) {
+  const ids = Array.from({ length: itemCount / 2 }, (_, index) => index * 2)
+  const samples = []
+  for (let run = 0; run < 20; run++) {
+    const cache = new PlacesCache({
+      calculateScore: item => item.lastVisit,
+      getSearchTextCache: () => ({}),
+      tagIndex: { addPage: function () {}, removePage: function () {} }
+    })
+    for (let id = 0; id < itemCount; id++) cache.add(createPlace(id, 0), { sort: false })
+    const { elapsedMs } = measure(() => cache.removeByIds(ids))
+    if (cache.items.length !== itemCount - ids.length) throw new Error('Unexpected deletion count')
+    if (run >= 5) samples.push(elapsedMs)
+  }
+  return { historyEntries: itemCount, deleted: ids.length, medianMs: samples.sort((a, b) => a - b)[7] }
+}
+
 function benchmarkSuggestions (itemCount) {
   const tagIndex = { addPage: function () {}, onChange: function () {}, removePage: function () {}, reset: function () {} }
   const cache = new PlacesCache({
@@ -322,6 +339,7 @@ async function main () {
     fullText: await benchmarkFullText(),
     fullTextProcessing: benchmarkFullTextProcessing(),
     ordinarySearch: [1000, 10000, 20000].map(benchmarkOrdinarySearch),
+    placesDeletion: [1000, 20000].map(benchmarkPlacesDeletion),
     placeSuggestions: [1000, 10000, 20000].map(benchmarkSuggestions),
     places: benchmarkPlaces(),
     storage: await benchmarkStorage(),

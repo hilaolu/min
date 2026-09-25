@@ -125,3 +125,55 @@ test('recent Places suggestions preserve relevance before initial cache sorting 
   assert.deepEqual(results.map(item => item.id), [2])
   assert.equal(metrics.usedSortedCache, false)
 })
+
+test('bulk deletion preserves cache identity, survivor order, indexes and tag lifecycle', function () {
+  for (const sorted of [false, true]) {
+    const { cache, events } = createCache()
+    for (let id = 0; id < 8; id++) cache.add(place(id, { isBookmarked: true, tags: ['docs'] }), { sort: false })
+    cache.add(place(undefined), { sort: false })
+    if (sorted) cache.sort()
+    const items = cache.items
+    const survivors = items.filter(item => ![0, 2, 7].includes(item.id))
+    events.length = 0
+
+    cache.removeByIds([7, 2, 7, 99, undefined, 0])
+    assert.equal(cache.items, items)
+    assert.deepEqual(cache.items, survivors)
+    assert.equal(cache.sorted, sorted)
+    survivors.forEach((item, index) => {
+      assert.equal(cache.items[index], item)
+      assert.equal(cache.getByURL(item.url), item)
+      if (item.id !== undefined) assert.equal(cache.getById(item.id), item)
+    })
+    for (const id of [0, 2, 7]) {
+      assert.equal(cache.getById(id), null)
+      assert.equal(cache.getByURL(place(id).url), null)
+    }
+    assert.deepEqual(events, [7, 2, 0].map(id => ['remove', place(id).url]))
+    cache.removeByIds([1, 3, 4, 5, 6])
+    assert.deepEqual(cache.items.map(item => item.id), [undefined])
+    cache.removeByURL(place(undefined).url)
+    assert.equal(cache.items.length, 0)
+    assert.equal(cache.byId.size, 0)
+    assert.equal(cache.byURL.size, 0)
+  }
+})
+
+test('bulk deletion compacts once without repeated indexOf or splice calls', function () {
+  const { cache } = createCache()
+  for (let id = 0; id < 3000; id++) cache.add(place(id), { sort: false })
+  cache.items.indexOf = cache.items.splice = () => { throw new Error('repeated array scan/shift') }
+  cache.removeByIds(Array.from({ length: 1500 }, (_, i) => i * 2))
+  assert.equal(cache.items.length, 1500)
+  assert.ok(cache.items.every((item, index) => item.id === index * 2 + 1))
+})
+
+test('empty and missing-ID deletions do not scan the cache', function () {
+  const { cache, events } = createCache()
+  cache.add(place(1))
+  cache.items[Symbol.iterator] = () => { throw new Error('unnecessary cache scan') }
+  cache.removeByIds([])
+  cache.removeByIds([2, 2, undefined])
+  assert.equal(cache.items.length, 1)
+  assert.deepEqual(events, [])
+})

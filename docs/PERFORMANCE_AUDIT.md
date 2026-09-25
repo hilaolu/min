@@ -5,8 +5,8 @@
 Reviewed core history/bookmark search, tab/task rendering, page preloads, main
 process persistence, and build/package configuration starting at `ec3a797e`.
 Existing `docs/vault/` edits and the untracked `tab-picker/` tree were excluded.
-This is a targeted code review with one measured improvement, not a whole-app
-profile. The other opportunities below are unimplemented and unbenchmarked.
+This is a targeted code review, not a whole-app profile. Follow-up status and
+measurements are recorded individually below; unimplemented ideas are not gains.
 
 ## Implemented: score only the requested bookmark tags
 
@@ -63,17 +63,23 @@ layout/paint measurements with hundreds or thousands of tabs, plus focus,
 selection, dragging, and cross-window synchronization tests. Existing task-summary
 CPU benchmarks do not measure this DOM workload.
 
-### 2. Compact history deletions in one pass
+### 2. Compact history deletions in one pass — implemented
 
-`js/places/placesCache.js:85` removes IDs one at a time through `removeByURL`, which
-uses `indexOf` and `splice`. Deleting K items from N entries can take O(KN) array
-work. `js/places/placesService.js:27` invokes this during expiration, first after
-20 seconds and then hourly.
+`js/places/placesCache.js:removeByIds` previously called `indexOf` and `splice`
+for each removed record, taking O(KN) array work for K deletions from N entries.
+Expiration invokes this after 20 seconds and hourly thereafter.
 
-Use an ID set and in-place array compaction, updating both lookup maps and tag
-counts once per removed record. Preserve the `items` array identity because the
-service keeps a reference to it. Benchmark large expiration batches and test
-duplicate/missing IDs, survivors' ordering, and tag-index consistency.
+It now updates lookup maps/tag counts once per existing ID, collects the removed
+objects, and compacts the shared array in one O(N) pass. Duplicate/missing IDs,
+undefined IDs, survivor ordering/object identity, sorted state, and tag-removal
+order are covered. Empty/missing-only batches avoid scanning entirely.
+
+The new `placesDeletion` benchmark excludes cache construction and uses five
+warm-ups/15 samples. Removing 10,000 alternating records from 20,000 took
+**33.41 → 3.19 ms** median; 500 from 1,000 took **0.18 → 0.10 ms**. This measures
+cache mutation, not IndexedDB deletion time. All 356 Node tests, app/script lint,
+the Electron performance smoke and diff checks passed. The operation-count
+regression failed against the original repeated-scan implementation.
 
 ### 3. Narrow the Markdown editor's shipped/runtime assets
 
