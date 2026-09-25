@@ -30,7 +30,6 @@ class RecordingView {
 function createWindow (width = 1000, height = 800) {
   return {
     chromeFocusCount: 0,
-    chromeMessages: [],
     destroyed: false,
     focusCount: 0,
     focus: function () { this.focusCount++ },
@@ -50,7 +49,6 @@ function createHarness () {
     [senderB, { win: windowB }]
   ])
   const attached = new Map()
-  const timers = []
   let createdView
   class View extends RecordingView {
     constructor (options) {
@@ -70,12 +68,10 @@ function createHarness () {
   const presentation = createCommandPalettePresentation({
     WebContentsView: View,
     getWindowWebContents: window => ({
-      focus: () => { window.chromeFocusCount++ },
-      send: channel => { window.chromeMessages.push(channel) }
+      focus: () => { window.chromeFocusCount++ }
     }),
     pageURL: 'min://app/pages/commandPalette/overlay.html',
     preloadPath: '/app/main/commandPalettePreload.js',
-    schedule: callback => { timers.push(callback) },
     windows
   })
 
@@ -85,7 +81,6 @@ function createHarness () {
     presentation,
     senderA,
     senderB,
-    timers,
     windowA,
     windowB
   }
@@ -104,6 +99,10 @@ test('Command Palette presentation coalesces readiness and sends one structured 
   assert.deepEqual(first, { ok: true })
   assert.equal(view.webContents.messages.length, 0)
   assert.equal(harness.attached.get('command-palette').window, harness.windowA)
+  // Focus must not wait for a timer or overlay readiness: the next key may
+  // arrive before either of those completes.
+  assert.equal(harness.windowA.chromeFocusCount, 1)
+  assert.equal(harness.windowA.focusCount, 1)
 
   harness.presentation.present(harness.senderA, {
     visible: true,
@@ -130,11 +129,9 @@ test('Command Palette presentation coalesces readiness and sends one structured 
     selectedIndex: 0
   })
 
-  assert.equal(harness.timers.length, 1)
-  harness.timers[0]()
+  // Updating candidates must not steal focus again.
   assert.equal(harness.windowA.chromeFocusCount, 1)
   assert.equal(harness.windowA.focusCount, 1)
-  assert.deepEqual(harness.windowA.chromeMessages, ['command-palette:focus-input'])
 })
 
 test('Command Palette presentation owns visibility, routing, layout, and teardown', function () {
@@ -146,6 +143,8 @@ test('Command Palette presentation owns visibility, routing, layout, and teardow
   assert.equal(harness.presentation.present(harness.senderB, { visible: false }).error.code, 'COMMAND_PALETTE_NOT_OWNER')
   assert.equal(harness.presentation.present(harness.senderB, { visible: true }).error.code, 'COMMAND_PALETTE_NOT_OWNER')
   assert.deepEqual(harness.presentation.present(harness.senderB, { open: true, visible: true }), { ok: true })
+  assert.equal(harness.windowA.chromeFocusCount, 1)
+  assert.equal(harness.windowB.chromeFocusCount, 1)
   assert.deepEqual(view.bounds, { x: 0, y: 20, width: 500, height: 260 })
   assert.equal(harness.presentation.present(harness.senderA, { visible: true }).error.code, 'COMMAND_PALETTE_NOT_OWNER')
   assert.equal(harness.presentation.present(harness.senderA, { visible: false }).error.code, 'COMMAND_PALETTE_NOT_OWNER')
@@ -153,6 +152,7 @@ test('Command Palette presentation owns visibility, routing, layout, and teardow
   assert.equal(view.webContents.messages[view.webContents.messages.length - 1].state.visible, true)
   assert.deepEqual(harness.presentation.present(harness.senderB, { visible: false }), { ok: true })
   assert.equal(harness.attached.size, 0)
+  assert.equal(harness.windowB.chromeFocusCount, 1)
 
   harness.presentation.destroy()
   assert.equal(view.webContents.destroyed, true)

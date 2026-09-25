@@ -30,7 +30,6 @@ const HOST_OPERATIONS = [
   'onBrowserCommand',
   'onBrowserSessionChanges',
   'onBrowserSessionSnapshotRequested',
-  'onCommandPaletteFocusRequested',
   'onDownloadNavigation',
   'onDownloadChanged',
   'onFileViewChanged',

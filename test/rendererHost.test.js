@@ -315,18 +315,14 @@ test('Renderer Host names Browser Session, Settings, presentation, menu, and app
 
   let browserSessionChanges
   let snapshotRequests = 0
-  let focusRequests = 0
   host.onBrowserSessionChanges(data => { browserSessionChanges = data })
   host.onBrowserSessionSnapshotRequested(() => { snapshotRequests++ })
-  host.onCommandPaletteFocusRequested(() => { focusRequests++ })
   listeners.get('settings:changed')({}, { key: 'darkMode', value: true })
   listeners.get('tab-state-change-receive')({}, { sourceWindowId: '1', changes: [] })
   listeners.get('read-tab-state')({})
-  listeners.get('command-palette:focus-input')({})
   assert.deepEqual(settingsChange, { key: 'darkMode', value: true })
   assert.deepEqual(browserSessionChanges, { sourceWindowId: '1', changes: [] })
   assert.equal(snapshotRequests, 1)
-  assert.equal(focusRequests, 1)
 })
 
 test('Browser Chrome preload exposes pathless file workflows and defined failures', async function () {

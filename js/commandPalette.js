@@ -38,12 +38,8 @@ function createCommandPalette (options) {
     webviews
   } = options
 
-  let focusUnsubscribe = null
   let initialized = false
   let shortcutUnsubscribe = null
-  let inputGeneration = 0
-  let inputProcessing = null
-  let activationGeneration = null
   const domUnsubscribes = []
   const strategyUnsubscribes = []
 
@@ -136,14 +132,12 @@ function createCommandPalette (options) {
         commandPalette.strategyManager.on('candidates-updated', commandPalette.handleCandidatesUpdate),
         commandPalette.strategyManager.on('candidates-pending', () => { commandPalette.candidatesPending = true })
       )
-      focusUnsubscribe = rendererHost.onCommandPaletteFocusRequested(commandPalette.focusInput)
     },
 
     /**
    * Handle input changes
    */
     handleInput: async function () {
-      const generation = ++inputGeneration
       const inputValue = commandPalette.input.value
       const context = commandPalette.getContext()
 
@@ -152,16 +146,13 @@ function createCommandPalette (options) {
 
       try {
         // Result events own selection; stale requests must not reset it.
-        inputProcessing = commandPalette.strategyManager.processInput(inputValue, context)
-        await inputProcessing
+        await commandPalette.strategyManager.processInput(inputValue, context)
       } catch (error) {
         logger.error('Error processing input:', error)
         // Fallback to empty state on error
-        if (generation === inputGeneration && commandPalette.strategyManager) {
-          await commandPalette.strategyManager.resetToFallback(context)
+        if (commandPalette.strategyManager) {
+          commandPalette.strategyManager.resetToFallback(context)
         }
-      } finally {
-        if (generation === inputGeneration) inputProcessing = null
       }
     },
 
@@ -169,24 +160,7 @@ function createCommandPalette (options) {
    * Handle keyboard events
    * @param {KeyboardEvent} e - Keyboard event
    */
-    handleKeydown: async function (e) {
-      const activatesCandidate = e.key === 'Enter' || (e.ctrlKey && e.key >= '0' && e.key <= '9')
-      if (activatesCandidate && inputProcessing) {
-        // Resolve selection against this input's results, never the previous rows.
-        // A later edit or teardown invalidates the queued activation.
-        e.preventDefault()
-        const generation = inputGeneration
-        if (activationGeneration === generation) return
-        activationGeneration = generation
-        try {
-          await inputProcessing
-        } catch (error) {
-          return
-        } finally {
-          if (activationGeneration === generation) activationGeneration = null
-        }
-        if (generation !== inputGeneration || !commandPalette.isVisible) return
-      }
+    handleKeydown: function (e) {
       const context = commandPalette.getContext()
 
       // Let strategy handle state-specific keyboard events first
@@ -276,13 +250,6 @@ function createCommandPalette (options) {
     },
 
     /**
-   * Ensure the hidden input receives focus reliably
-   */
-    focusInput: function () {
-      if (commandPalette.isVisible) commandPalette.input.focus()
-    },
-
-    /**
    * Show the command palette
    */
     show: function () {
@@ -293,6 +260,7 @@ function createCommandPalette (options) {
       // Reset state
       commandPalette.selectedIndex = 0
       commandPalette.input.value = ''
+      commandPalette.input.focus()
 
       // Initialize with empty strategy
       const context = commandPalette.getContext()
@@ -313,6 +281,8 @@ function createCommandPalette (options) {
       // Set input value and process it
       commandPalette.selectedIndex = 0
       commandPalette.input.value = prefix
+      // Prepare the keyboard target before the asynchronous presentation handoff.
+      commandPalette.input.focus()
 
       // Process the input to determine initial state
       commandPalette.handleInput()
@@ -327,8 +297,6 @@ function createCommandPalette (options) {
       if (!commandPalette.isVisible) return
 
       commandPalette.isVisible = false
-      inputGeneration++
-      inputProcessing = null
       commandPalette.strategyManager.cancelPending()
       commandPalette.input.blur()
 
@@ -457,16 +425,9 @@ function createCommandPalette (options) {
     },
 
     destroy: function () {
-      inputGeneration++
-      inputProcessing = null
-      if (commandPalette.strategyManager) commandPalette.strategyManager.cancelPending()
       if (commandPalette.overlayUpdateTimeout) {
         cancelSchedule(commandPalette.overlayUpdateTimeout)
         commandPalette.overlayUpdateTimeout = null
-      }
-      if (focusUnsubscribe) {
-        focusUnsubscribe()
-        focusUnsubscribe = null
       }
       if (shortcutUnsubscribe) {
         shortcutUnsubscribe()

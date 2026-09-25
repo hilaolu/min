@@ -385,9 +385,6 @@ function createBrowserChromeHost (argv, ipc, utilities = {}) {
     onBrowserSessionSnapshotRequested: function (callback) {
       return subscribe('read-tab-state', callback, function () {})
     },
-    onCommandPaletteFocusRequested: function (callback) {
-      return subscribe('command-palette:focus-input', callback, function () {})
-    },
     onDownloadNavigation: function (callback) {
       return subscribe('download-navigation', callback)
     },

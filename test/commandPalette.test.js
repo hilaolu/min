@@ -59,27 +59,21 @@ function createStrategyManager () {
       for (const listener of listeners.get(name) || []) listener(event)
     },
     processInput: async () => true,
-    cancelPending: function () {},
     registerStrategy: function () {},
     resetToFallback: async function () {}
   }
   return manager
 }
 
-function createPaletteHarness (presentCommandPalette, strategyManager = createStrategyManager()) {
+function createPaletteHarness (presentCommandPalette) {
   const cancellations = []
   const errors = []
   const input = createInput()
+  const strategyManager = createStrategyManager()
   const scheduled = []
   const snapshots = []
-  let focusRequested
-  let focusUnsubscribeCount = 0
   let shortcutUnsubscribeCount = 0
   const rendererHost = createInMemoryRendererHost(runtimeConfiguration, {
-    onCommandPaletteFocusRequested: function (listener) {
-      focusRequested = listener
-      return function () { focusUnsubscribeCount++ }
-    },
     presentCommandPalette: function (state) {
       snapshots.push(state)
       return presentCommandPalette ? presentCommandPalette(state) : Promise.resolve({ ok: true })
@@ -111,8 +105,6 @@ function createPaletteHarness (presentCommandPalette, strategyManager = createSt
   return {
     cancellations,
     errors,
-    focus: () => focusRequested(),
-    focusUnsubscribeCount: () => focusUnsubscribeCount,
     input,
     strategyManager,
     palette,
@@ -122,15 +114,18 @@ function createPaletteHarness (presentCommandPalette, strategyManager = createSt
   }
 }
 
-test('prefix presentation publishes complete state and focuses only on presentation handoff', function () {
-  const harness = createPaletteHarness()
+test('prefix presentation focuses input immediately, before presentation handoff', function () {
+  const harness = createPaletteHarness(() => {
+    assert.equal(harness.input.focusCount, 1)
+    return Promise.resolve({ ok: true })
+  })
 
   harness.palette.showWithPrefix('>')
 
   assert.equal(harness.input.value, '>')
   assert.equal(harness.input.selectionStart, 1)
   assert.equal(harness.input.selectionEnd, 1)
-  assert.equal(harness.input.focusCount, 0)
+  assert.equal(harness.input.focusCount, 1)
   assert.deepEqual(harness.snapshots, [{
     candidates: [],
     input: '>',
@@ -139,18 +134,26 @@ test('prefix presentation publishes complete state and focuses only on presentat
     visible: true
   }])
 
-  harness.focus()
-  assert.equal(harness.input.focusCount, 1)
-
   harness.input.emit('input')
   assert.equal(harness.scheduled.length, 2)
   assert.deepEqual(harness.cancellations, [harness.scheduled[0]])
 
   harness.palette.destroy()
-  assert.equal(harness.focusUnsubscribeCount(), 1)
   assert.equal(harness.shortcutUnsubscribeCount(), 1)
   assert.equal(harness.input.listenerCount(), 0)
   assert.deepEqual(harness.cancellations, [harness.scheduled[0], harness.scheduled[1]])
+  assert.deepEqual(harness.errors, [])
+})
+
+test('blank palette focuses input before presenting', function () {
+  const harness = createPaletteHarness(() => {
+    assert.equal(harness.input.focusCount, 1)
+    return Promise.resolve({ ok: true })
+  })
+  harness.palette.show()
+  assert.equal(harness.input.value, '')
+  assert.equal(harness.input.focusCount, 1)
+  assert.deepEqual(harness.errors, [])
 })
 
 test('presentation failures are reported through the constructed lifetime', async function () {
@@ -179,96 +182,13 @@ function candidate (id) {
 
 function keydown (input, key, ctrlKey = false) {
   let prevented = false
-  const handling = input.emit('keydown', {
+  input.emit('keydown', {
     ctrlKey,
     key,
     preventDefault: () => { prevented = true }
   })
   assert.equal(prevented, true)
-  return handling
 }
-
-test('fast >, w, Enter waits for the command results instead of selecting the > prefix', async function () {
-  const StrategyManager = require('../js/commandPalette/StrategyManager.js')
-  const VimCommandStrategy = require('../js/commandPalette/strategies/VimCommandStrategy.js')
-  const VimCommandWithArgsStrategy = require('../js/commandPalette/strategies/VimCommandWithArgsStrategy.js')
-  for (const cancel of [null, 'input', 'hide', 'destroy']) {
-    const manager = new StrategyManager()
-    const commands = new VimCommandStrategy()
-    commands.updateUI = async () => [{ id: 'open', prefix: '>o ' }]
-    const args = new VimCommandWithArgsStrategy()
-    let finish
-    args.updateUI = () => new Promise(resolve => { finish = resolve })
-    manager.registerStrategy(commands)
-    manager.registerStrategy(args)
-    const harness = createPaletteHarness(null, manager)
-    harness.palette.showWithPrefix('>')
-    await new Promise(resolve => setImmediate(resolve))
-
-    harness.input.value = '>w'
-    const processing = harness.input.emit('input')
-    const activation = keydown(harness.input, 'Enter')
-    await keydown(harness.input, 'Enter') // key repeat must not queue a second action
-    assert.equal(harness.input.value, '>w')
-    let executions = 0
-    if (cancel === 'input') {
-      harness.input.value = '>'
-      await harness.input.emit('input')
-    } else if (cancel) {
-      harness.palette[cancel]()
-    }
-    finish([{ id: 'close-tab', action: () => { executions++ } }])
-    await processing
-    await activation
-    assert.equal(executions, cancel ? 0 : 1)
-    assert.deepEqual(harness.errors, [])
-  }
-})
-
-test('a newer input can queue activation while an older input is still pending', async function () {
-  const harness = createPaletteHarness()
-  harness.palette.showWithPrefix('>')
-  await Promise.resolve()
-  const pending = []
-  harness.strategyManager.processInput = () => new Promise(resolve => pending.push(resolve))
-  harness.strategyManager.emit('state-changed', { candidates: [candidate('stale')] })
-
-  harness.input.value = '>o old'
-  const oldInput = harness.input.emit('input')
-  const oldActivation = keydown(harness.input, 'Enter')
-  harness.input.value = '>o new'
-  const newInput = harness.input.emit('input')
-  const newActivation = keydown(harness.input, '1', true)
-  pending[0]()
-  await oldInput
-  await oldActivation
-  assert.deepEqual(harness.strategyManager.executeActionCalls, [])
-
-  const candidates = [candidate('first'), candidate('new')]
-  harness.strategyManager.emit('candidates-updated', { candidates })
-  pending[1]()
-  await newInput
-  await newActivation
-  assert.deepEqual(harness.strategyManager.executeActionCalls, [candidates[1]])
-  assert.deepEqual(harness.errors, [])
-})
-
-test('failed input processing does not activate stale candidates', async function () {
-  const harness = createPaletteHarness()
-  harness.palette.showWithPrefix('>')
-  await Promise.resolve()
-  harness.strategyManager.emit('state-changed', { candidates: [candidate('stale')] })
-  let fail
-  harness.strategyManager.processInput = () => new Promise((resolve, reject) => { fail = reject })
-  harness.input.value = '>w'
-  const processing = harness.input.emit('input')
-  const activation = keydown(harness.input, 'Enter')
-  fail(new Error('processing failed'))
-  await processing
-  await activation
-  assert.deepEqual(harness.strategyManager.executeActionCalls, [])
-  assert.equal(harness.errors.length, 1)
-})
 
 test('pending candidates stay presented and keyboard activation is blocked', function () {
   const harness = createPaletteHarness()

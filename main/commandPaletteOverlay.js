@@ -1,11 +1,10 @@
-function createCommandPalettePresentation ({ WebContentsView, getWindowWebContents, pageURL, preloadPath, schedule = setTimeout, windows }) {
+function createCommandPalettePresentation ({ WebContentsView, getWindowWebContents, pageURL, preloadPath, windows }) {
   const overlayId = 'command-palette'
   const preferredSize = { width: 600, height: 450 }
   let view = null
   let owner = null
   let loaded = false
   let latestState = normalizeState({})
-  let focusTimer = null
 
   function errorResult (code, message) {
     return { ok: false, error: { code, message } }
@@ -94,14 +93,11 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
   }
 
   function focusBrowserChrome (window) {
-    focusTimer = schedule(function () {
-      focusTimer = null
-      if (owner !== window || window.isDestroyed()) return
-      const chromeContents = getWindowWebContents(window)
-      chromeContents.focus()
-      if (window.isVisible() && !window.isDestroyed()) window.focus()
-      chromeContents.send('command-palette:focus-input')
-    }, 150)
+    // The overlay is display-only. Route keys to chrome immediately, even
+    // while the overlay page is loading, so fast typing cannot reach the tab.
+    const chromeContents = getWindowWebContents(window)
+    chromeContents.focus()
+    if (window.isVisible() && !window.isDestroyed()) window.focus()
   }
 
   function present (senderContents, state) {
@@ -150,7 +146,6 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
 
   function destroy () {
     if (!view) return
-    if (focusTimer) clearTimeout(focusTimer)
     if (windows.isOverlayAttached(overlayId, view)) {
       windows.detachOverlay(overlayId, view)
     }
