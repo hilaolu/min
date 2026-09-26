@@ -11,8 +11,18 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
     return typeof target?.isDestroyed === 'function' && target.isDestroyed()
   }
 
-  function discardPendingConnection (connection) {
+  function detachPendingConnection (connection) {
     pendingConnections = pendingConnections.filter(candidate => candidate !== connection)
+    if (typeof connection.sender.removeListener === 'function') {
+      connection.sender.removeListener('destroyed', connection.onSenderDestroyed)
+    }
+    if (typeof connection.port.removeListener === 'function') {
+      connection.port.removeListener('close', connection.onPortClose)
+    }
+  }
+
+  function discardPendingConnection (connection) {
+    detachPendingConnection(connection)
     closePort(connection.port)
   }
 
@@ -29,7 +39,7 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
       discardPendingConnection(connection)
       return false
     }
-    pendingConnections = pendingConnections.filter(candidate => candidate !== connection)
+    detachPendingConnection(connection)
     const target = placesWindow
     try {
       target.webContents.postMessage('places-connect', null, [connection.port])
@@ -42,7 +52,7 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
   }
 
   function closePendingConnections () {
-    pendingConnections.splice(0).forEach(connection => closePort(connection.port))
+    pendingConnections.slice().forEach(discardPendingConnection)
   }
 
   function initialize () {
@@ -62,7 +72,10 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
     initializedWindow.webContents.once('did-finish-load', function () {
       if (placesWindow !== initializedWindow) return
       ready = true
-      pendingConnections.slice().forEach(transferConnection)
+      pendingConnections.slice().forEach(connection => {
+        // A failed transfer may already have discarded the remaining connections.
+        if (pendingConnections.includes(connection)) transferConnection(connection)
+      })
     })
     initializedWindow.webContents.once('did-fail-load', function () {
       invalidate(initializedWindow)
@@ -86,15 +99,17 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
       return false
     }
     const connection = { port, sender }
+    connection.onSenderDestroyed = function () {
+      if (pendingConnections.includes(connection)) discardPendingConnection(connection)
+    }
+    connection.onPortClose = function () {
+      detachPendingConnection(connection)
+    }
     if (typeof sender.once === 'function') {
-      sender.once('destroyed', function () {
-        if (pendingConnections.includes(connection)) discardPendingConnection(connection)
-      })
+      sender.once('destroyed', connection.onSenderDestroyed)
     }
     if (typeof port.once === 'function') {
-      port.once('close', function () {
-        pendingConnections = pendingConnections.filter(candidate => candidate !== connection)
-      })
+      port.once('close', connection.onPortClose)
     }
     if (!placesWindow || isDestroyed(placesWindow) || isDestroyed(placesWindow.webContents)) initialize()
     if (ready) return transferConnection(connection)

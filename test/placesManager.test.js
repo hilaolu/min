@@ -37,6 +37,17 @@ function createHarness () {
   return { BrowserWindow, windows }
 }
 
+function createPort () {
+  const port = new EventEmitter()
+  port.closeCount = 0
+  port.close = function () {
+    assert.equal(this.listenerCount('close'), 0)
+    this.closeCount++
+    this.emit('close')
+  }
+  return port
+}
+
 test('Places Manager queues connections until its hidden window is ready', function () {
   const harness = createHarness()
   const places = createPlacesManager({
@@ -146,4 +157,131 @@ test('Places Manager teardown closes pending connections and destroys its hidden
   assert.equal(port.closed, true)
   assert.equal(placesWindow.destroyed, true)
   assert.equal(places.getWindow(), null)
+})
+
+test('Places Manager releases provisional listeners before each of 100 transfers', function () {
+  const harness = createHarness()
+  const places = createPlacesManager({
+    BrowserWindow: harness.BrowserWindow,
+    pageURL: 'file:///places.html'
+  })
+  const sender = new EventEmitter()
+  const placesWindow = places.initialize()
+  const postMessage = placesWindow.webContents.postMessage
+  placesWindow.webContents.postMessage = function (channel, value, ports) {
+    assert.equal(sender.listenerCount('destroyed'), 0)
+    assert.equal(ports[0].listenerCount('close'), 0)
+    postMessage(channel, value, ports)
+  }
+  const ports = []
+  for (let i = 0; i < 100; i++) {
+    const port = createPort()
+    ports.push(port)
+    assert.equal(places.connect(sender, port), true)
+    if (i === 0) placesWindow.webContents.emit('did-finish-load')
+    assert.equal(sender.listenerCount('destroyed'), 0)
+    assert.equal(port.listenerCount('close'), 0)
+    assert.equal(placesWindow.messages.length, i + 1)
+    assert.deepEqual(placesWindow.messages[i].ports, [port])
+  }
+
+  sender.emit('destroyed')
+  places.destroy()
+  for (const port of ports) {
+    assert.equal(port.closeCount, 0)
+    assert.equal(port.listenerCount('close'), 0)
+  }
+})
+
+for (const event of ['destroyed', 'close']) {
+  test(`Places Manager detaches pending listeners on ${event} without duplicate close`, function () {
+    const harness = createHarness()
+    const places = createPlacesManager({
+      BrowserWindow: harness.BrowserWindow,
+      pageURL: 'file:///places.html'
+    })
+    const sender = new EventEmitter()
+    const port = createPort()
+    places.connect(sender, port)
+    assert.equal(sender.listenerCount('destroyed'), 1)
+    assert.equal(port.listenerCount('close'), 1)
+
+    const target = event === 'destroyed' ? sender : port
+    target.emit(event)
+    assert.equal(sender.listenerCount('destroyed'), 0)
+    assert.equal(port.listenerCount('close'), 0)
+    assert.equal(port.closeCount, event === 'destroyed' ? 1 : 0)
+
+    const placesWindow = places.getWindow()
+    placesWindow.webContents.emit('did-finish-load')
+    assert.deepEqual(placesWindow.messages, [])
+    places.destroy()
+    assert.equal(port.closeCount, event === 'destroyed' ? 1 : 0)
+  })
+}
+
+for (const failure of ['load', 'transfer', 'destroy', 'closed', 'crash']) {
+  test(`Places Manager clears all provisional listeners on ${failure}`, function () {
+    const harness = createHarness()
+    const places = createPlacesManager({
+      BrowserWindow: harness.BrowserWindow,
+      pageURL: 'file:///places.html'
+    })
+    const placesWindow = places.initialize()
+    const sender = new EventEmitter()
+    const ports = [createPort(), createPort(), createPort()]
+    for (const port of ports) places.connect(sender, port)
+    assert.equal(sender.listenerCount('destroyed'), ports.length)
+    for (const port of ports) assert.equal(port.listenerCount('close'), 1)
+
+    let transferAttempts = 0
+    if (failure === 'transfer') {
+      placesWindow.webContents.postMessage = function (channel, value, transferredPorts) {
+        transferAttempts++
+        assert.equal(sender.listenerCount('destroyed'), ports.length - 1)
+        assert.equal(transferredPorts[0].listenerCount('close'), 0)
+        throw new Error('transfer failed')
+      }
+      placesWindow.webContents.emit('did-finish-load')
+      assert.equal(transferAttempts, 1)
+    } else if (failure === 'destroy') {
+      places.destroy()
+    } else if (failure === 'closed') {
+      placesWindow.destroy()
+    } else {
+      placesWindow.webContents.emit(failure === 'load' ? 'did-fail-load' : 'render-process-gone')
+    }
+
+    assert.equal(sender.listenerCount('destroyed'), 0)
+    for (const port of ports) {
+      assert.equal(port.listenerCount('close'), 0)
+      assert.equal(port.closeCount, 1)
+    }
+    assert.equal(places.isReady(), false)
+    assert.equal(places.getWindow(), null)
+    assert.equal(placesWindow.destroyed, true)
+    placesWindow.webContents.emit('did-finish-load')
+    sender.emit('destroyed')
+    places.destroy()
+    for (const port of ports) assert.equal(port.closeCount, 1)
+  })
+}
+
+test('Places Manager supports plain-object senders and ports without listener methods', function () {
+  const harness = createHarness()
+  const places = createPlacesManager({
+    BrowserWindow: harness.BrowserWindow,
+    pageURL: 'file:///places.html'
+  })
+  const port = { closeCount: 0, close: function () { this.closeCount++ } }
+  assert.equal(places.connect({}, port), true)
+  const placesWindow = places.getWindow()
+  placesWindow.webContents.emit('did-finish-load')
+  assert.deepEqual(placesWindow.messages[0].ports, [port])
+  places.destroy()
+  assert.equal(port.closeCount, 0)
+
+  assert.equal(places.connect({}, port), true)
+  places.destroy()
+  assert.equal(port.closeCount, 1)
 })

@@ -84,9 +84,11 @@ DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
 Whole-app RSS/peak-memory profiling, long-running browsing and cross-platform
 acceptance were not performed.
 
-## Further opportunities (not implemented or measured)
+## Further opportunities and refinement status
 
-These are source-derived candidates, not claimed savings or reproduced leaks.
+Candidates 1–4 are source-derived opportunities, not implemented or measured,
+and not claimed savings or reproduced leaks. Candidate 5 is now implemented with
+bounded listener-count verification, not a whole-app memory measurement.
 
 1. **Many background tabs / inactive tasks — defer or discard content.**
    `js/browserUI.js:presentOpenedTab` creates WebContents even for new background
@@ -122,13 +124,20 @@ These are source-derived candidates, not claimed savings or reproduced leaks.
    crashed owner before adoption; explicitly destroy orphaned temporary views if
    confirmed. Avoid timeouts that could destroy a legitimate delayed popup.
 
-5. **Repeated Places reconnects — release provisional connection listeners.**
-   `main/placesManager.js:connect` attaches sender-destroyed/port-close listeners
-   capturing the connection. Successful transfer removes the pending-array entry
-   but does not explicitly detach those listeners. Check retained objects across
-   reconnects in a long-lived chrome renderer, then remove provisional listeners
-   on transfer/discard. This concerns JS connection wrappers, not proof that an
-   entire service renderer is leaked.
+5. **Implemented: repeated Places reconnects — release provisional listeners.**
+   `main/placesManager.js` now detaches its named sender-destroyed/port-close
+   callbacks and pending-array entry before transfer or discard. Remote port
+   closure detaches without closing again; transfer failure closes its port and
+   invalidates the service, cleaning remaining pending connections. Active
+   transferred ports keep their existing ownership; readiness and IPC are unchanged.
+   `test/placesManager.test.js` verifies 100 sequential successful connections to
+   one long-lived sender: its destroyed-listener count and each transferred
+   port's close-listener count are zero after every transfer, including before
+   `postMessage`. Pending sender death, remote port close, load/transfer failure,
+   service teardown, window closure and renderer crash also release provisional
+   listeners without duplicate closes. Plain-object stubs remain supported.
+   These are isolated listener-count checks, not whole-app MB savings or proof
+   that an entire service renderer was leaked.
 
 Existing bounds worth preserving: previews are limited to three 256-KiB encoded
 images, the task overlay destroys Sortable/DOM state when hidden, closed-tab
