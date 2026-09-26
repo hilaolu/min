@@ -30,6 +30,15 @@ function measureMedian (work) {
   return samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)]
 }
 
+function retainedHeap () {
+  if (!global.gc) return null
+  // Diagnostic heap deltas only, not peak memory or whole-app RSS. A second
+  // collection reduces noise from objects promoted during the first one.
+  global.gc()
+  global.gc()
+  return process.memoryUsage().heapUsed
+}
+
 function benchmarkFullTextProcessing () {
   const tokenization = [6000, 60000, 300000].map(characters => {
     const text = 'cat dog sun '.repeat(characters / 12)
@@ -37,16 +46,28 @@ function benchmarkFullTextProcessing () {
     const medianMs = measureMedian(() => { retainedTokens = fullTextSearch.tokenize(text).length })
     return { characters, inputWords: characters / 4, retainedTokens, medianMs }
   })
+  const diverseText = Array.from({ length: 30000 }, (_, index) => `vocabulary${index % 700}`).join(' ')
+  const uniqueText = Array.from({ length: 20000 }, (_, index) => `word${index}`).join(' ')
+  const variedTokenization = [
+    { name: 'mixed vocabulary', text: diverseText },
+    { name: 'unique words', text: uniqueText }
+  ].map(({ name, text }) => ({
+    name,
+    characters: text.length,
+    medianMs: measureMedian(() => fullTextSearch.tokenize(text))
+  }))
   const snippets = [
     { name: 'no matches', text: 'plain words '.repeat(25000), query: 'alpha beta' },
     { name: 'dense matches', text: 'alpha beta '.repeat(25000), query: 'alpha beta' },
-    { name: 'sparse matches', text: ('alpha beta ' + 'plain words '.repeat(100)).repeat(240), query: 'alpha beta' }
+    { name: 'sparse matches', text: ('alpha beta ' + 'plain words '.repeat(100)).repeat(240), query: 'alpha beta' },
+    { name: 'mixed vocabulary', text: diverseText, query: 'vocabulary5 vocabulary699' },
+    { name: 'unique words', text: uniqueText, query: 'word10 word19999' }
   ].map(({ name, text, query }) => ({
     name,
     characters: text.length,
     medianMs: measureMedian(() => fullTextSearch.createSnippet(text, query))
   }))
-  return { tokenization, snippets }
+  return { tokenization, variedTokenization, snippets }
 }
 
 function benchmarkTaskSummaries () {
@@ -77,13 +98,23 @@ function benchmarkBookmarkTags (itemCount) {
     lastVisit: id
   }))
   const bookmarks = global.historyInMemoryCache.filter(page => page.isBookmarked)
-  bookmarks.forEach(page => tagIndex.addPage(page))
+  const heapBefore = retainedHeap()
+  const buildMs = measure(() => bookmarks.forEach(page => tagIndex.addPage(page))).elapsedMs
   const queries = [['topic7'], ['topic7', 'reference'], ['missing']].map(tags => {
     let resultCount
+    const firstQueryMs = measure(() => tagIndex.getSuggestedItemsForTags(tags)).elapsedMs
     const medianMs = measureMedian(() => { resultCount = tagIndex.getSuggestedItemsForTags(tags).length })
-    return { tags, resultCount, medianMs }
+    return { tags, resultCount, firstQueryMs, medianMs }
   })
-  return { historyEntries: itemCount, bookmarks: bookmarks.length, distinctTags: Object.keys(tagIndex.tagCounts).length, queries }
+  const heapAfter = retainedHeap()
+  return {
+    historyEntries: itemCount,
+    bookmarks: bookmarks.length,
+    distinctTags: Object.keys(tagIndex.tagCounts).length,
+    buildMs,
+    retainedIndexHeapBytes: heapBefore === null ? null : heapAfter - heapBefore,
+    queries
+  }
 }
 
 function benchmarkSearchbarDeduplication (resultCount) {
@@ -341,6 +372,7 @@ async function benchmarkStorage () {
 
 async function main () {
   const report = {
+    runtime: { node: process.versions.node, electron: process.versions.electron, v8: process.versions.v8 },
     bookmarkTags: [1000, 5000].map(benchmarkBookmarkTags),
     browserSessionRestore: [1000, 10000, 20000].map(benchmarkRestore),
     extraction: benchmarkExtraction(),

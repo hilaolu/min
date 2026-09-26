@@ -8,11 +8,16 @@ const sources = ['ext/xregexp/nonLetterRegex.js', 'js/places/fullTextSearch.js',
   .map(file => ({ file, source: fs.readFileSync(path.join(__dirname, '..', file), 'utf8') }))
 const tokenizers = new WeakMap()
 
-function loadTagIndex (history = []) {
+function loadTagIndex (history = [], onTokenize = () => {}) {
   const context = vm.createContext({ historyInMemoryCache: history, require, URL })
   sources.forEach(({ file, source }) => vm.runInContext(source, context, { filename: file }))
+  const tokenize = context.tokenize
+  context.tokenize = function (text) {
+    onTokenize(text)
+    return tokenize(text)
+  }
   history.filter(page => page.isBookmarked).forEach(page => context.tagIndex.addPage(page))
-  tokenizers.set(context.tagIndex, context.tokenize)
+  tokenizers.set(context.tagIndex, tokenize)
   return context.tagIndex
 }
 
@@ -29,8 +34,23 @@ function createHistory (count = 240) {
 
 // Independent legacy scorer: do not share the optimized ranking implementation
 // with the oracle, or a change affecting both paths could make this test vacuous.
+function referencePageTokens (index, page) {
+  let urlChunk = ''
+  try {
+    let url = new URL(page.url)
+    if ((page.url.startsWith('file://') || page.url.startsWith('min://')) && url.searchParams.get('url')) {
+      url = new URL(url.searchParams.get('url'))
+    }
+    urlChunk = url.hostname.split('.').slice(0, -1).join(' ') + ' ' + url.pathname.split('/').filter(p => p.length > 1).slice(0, 2).join(' ')
+  } catch (e) {}
+  const generic = ['http', 'htps', 'www', 'com', 'net', 'html', 'pdf', 'file']
+  const tokens = Array.from(tokenizers.get(index)((/^(http|https|file):\/\//.test(page.title) ? '' : page.title) + ' ' + urlChunk))
+    .filter(token => token.length > 2 && !generic.includes(token))
+  return tokens.filter((token, i) => tokens.indexOf(token) === i)
+}
+
 function referenceTags (index, page) {
-  const tokens = index.getPageTokens(page)
+  const tokens = referencePageTokens(index, page)
   const scores = {}
   for (const term of tokens) {
     for (const tag in index.termTags[term]) {
@@ -196,4 +216,81 @@ test('empty, unknown and singleton tag queries skip page tokenization', function
   for (const tags of [[], ['unknown'], ['topic1', 'unknown'], ['singleton']]) {
     assert.deepEqual(Array.from(index.getSuggestedItemsForTags(tags)), [])
   }
+})
+
+test('page token reuse respects title/URL edits, removal, reset and caller mutation', function () {
+  let tokenizations = 0
+  const index = loadTagIndex([], () => { tokenizations++ })
+  const page = { title: 'Running guide', url: 'https://example.com/alpha', tags: [] }
+  const first = index.getPageTokens(page)
+  assert.deepEqual(index.getPageTokens(page), first)
+  assert.equal(tokenizations, 1)
+  first.push('corruption')
+  assert.ok(!index.getPageTokens(page).includes('corruption'))
+  assert.equal(tokenizations, 1)
+
+  page.title = 'Travel science'
+  assert.ok(index.getPageTokens(page).includes('scienc'))
+  assert.ok(!index.getPageTokens(page).includes('run'))
+  assert.equal(tokenizations, 2)
+  page.url = 'https://other.example/beta'
+  assert.ok(index.getPageTokens(page).includes('beta'))
+  assert.equal(tokenizations, 3)
+
+  index.removePage(page)
+  index.getPageTokens(page)
+  assert.equal(tokenizations, 4)
+  index.reset()
+  index.getPageTokens(page)
+  assert.equal(tokenizations, 5)
+})
+
+test('page token cache includes 64 tokens but does not retain larger token sets', function () {
+  let tokenizations = 0
+  const index = loadTagIndex([], () => { tokenizations++ })
+  for (const count of [64, 65, 100]) {
+    const page = { title: Array.from({ length: count }, (_, i) => `word${i}`).join(' '), url: '', tags: [] }
+    tokenizations = 0
+    assert.equal(index.getPageTokens(page).length, count)
+    assert.equal(index.getPageTokens(page).length, count)
+    assert.equal(tokenizations, count === 64 ? 1 : 2)
+  }
+})
+
+test('page token cache bounds source size even when large inputs yield few tokens', function () {
+  let tokenizations = 0
+  const index = loadTagIndex([], () => { tokenizations++ })
+  const page = { title: 'Guide'.padEnd(4096, ' '), url: '', tags: [] }
+  index.getPageTokens(page)
+  index.getPageTokens(page)
+  assert.equal(tokenizations, 1)
+
+  for (const update of [
+    { title: 'Guide'.padEnd(4097, ' '), url: '' },
+    { title: 'Guide', url: 'https://example.com/?unused=' + 'x'.repeat(4096) }
+  ]) {
+    Object.assign(page, update)
+    tokenizations = 0
+    assert.deepEqual(Array.from(index.getPageTokens(page)), referencePageTokens(index, page))
+    assert.deepEqual(Array.from(index.getPageTokens(page)), referencePageTokens(index, page))
+    assert.equal(tokenizations, 2)
+  }
+})
+
+test('bookmark queries normalize each requested tag once, without caching stale scores', function () {
+  const calls = []
+  const history = createHistory()
+  const index = loadTagIndex(history, text => calls.push(text))
+  const tags = ['topic1', 'reference', 'topic1']
+  const expected = referenceSuggestions(index, history, tags)
+  calls.length = 0
+  assert.deepEqual(Array.from(index.getSuggestedItemsForTags(tags)), expected)
+  assert.equal(calls.filter(text => text === 'topic1').length, 1)
+  assert.equal(calls.filter(text => text === 'reference').length, 1)
+  assert.equal(calls.length, 2)
+
+  const oldPage = history[1]
+  history[1] = { ...oldPage, title: 'Different science', tags: ['reference'] }
+  index.onChange(oldPage, history[1])
+  checkSuggestions(index, history, [tags, ['reference']])
 })

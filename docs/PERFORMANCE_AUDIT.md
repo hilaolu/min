@@ -37,13 +37,13 @@ tags, five warm-ups and the median of 15 samples per query. Index construction i
 outside the timed section. Both runs used the same fixture and returned the same
 result counts. Times are CPU workload measurements, not end-to-end UI latency.
 
-| History entries (bookmarks) | Query | Before | After | Speedup |
-| --- | --- | ---: | ---: | ---: |
-| 1,000 (909) | One tag | 149.71 ms | 11.62 ms | 12.9× |
-| 1,000 (909) | Two tags | 151.21 ms | 16.96 ms | 8.9× |
-| 5,000 (4,545) | One tag | 761.36 ms | 60.65 ms | 12.6× |
-| 5,000 (4,545) | Two tags | 771.16 ms | 94.40 ms | 8.2× |
-| 5,000 (4,545) | Unknown tag | 771.22 ms | Below 0.01 ms reporting resolution | — |
+| History entries (bookmarks) | Query       |    Before |                              After | Speedup |
+| --------------------------- | ----------- | --------: | ---------------------------------: | ------: |
+| 1,000 (909)                 | One tag     | 149.71 ms |                           11.62 ms |   12.9× |
+| 1,000 (909)                 | Two tags    | 151.21 ms |                           16.96 ms |    8.9× |
+| 5,000 (4,545)               | One tag     | 761.36 ms |                           60.65 ms |   12.6× |
+| 5,000 (4,545)               | Two tags    | 771.16 ms |                           94.40 ms |    8.2× |
+| 5,000 (4,545)               | Unknown tag | 771.22 ms | Below 0.01 ms reporting resolution |       — |
 
 The speedup will vary with tag distribution and query size. These numbers do not
 establish a corresponding speedup for ordinary history search or browser startup.
@@ -182,3 +182,91 @@ Follow-up verification is recorded in the individual sections above. Manual UI
 profiling, real-user history workloads, full installer packaging and cross-platform
 builds were not run. Incremental overlay rendering and a smaller Cherry runtime
 remain explicitly deferred rather than being treated as completed optimizations.
+
+## Adopted: full-text processing and bookmark-tag ranking
+
+Only the full-text and bookmark-tag optimizations were adopted. The request-filter
+experiment, its tests, and its benchmark were removed; the filter parser remains
+unchanged. No WASM module, dependency, compiler requirement, or worker was added.
+This establishes a better JavaScript baseline, not a JS-versus-WASM result. The
+existing PDFium WASM integration is unchanged.
+
+### Changes and behavioral limits
+
+- **Full text:** normalization/stemming results are reused within one operation,
+  with at most 256 cached words of at most 100 characters. After 512 consecutive
+  misses in a full cache, caching stops for that operation. Tokenization scans
+  words only until 20,000 eligible tokens have been retained rather than
+  splitting/filtering the entire normalized body. Whole-string normalization
+  still occurs. Duplicate tokens, Unicode handling, snippet ties/context, and
+  cooperative cancellation are preserved; caches do not survive queries.
+- **Bookmark tags:** a WeakMap reuses title/URL tokens for live page objects,
+  checks both inputs before reuse, invalidates on removal/reset, and skips token
+  sets larger than 64. Combined title/URL length must also be at most 4,096 UTF-16
+  code units: a huge input can yield very few distinct tokens. Returned arrays
+  cannot mutate the cache. Requested tags are normalized once per query. Scores
+  are never cached, so updates to other bookmarks still affect ranking
+  immediately. This trades some retained heap and index-building time for
+  substantially faster queries.
+
+### Measurements
+
+Baseline production sources: `c1d3d272`. Both versions used the expanded current
+benchmark, Electron 44.4.5 / Node 24.21.0 / V8 15.2.124.28-electron.0 on this Linux
+workspace. Two baseline/current pairs ran in separate fresh processes, with five
+warm-ups and 15 timed samples per median. Ranges below span those two medians;
+they are not confidence intervals. Fixtures are synthetic, not user histories.
+
+| CPU workload                                     | Before (ms) |  After (ms) |
+| ------------------------------------------------ | ----------: | ----------: |
+| Tokenize 300,000 characters, repeated words      | 19.69–19.81 |   4.01–6.19 |
+| Tokenize 415,269 characters, 700-word vocabulary | 19.10–19.25 | 15.73–17.45 |
+| Tokenize 20,000 unique words                     | 13.69–13.77 | 14.66–16.76 |
+| Snippet, 300,000 characters, no matches          | 35.00–37.36 |  9.52–10.96 |
+| Snippet, 275,000 characters, dense matches       | 36.66–39.56 | 12.64–13.25 |
+| Snippet, 290,640 characters, sparse matches      | 34.73–37.23 | 10.75–12.22 |
+| Snippet, 700-word vocabulary                     | 29.36–30.57 | 23.04–23.66 |
+| Snippet, 20,000 unique words                     | 16.28–16.96 | 16.56–17.80 |
+| Tag query, 5,000 history entries, one tag        | 64.12–65.34 |   6.00–6.19 |
+| Tag query, 5,000 history entries, two tags       | 86.18–90.37 | 12.95–13.05 |
+
+Unique-word fixtures still regress, so the repeated-word gains should not be
+generalized to arbitrary text. At 5,000 history entries (4,545 bookmarks),
+tag-index construction increased from 72–75 to 75–81 ms; the first one-tag query
+decreased from 63–67 to 15 ms. Missing-tag queries still exit immediately. No
+whole-browser startup or end-to-end UI latency improvement is established.
+
+Optional `--expose-gc` measurements perform two collections outside timed work.
+The 5,000-entry tag-index heap delta increased by approximately **0.44 MiB**.
+This diagnostic delta can include JIT/GC effects and is neither peak memory nor
+whole-browser RSS/PSS. No browser-wide memory saving is claimed.
+
+Reproduce the current workload with:
+
+```sh
+DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron --expose-gc scripts/benchmarkPerformance.js
+```
+
+Without `--expose-gc`, heap fields are `null`. The baseline comparison loaded the
+two baseline production files through an in-process CommonJS loader override;
+the working tree was not reverted. Benchmarks do not access browsing profiles or
+make network requests.
+
+### Verification and WASM decision
+
+The source-size cache regression failed before refinement and passed afterward.
+All **27 focused tests** pass, covering cache bounds/lifetime, high-diversity
+fallback, mutations/reset, and independent tokenization/snippet/tag oracles.
+Tokenization is compared with the legacy pipeline using the production Unicode
+policy, and the tag oracle no longer shares cached page-token extraction.
+All **377 Node tests**, application/test JavaScript lint, explicit benchmark
+lint, all five build scripts, the Electron performance smoke, and
+`git diff --check` passed. The smoke emitted the existing GLib schema warning but
+completed successfully. The rejected filter experiment is absent.
+
+WASM remains deferred rather than assumed faster: full-text/tag queries now
+have much cheaper JavaScript baselines. A future prototype should compare
+complete document/query batches, including encoding/copying, initialization,
+cancellation, and process memory.
+Real-user profiling, a WASM A/B implementation, whole-app memory profiling,
+installer packaging, and cross-platform verification were not performed.

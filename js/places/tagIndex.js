@@ -1,6 +1,13 @@
 /* global historyInMemoryCache tokenize */
 /* exported tagIndex */
 
+const maxCachedPageTokens = 64
+const maxCachedPageSourceLength = 4096
+
+// Entries do not keep removed Places summaries alive. Cache tokens, never
+// scores: scores depend on all indexed bookmarks and must remain current.
+var pageTokenCache = new WeakMap()
+
 var tagIndex = {
   totalDocs: 0,
   termDocCounts: {},
@@ -9,6 +16,7 @@ var tagIndex = {
   tagCounts: {},
   tagUpdateTimes: {},
   reset: function () {
+    pageTokenCache = new WeakMap()
     tagIndex.totalDocs = 0
     tagIndex.termDocCounts = {}
     tagIndex.termTags = {}
@@ -17,6 +25,9 @@ var tagIndex = {
     tagIndex.tagUpdateTimes = {}
   },
   getPageTokens: function (page) {
+    const cached = pageTokenCache.get(page)
+    if (cached && cached.title === page.title && cached.url === page.url) return cached.tokens.slice()
+    pageTokenCache.delete(page)
     var urlChunk = ''
     try {
       let url = new URL(page.url)
@@ -32,7 +43,15 @@ var tagIndex = {
     tokens = tokens.filter(t => t.length > 2 && !generic.includes(t))
 
     // get unique tokens
-    tokens = tokens.filter((t, i) => tokens.indexOf(t) === i)
+    tokens = Array.from(new Set(tokens))
+
+    // A huge title/URL may yield few distinct tokens. Bound both source length
+    // and token count; copies prevent callers from changing cached results.
+    if (tokens.length <= maxCachedPageTokens &&
+      typeof page.title === 'string' && typeof page.url === 'string' &&
+      page.title.length + page.url.length <= maxCachedPageSourceLength) {
+      pageTokenCache.set(page, { title: page.title, url: page.url, tokens: tokens.slice() })
+    }
 
     return tokens
   },
@@ -96,14 +115,16 @@ var tagIndex = {
   },
   removePage: function (page) {
     if (page.tags.length === 0) {
+      pageTokenCache.delete(page)
       return
     }
 
     tagIndex.totalDocs--
 
     var tokens = tagIndex.getPageTokens(page)
+    pageTokenCache.delete(page)
 
-    tokens.filter((t, i) => tokens.indexOf(t) === i).forEach(function (token) {
+    tokens.forEach(function (token) {
       if (tagIndex.termDocCounts[token]) {
         tagIndex.termDocCounts[token]--
       }
@@ -140,7 +161,7 @@ var tagIndex = {
     tagIndex.removePage(oldPage)
     tagIndex.addPage(newPage)
   },
-  getAllTagsRanked: function (page, requestedTags) {
+  getAllTagsRanked: function (page, requestedTags, tagTokens = new Map()) {
     var tokens = tagIndex.getPageTokens(page)
 
     var scores = {}
@@ -177,7 +198,8 @@ var tagIndex = {
     var scoresArr = []
 
     for (const tag in scores) {
-      if (tokens.includes(tokenize(tag)[0])) {
+      if (!tagTokens.has(tag)) tagTokens.set(tag, tokenize(tag)[0])
+      if (tokens.includes(tagTokens.get(tag))) {
         scores[tag] *= 1.5
       }
       if (contributingDocs[tag] > 1 && contributingTerms[tag] > 1) {
@@ -198,11 +220,12 @@ var tagIndex = {
     // Every selected tag must pass the scorer's minimum document count.
     if (tags.length === 0 || tags.some(tag => !(tagIndex.tagCounts[tag] >= 2))) return []
     const requestedTags = new Set(tags)
+    const tagTokens = new Map()
     var set = historyInMemoryCache
       .filter(i => i.isBookmarked)
       .filter(page => tags.some(tag => !page.tags.includes(tag)))
       .map(p => {
-        return { page: p, tags: tagIndex.getAllTagsRanked(p, requestedTags).filter(t => t.value >= 1.1) }
+        return { page: p, tags: tagIndex.getAllTagsRanked(p, requestedTags, tagTokens).filter(t => t.value >= 1.1) }
       })
 
     set = set.filter(function (result) {

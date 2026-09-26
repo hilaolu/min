@@ -198,6 +198,17 @@ test('cooperative snippet generation stops superseded body work', async function
   assert.equal(result, null)
 })
 
+// Independent pre-cache pipeline; share only the unchanged stop-word policy.
+function referenceTokenize (text, nonLetters, stopWords) {
+  return text.trim().toLowerCase()
+    .replace(/[']+/g, '')
+    .replace(nonLetters, ' ')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/\s+/g).filter(token => !stopWords.has(token) && token.length <= 100)
+    .slice(0, 20000)
+    .map(token => stemmer(token))
+}
+
 function instrumentFullText (globals = {}, stem = stemmer) {
   const context = {
     module: { exports: {} },
@@ -208,18 +219,97 @@ function instrumentFullText (globals = {}, stem = stemmer) {
     },
     ...globals
   }
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/places/fullTextSearch.js'), 'utf8'), context)
+  const stopWords = vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/places/fullTextSearch.js'), 'utf8') + '\nstopWords', context)
+  context.module.exports.referenceTokenize = text => referenceTokenize(text, context.nonLetterRegex, stopWords)
   return context.module.exports
 }
 
 test('tokenization filters and caps tokens before doing expensive stemming', function () {
   let stems = 0
   const instrumented = instrumentFullText({}, word => { stems++; return stemmer(word) })
-  const result = instrumented.tokenize(('the ' + 'x'.repeat(101) + ' running ').repeat(20005))
+  const text = Array.from({ length: 20005 }, (_, index) => `the ${'x'.repeat(101)} word${index}`).join(' ')
+  const result = instrumented.tokenize(text)
   assert.equal(result.length, 20000)
-  assert.ok(result.every(token => token === 'run'))
+  assert.deepEqual(Array.from(result), Array.from({ length: 20000 }, (_, index) => `word${index}`))
   assert.equal(stems, 20000)
   assert.deepEqual(fullText.tokenize("The RUNNING runner's café alpha-beta"), ['run', 'runner', 'caf', 'alpha', 'beta'])
+})
+
+test('word normalization is reused within, but not retained across, text operations', function () {
+  let stems = 0
+  const instrumented = instrumentFullText({}, word => { stems++; return stemmer(word) })
+  const text = 'running runners running '.repeat(2000)
+  const tokens = instrumented.tokenize(text)
+  assert.equal(tokens.length, 6000)
+  assert.equal(stems, 2)
+  assert.ok(tokens.every((token, index) => token === (index % 3 === 1 ? 'runner' : 'run')))
+  instrumented.tokenize(text)
+  assert.equal(stems, 4)
+
+  stems = 0
+  const result = instrumented.createSnippet(text, 'running')
+  assert.equal(JSON.stringify(result), JSON.stringify(referenceSnippet(text, 'running')))
+  assert.equal(stems, 2)
+  instrumented.createSnippet(text, 'running')
+  assert.equal(stems, 4)
+})
+
+test('normalization caches bound both entry count and key size on high-diversity input', function () {
+  const maps = []
+  const instrumented = instrumentFullText({
+    Map: class extends Map {
+      constructor (...args) { super(...args); maps.push(this) }
+      set (key, value) {
+        assert.ok(key.length <= 100)
+        const result = super.set(key, value)
+        assert.ok(this.size <= 256)
+        return result
+      }
+    }
+  })
+  const text = Array.from({ length: 1000 }, (_, index) => `word${index}`).join(' ') + ' ' + 'z'.repeat(10000)
+  assert.equal(instrumented.tokenize(text).length, 1000)
+  assert.equal(JSON.stringify(instrumented.createSnippet(text, 'word999')), JSON.stringify(referenceSnippet(text, 'word999')))
+  assert.equal(maps.filter(map => map.size === 256).length, 2)
+})
+
+test('streamed tokenization preserves Unicode normalization, duplicates and stop-word filtering', function () {
+  const instrumented = instrumentFullText({ nonLetterRegex: /[^\p{L}\p{N}\s]/gu })
+  assert.deepEqual(Array.from(instrumented.tokenize("  CAFÉ cafe\u0301 日本語 coöperate THE running RUNNING runner's  ")), [
+    'cafe', 'cafe', '日本語', 'cooper', 'run', 'run', 'runner'
+  ])
+  assert.deepEqual(Array.from(instrumented.tokenize('the\tand\n!!!')), [])
+})
+
+test('high-diversity text stops probing an ineffective cache', function () {
+  let lookups = 0
+  const instrumented = instrumentFullText({
+    Map: class extends Map {
+      get (key) { lookups++; return super.get(key) }
+    }
+  })
+  const text = Array.from({ length: 5000 }, (_, i) => `word${i}`).join(' ')
+  const tokens = instrumented.tokenize(text)
+  assert.equal(tokens.length, 5000)
+  assert.equal(lookups, 768)
+  assert.deepEqual(Array.from(tokens), Array.from({ length: 5000 }, (_, i) => `word${i}`))
+})
+
+test('tokenization agrees with the legacy pipeline using the production Unicode policy', function () {
+  const nonLetters = vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../ext/xregexp/nonLetterRegex.js'), 'utf8') + '\nnonLetterRegex')
+  const instrumented = instrumentFullText({ nonLetterRegex: nonLetters })
+  const vocabulary = ['THE', 'running', "runner's", 'CAFÉ', 'cafe\u0301', '日本語', 'Ελληνικά', 'İ', '👩‍💻', 'alpha-beta', '123', 'constructor', 'x'.repeat(100), 'x'.repeat(101)]
+  let seed = 731
+  const texts = ['', ' \t\n', ('the running ' + 'x'.repeat(101) + ' ').repeat(20005)]
+  for (let sample = 0; sample < 30; sample++) {
+    texts.push(Array.from({ length: 300 }, () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+      return vocabulary[seed % vocabulary.length]
+    }).join(' \u00a0\n'))
+  }
+  for (const text of texts) {
+    assert.deepEqual(Array.from(instrumented.tokenize(text)), instrumented.referenceTokenize(text))
+  }
 })
 
 // Deliberately simple reference: rescan each complete window, as before the

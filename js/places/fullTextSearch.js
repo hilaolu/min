@@ -4,6 +4,10 @@ const stemmer = require('stemmer')
 
 const whitespaceRegex = /\s+/g
 const ignoredCharactersRegex = /[']+/g
+const maxTextTokenLength = 100
+const maxIndexedTokens = 20000
+const maxCachedWords = 256
+const maxCacheMisses = 512
 
 // A small ranking margin lets body relevance reorder history-ranked candidates
 // without returning to the old fixed 100-document workload.
@@ -26,16 +30,43 @@ const stopWords = new Set([
   'while', 'who', 'whom', 'why', 'will', 'with', 'would', 'yet', 'you', 'your'
 ])
 
+// Keep reuse local to one document/query, with bounded keys even for arbitrary
+// page text. A vocabulary larger than the cache must not retain the whole body.
+function createWordNormalizer (normalize) {
+  let cache = new Map()
+  let misses = 0
+  return function (word) {
+    if (!cache || word.length > maxTextTokenLength) return normalize(word)
+    const cached = cache.get(word)
+    if (cached !== undefined) {
+      misses = 0
+      return cached
+    }
+    const value = normalize(word)
+    if (cache.size < maxCachedWords) cache.set(word, value)
+    // Unique/minified text should not pay for unsuccessful lookups forever.
+    else if (++misses === maxCacheMisses) cache = null
+    return value
+  }
+}
+
 function tokenize (string) {
-  return string.trim().toLowerCase()
+  const normalized = string.trim().toLowerCase()
     .replace(ignoredCharactersRegex, '')
     .replace(nonLetterRegex, ' ')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .split(whitespaceRegex).filter(function (token) {
-      return !stopWords.has(token) && token.length <= 100
-    })
-    .slice(0, 20000)
-    .map(token => stemmer(token))
+  const stem = createWordNormalizer(stemmer)
+  const tokens = []
+  const words = /\S+/g
+  let match
+  // Stop before allocating token arrays for the unused tail of a large page.
+  while ((match = words.exec(normalized)) !== null) {
+    const token = match[0]
+    if (stopWords.has(token) || token.length > maxTextTokenLength) continue
+    tokens.push(stem(token))
+    if (tokens.length === maxIndexedTokens) break
+  }
+  return tokens
 }
 
 function getCandidateLimit (resultLimit) {
@@ -127,8 +158,9 @@ function normalizeSnippetWord (word) {
 function createSnippetScan (text, searchText) {
   if (!text) return null
 
+  const normalize = createWordNormalizer(normalizeSnippetWord)
   const searchWords = new Set(searchText.split(whitespaceRegex)
-    .map(normalizeSnippetWord)
+    .map(normalize)
     .filter(Boolean))
   if (searchWords.size === 0) return null
 
@@ -137,13 +169,14 @@ function createSnippetScan (text, searchText) {
     bestWindow: null,
     matchCounts: new Map(),
     matches: text.matchAll(/\S+/g),
+    normalize,
     searchWords,
     window: []
   }
 }
 
 function scanSnippetWord (scan, word) {
-  const normalized = normalizeSnippetWord(word)
+  const normalized = scan.normalize(word)
   scan.window.push({ raw: word, normalized })
   if (scan.searchWords.has(normalized)) {
     scan.matchCounts.set(normalized, (scan.matchCounts.get(normalized) || 0) + 1)
