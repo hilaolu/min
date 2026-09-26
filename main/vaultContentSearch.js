@@ -124,6 +124,10 @@ async function searchContents (root, url, query, current = () => true, options =
             const entry = { name: item.name, relativePath: file.relativePath, url: file.vaultURL, kind: file.kind, ...match }
             // Retain only the requested top results, not a snippet for every hit.
             if (results.length < limit || rank(entry, results[results.length - 1]) < 0) {
+              // A tiny slice can retain the entire decoded file (external V8
+              // memory). Copy only retained snippets. UTF-16 preserves even a
+              // surrogate pair bisected by the existing clipping boundaries.
+              entry.passage.text = Buffer.from(entry.passage.text, 'utf16le').toString('utf16le')
               results.push(entry)
               results.sort(rank)
               if (results.length > limit) results.pop()

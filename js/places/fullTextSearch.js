@@ -81,34 +81,77 @@ function getMetadataText (item) {
   return (item.url + ' ' + item.title + ' ' + item.tags.join(' ')).toLowerCase()
 }
 
+function selectCandidates (tokens, postingSets, limit) {
+  const matches = function (item) {
+    const metadataText = getMetadataText(item)
+    return tokens.every((token, index) => postingSets[index].has(item.id) || metadataText.includes(token))
+  }
+  // Worst-first heap: keep only the existing ranking margin, without retaining
+  // every matching summary. Encounter order preserves the old stable-sort ties.
+  const heap = []
+  const compare = (a, b) => b.score - a.score || a.order - b.order
+  let candidateCount = 0
+  for (const item of historyInMemoryCache) {
+    if (!matches(item)) continue
+    const order = candidateCount++
+    const score = calculateHistoryScore(item)
+    if (Number.isNaN(score)) {
+      // A NaN comparator is non-transitive. For malformed history, retain the
+      // original sort semantics rather than silently changing which tabs match.
+      const all = historyInMemoryCache.filter(matches)
+      all.sort((a, b) => calculateHistoryScore(b) - calculateHistoryScore(a))
+      return { candidateCount: all.length, ids: all.slice(0, limit).map(item => item.id) }
+    }
+    if (heap.length === limit && score <= heap[0].score) continue
+    const candidate = { id: item.id, score, order }
+    if (heap.length < limit) {
+      let index = heap.length
+      heap.push(candidate)
+      while (index > 0) {
+        const parent = (index - 1) >> 1
+        if (compare(candidate, heap[parent]) <= 0) break
+        heap[index] = heap[parent]
+        index = parent
+      }
+      heap[index] = candidate
+    } else {
+      let index = 0
+      while (index * 2 + 1 < heap.length) {
+        let child = index * 2 + 1
+        if (child + 1 < heap.length && compare(heap[child + 1], heap[child]) > 0) child++
+        if (compare(heap[child], candidate) <= 0) break
+        heap[index] = heap[child]
+        index = child
+      }
+      heap[index] = candidate
+    }
+  }
+  return { candidateCount, ids: heap.sort(compare).map(candidate => candidate.id) }
+}
+
 function fullTextQuery (tokens, options = {}) {
   const resultLimit = getResultLimit(options)
   return db.transaction('r', db.places, function * () {
-    const tokenMatches = yield Dexie.Promise.all(tokens.map(token => db.places
+    const tokenMatchCounts = {}
+    const postingSets = yield Dexie.Promise.all(tokens.map(token => db.places
       .where('searchIndex')
       .equals(token)
-      .primaryKeys()))
-    const postingSets = tokenMatches.map(matches => new Set(matches))
-    const tokenMatchCounts = {}
-    tokens.forEach((token, index) => { tokenMatchCounts[token] = tokenMatches[index].length })
+      .primaryKeys().then(function (matches) {
+        tokenMatchCounts[token] = matches.length
+        return new Set(matches)
+      })))
 
-    const candidates = []
-    historyInMemoryCache.forEach(function (item) {
-      const metadataText = getMetadataText(item)
-      const matches = tokens.every(function (token, index) {
-        return postingSets[index].has(item.id) || metadataText.includes(token)
-      })
-      if (matches) candidates.push(item)
-    })
-
-    candidates.sort((a, b) => calculateHistoryScore(b) - calculateHistoryScore(a))
-    const ids = candidates.slice(0, getCandidateLimit(resultLimit)).map(item => item.id)
+    const { candidateCount, ids } = selectCandidates(tokens, postingSets, Math.floor(getCandidateLimit(resultLimit)))
+    // Only the counts are needed for body ranking. Don't overlap large posting
+    // tables with the selected full documents while their IndexedDB read waits.
+    postingSets.forEach(set => set.clear())
+    postingSets.length = 0
     const documents = ids.length === 0
       ? []
       : yield db.places.where('id').anyOf(ids).toArray()
 
     return {
-      candidateCount: candidates.length,
+      candidateCount,
       documents,
       documentsLoaded: documents.length,
       tokenMatchCounts

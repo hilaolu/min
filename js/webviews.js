@@ -284,6 +284,7 @@ const webviews = {
   },
   destroy: function (id) {
     webviews.emitEvent('content-hidden', id)
+    previewImageManager.clear(id)
 
     if (webviews.hasViewForTab(id)) {
       browserSession.updateTab(id, {
@@ -489,9 +490,6 @@ webviews.bindEvent('content-crashed', function (tabId) {
   browserSession.updateTab(tabId, {
     url: webviews.internalPages.error + '?ec=crash&url=' + encodeURIComponent(url)
   })
-
-  // Clear screenshot data for crashed tab
-  previewImageManager.clear(tabId)
 
   // the existing process has crashed, so we can't reuse it
   webviews.destroy(tabId)

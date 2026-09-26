@@ -1,10 +1,33 @@
-function createCommandPalettePresentation ({ WebContentsView, getWindowWebContents, pageURL, preloadPath, windows }) {
+function createCommandPalettePresentation ({ WebContentsView, getWindowWebContents, pageURL, preloadPath, windows, idleDelay = 30000, schedule = setTimeout, cancelSchedule = clearTimeout }) {
   const overlayId = 'command-palette'
   const preferredSize = { width: 600, height: 450 }
   let view = null
   let owner = null
   let loaded = false
   let latestState = normalizeState({})
+  let idleTimer = null
+
+  function cancelIdle () {
+    if (idleTimer !== null) cancelSchedule(idleTimer)
+    idleTimer = null
+  }
+
+  function considerIdle () {
+    if (!view || owner || idleTimer !== null) return
+    // Keep rapid reopen warm, but don't keep a hidden renderer for the entire
+    // browser session. All authoritative command/input state lives in Chrome.
+    idleTimer = schedule(function () {
+      idleTimer = null
+      if (!owner) destroy()
+    }, idleDelay)
+  }
+
+  function setOwner (window) {
+    if (owner === window) return
+    if (owner) owner.removeListener('closed', destroy)
+    owner = window
+    if (owner) owner.once('closed', destroy)
+  }
 
   function errorResult (code, message) {
     return { ok: false, error: { code, message } }
@@ -29,6 +52,9 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
 
   function normalizeState (state) {
     state = state && typeof state === 'object' ? state : {}
+    if (state.visible !== true) {
+      return { visible: false, open: false, input: '', candidates: [], selectedIndex: 0 }
+    }
     const candidates = Array.isArray(state.candidates)
       ? state.candidates.filter(candidate => candidate && typeof candidate === 'object').map(function (candidate) {
         return {
@@ -70,8 +96,10 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
         sandbox: true
       }
     })
+    const createdView = view
     view.webContents.setIgnoreMenuShortcuts(true)
     view.webContents.on('did-finish-load', function () {
+      if (view !== createdView) return
       loaded = true
       deliver()
     })
@@ -116,7 +144,8 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
       if (owner && view && windows.isOverlayAttached(overlayId, view)) {
         windows.detachOverlay(overlayId, view)
       }
-      owner = null
+      setOwner(null)
+      considerIdle()
       return { ok: true }
     }
 
@@ -130,9 +159,11 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
     setBounds(source.win)
     if (!wasAttached && !windows.attachOverlay(overlayId, view, source.win)) {
       latestState = previousState
+      considerIdle()
       return errorResult('COMMAND_PALETTE_ATTACH_FAILED', 'Command palette could not be attached')
     }
-    owner = source.win
+    cancelIdle()
+    setOwner(source.win)
     deliver()
     if (!wasAttached) focusBrowserChrome(source.win)
     return { ok: true }
@@ -145,14 +176,16 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
   }
 
   function destroy () {
-    if (!view) return
-    if (windows.isOverlayAttached(overlayId, view)) {
+    cancelIdle()
+    if (view && windows.isOverlayAttached(overlayId, view)) {
       windows.detachOverlay(overlayId, view)
     }
-    if (!view.webContents.isDestroyed()) view.webContents.destroy()
+    const contents = view && view.webContents
     view = null
-    owner = null
+    setOwner(null)
     loaded = false
+    latestState = normalizeState({})
+    if (contents && !contents.isDestroyed()) contents.destroy()
   }
 
   return { destroy, present, recenter }

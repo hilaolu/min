@@ -279,3 +279,202 @@ and process lifetimes.
 - The full-app/Vault palette failure and legacy settings lint/format limitations
   above remain; those checks are not claimed as passing. Native macOS behavior,
   long-running browsing and whole-browser RSS still need profiling.
+
+## Additional review at `f2653298`: idle Command Palette
+
+`main/commandPaletteOverlay.js` detached the palette on hide but retained its
+WebContents until **all** browser windows closed. Closing its owning window while
+another window remained open also left the presentation alive. This is separate
+from the task switcher cleanup above.
+
+The presentation now destroys its hidden view after **30 seconds** without a
+reopen. Quick reopen reuses the view and cancels retirement; repeated hidden
+updates cannot postpone retirement. A final owner-window close disposes it
+immediately. Ownership transfers remove the old close listener. Hidden state
+discards copied input/candidate payloads, and teardown resets readiness/state so
+an obsolete load callback cannot ready a replacement view. An unused view from a
+failed attachment also retires.
+
+Only the display-only presentation is disposed. Browser Chrome still owns input,
+commands and REPL state; tabs, forms, downloads and page renderers are untouched.
+Keyboard focus still returns to Chrome synchronously, before the palette loads.
+**Trade-off:** reopening after retirement must load the local presentation again,
+so visual readiness can be slower than a warm reopen. There is no tab suspension,
+forced production GC, reduced sandboxing or change to site isolation.
+
+### Measurement and verification
+
+`test/electronCommandPaletteMemory.js` uses the real presentation module, window
+registry, overlay HTML and sandboxed preload with two minimal Chrome fixtures and
+one synthetic tab. It uses a temporary profile, local/data URLs and no user data
+or network. The overlay HTML is loaded as a local file, not a full Min session;
+renderer sharing in other configurations can differ. The smoke shortens idle
+retirement to one second; fake-clock unit tests verify the production 30 seconds.
+
+On Linux / Electron 44.4.5 / bundled Node 24.21.0, three fresh processes completed
+three open/hide/retire cycles each:
+
+- All **9 cycles** returned from **4 to 3 WebContents**, leaving both Chrome
+  fixtures and the tab alive. The palette renderer PID disappeared from Electron
+  app metrics in every cycle. Cold reopen rendered fresh candidates and accepted
+  keys sent immediately, without waiting for overlay readiness.
+- Summing Linux `/proc/<pid>/smaps_rollup` PSS across Electron's app-metrics
+  processes, the hidden-to-retired decrease was **20.3–22.1 MiB**, median
+  **21.3 MiB** (21,844 KiB). PSS apportions shared pages rather than counting each
+  process's entire working set as independently saved memory.
+- These are observed within-fixture decreases, **not a controlled whole-browser
+  savings claim**. Background reclamation and allocator noise contribute: the
+  original module's comparison also fell 3.4 MiB over the wait while retaining
+  **4 WebContents and the palette PID**. It failed the disposal assertion, as
+  expected. The regression asserts lifetimes/counts, not byte thresholds.
+- All six new Node regressions failed against the original module. With the
+  change, **445/445 Node tests**, project JS lint, the full build, and real Electron
+  window-lifecycle and built-app background-tab smokes pass. Additional checks
+  cover ownership transfer, failed attachment, quick reopen, hidden payloads,
+  teardown before loading completes and explicit disposal/recreation.
+- An initial repeated smoke read keyboard state before asynchronous input was
+  observed. It now waits only for observation, without delaying or resending the
+  keys; all three subsequent fresh runs passed. The later pre-load-disposal
+  extension also passes. Electron's GLib schema warning remains nonfatal.
+
+Reproduce:
+
+```sh
+DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
+  --test test/commandPalettePresentation.test.js
+DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronCommandPaletteMemory.js
+# Optional regression comparison; expected to fail the idle-disposal assertion:
+baseline=$(mktemp --suffix=.js)
+git show f2653298:main/commandPaletteOverlay.js > "$baseline"
+DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronCommandPaletteMemory.js \
+  --presentation-source="$baseline"
+```
+
+Long-running real browsing, cross-platform acceptance, cold-open latency and
+whole-browser memory profiling were not performed for this change. Existing
+`docs/vault/` work and the untracked `tab-picker/` tree remain untouched.
+
+### Follow-up: the four additional candidates, implemented in order
+
+1. **Repeated permission requests in a long-lived tab.**
+   `main/permissionManager.js` now installs one navigation/destroyed listener
+   pair per WebContents, tracked weakly. Navigation revokes records as before;
+   destruction also detaches the navigation listener. A 1,000-request workload
+   now retains **1 of each listener instead of 1,000**, including after repeated
+   navigation cycles. Once a pending request is granted, its callback is removed
+   from the retained record. Grants are published before invoking the callback,
+   so synchronous navigation/destruction cannot reinstall a stale record.
+
+   Destruction now always removes pending/granted records, even with no browser
+   windows left. The renderer notification loop still sends no IPC in that case.
+   Previously this shutdown guard skipped data cleanup too, retaining callbacks
+   and grants in a resident application. Nine focused tests cover these cases,
+   duplicate notification rejection, media types, cross-tab reuse, revocation,
+   IPC authorization and pointer-lock focus-before-response. Six fail against
+   the original implementation. Counts demonstrate bounded retention, not MB
+   savings or native OS permission-dialog acceptance.
+
+2. **Long sessions opening/closing many distinct tabs.**
+   `js/previewImageManager.js` no longer retains a permanent generation counter
+   for every tab ever invalidated. Invalidation marks the pending capture Promise
+   in a WeakSet instead; settled/cleared requests can be collected. Navigation
+   still coalesces an outstanding capture until it settles, while explicit clear
+   permits a replacement immediately. Old completions cannot overwrite a new
+   capture or delete its pending entry. `webviews.destroy` now clears previews
+   for ordinary closure as well as crashes.
+
+   Instrumented-map tests show **zero retained entries after 10,000 closed-ID
+   invalidate/clear pairs**, versus 10,000 before. Tests also cover both old/new
+   completion orders, ID reuse, retry after errors, private-tab exclusion, the
+   three-image/30-second bounds, and deferred-tab closure without loading it.
+   This is an allocation-count regression, not a whole-renderer byte measurement.
+
+   Pre-commit review additionally registers the request **before** dispatching
+   capture/options callbacks, so synchronous invalidation and reentrant requests
+   cannot bypass deduplication. Synchronous errors now follow the same cleanup
+   and retry path as rejected captures. Completion rechecks private-tab status;
+   looking up expired, removed or private-tab images releases their cache entries
+   instead of only returning null. Four additional regressions failed before
+   this refinement and pass after it; no periodic cleanup timer was added.
+
+3. **Broad full-text queries over large history libraries.**
+   `js/places/fullTextSearch.js` converts each posting array to a Set as its read
+   resolves instead of retaining all arrays alongside all Sets. A worst-first
+   heap retains only the existing candidate margin, preserving encounter order
+   on score ties. Every match is still counted; no history records are excluded.
+   Posting entries are cleared before loading the selected full documents.
+   Token frequencies, metadata/body matching, document boosting, snippets and
+   public projections are unchanged. For malformed NaN history scores, selection
+   falls back to the original full sort to preserve its non-transitive behavior;
+   that exceptional path does not have the normal candidate-memory bound.
+
+   Differential tests cover mixed/ascending/reversed inputs, ties and fractional
+   or large limits. In a synthetic 100,000-summary, two-token query with limit 4,
+   both versions count all 100,000 matches and select exactly the same 12 IDs.
+   The benchmark samples **post-GC heap above the empty-query fixture**, not true
+   peak memory or RSS. Three fresh processes per version produced these medians:
+
+   | Sampling point                      | Before bytes | After bytes |
+   | ----------------------------------- | -----------: | ----------: |
+   | Near the end of candidate scan      |    3,891,324 |   2,657,696 |
+   | While selected body read is pending |    3,897,016 |      24,396 |
+
+   This is about **1.18 MiB less at the scan sample** and **3.69 MiB less during
+   body loading** in this workload. The baseline uses the original module from
+   `f2653298` with the same fixture, scoring and database stub. Real IndexedDB
+   behavior is additionally covered by the Electron performance smoke.
+
+4. **Content search through large vault files.**
+   The sliced-string hypothesis was confirmed in **external V8 memory**, not
+   `heapUsed`: eight short passages kept eight decoded 4-MiB files alive.
+   `main/vaultContentSearch.js` now copies a passage only when it enters the
+   retained top results. The copy round-trips through UTF-16LE to preserve exact
+   code units, even when clipping bisects a surrogate pair; UTF-8 would replace
+   these boundary characters. Matching, ranking, highlights, cancellation,
+   path/security checks and the 4-MiB/file, 32-MiB/scan limits are unchanged.
+
+   With eight synthetic files, both implementations return the same eight
+   results and **2,520 snippet characters**, with identical serialized-result
+   SHA-256 digests. Three fresh processes per version gave:
+
+   | Post-GC growth with results alive   | Before bytes | After bytes |
+   | ----------------------------------- | -----------: | ----------: |
+   | V8 external memory                  |   33,554,432 |   4,194,304 |
+   | JavaScript heap                     |      124,928 |     132,308 |
+   | ArrayBuffers (included in external) |            0 |           0 |
+
+   That is **28 MiB less retained external memory**, at a roughly 7-KiB heap cost
+   for small owned strings. It is not a zero-retention or RSS claim: this runtime
+   still retains 4 MiB of external memory in the fixture. The small copies add
+   allocation/encoding work only for accepted results, not every scanned file.
+
+#### Follow-up verification and reproduction
+
+Measurements above use Electron **44.4.5**, Node **24.21.0**, V8
+**15.2.124.28-electron.0** on Linux. `scripts/benchmarkSearchMemory.js` uses only
+synthetic records and its own temporary files; it leaves user data untouched.
+Forced GC is confined to the benchmark, never production. External memory
+includes ArrayBuffers: do not add those two reported columns together.
+
+```sh
+DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
+  --expose-gc scripts/benchmarkSearchMemory.js full-text
+DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
+  --expose-gc scripts/benchmarkSearchMemory.js vault
+# Compare either workload with its original source, without replacing app files:
+baseline=$(mktemp --suffix=.js)
+git show f2653298:main/vaultContentSearch.js > "$baseline"
+DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
+  --expose-gc scripts/benchmarkSearchMemory.js vault --source="$baseline"
+# For full-text, export js/places/fullTextSearch.js and select full-text instead.
+```
+
+- **467/467 Node tests** pass after the pre-commit refinement, using Electron's
+  bundled Node; none skipped.
+- Project JS lint, benchmark-script lint, full build and existing performance
+  benchmarks pass.
+- Electron performance, vault content search, built-app background tabs, window
+  lifecycle and palette lifecycle/memory smokes pass with `DISPLAY=:0`. The GLib
+  schema and existing navigation-method deprecation warnings remain nonfatal.
+- Cross-platform/native permission UX, sustained real browsing, actual peak
+  memory and whole-app RSS gains were not measured. Unrelated work is preserved.

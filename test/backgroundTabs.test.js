@@ -57,6 +57,7 @@ function createHarness (enabled) {
   const calls = []
   const addCalls = []
   const selectionCalls = []
+  const clearedPreviews = []
   const settings = {
     get: key => {
       if (key === 'deferBackgroundTabs') return enabled
@@ -120,7 +121,7 @@ function createHarness (enabled) {
     'tabLoadingPolicy.js': shouldDeferBackgroundTab,
     'util/settings/settings.js': settings,
     'rendererHost.js': rendererHost,
-    'previewImageManager.js': () => ({}),
+    'previewImageManager.js': () => ({ clear: id => clearedPreviews.push(id) }),
     'places/historyPolicy.js': { canExtractHistory: () => false },
     'util/urlParser.js': { parse: url => url },
     'js/util/urlParser.js': { parse: url => url },
@@ -171,6 +172,7 @@ function createHarness (enabled) {
     calls,
     addCalls,
     selectionCalls,
+    clearedPreviews,
     tabBar,
     foreground,
     setEnabled: value => { enabled = value }
@@ -228,6 +230,7 @@ test('closing before selection never creates or prepares deferred contents', asy
   assert.equal(h.addCalls.length, createsBefore)
   assert.deepEqual(h.calls.filter(call => call.id === id).map(call => call.operation), ['lifecycle.destroy'])
   assert.equal(h.session.tabs.getSelected(), h.foreground)
+  assert.deepEqual(h.clearedPreviews, [id])
 })
 
 test('setting changes affect only future additions, without destroying or loading existing tabs', function () {

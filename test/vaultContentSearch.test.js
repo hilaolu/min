@@ -72,6 +72,22 @@ test('content search finds long-line boundary matches and reports file-size trun
   assert.ok(result.notes.some(note => note.includes('4 MiB')))
 })
 
+test('retained passages preserve UTF-16 code units even when clipping bisects surrogate pairs', async t => {
+  const root = await fixture(t)
+  const text = '😀'.repeat(131) + 'xneedle' + '雪'.repeat(299) + '😀' + 'z'.repeat(1000)
+  await fs.writeFile(path.join(root, 'unicode.txt'), text)
+  const result = await search(root, 'vault://', 'needle', () => true, { exact: true })
+  const passage = result.entries[0].passage
+  const match = text.indexOf('needle')
+  assert.equal(passage.text, text.slice(match - 200, match + 6 + 300))
+  assert.equal(passage.text.charCodeAt(0), 0xde00)
+  assert.equal(passage.text.charCodeAt(passage.text.length - 1), 0xd83d)
+  assert.deepEqual(passage.ranges, [[200, 206]])
+  assert.equal(passage.line, 1)
+  assert.equal(passage.clippedStart, true)
+  assert.equal(passage.clippedEnd, true)
+})
+
 test('content matches outrank fuzzy matches and result counts survive limiting', async t => {
   const root = await fixture(t)
   await fs.writeFile(path.join(root, 'fuzzy.md'), 'Python')

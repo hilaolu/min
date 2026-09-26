@@ -89,6 +89,82 @@ test('full-text search bounds loaded documents and snippet work to the requested
   })
 })
 
+test('bounded candidate selection matches stable full sorting for ties, arbitrary order and limits', async function () {
+  let seed = 17
+  const mixed = Array.from({ length: 1000 }, (_, index) => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+    return summary(index + 1, { lastVisit: seed % 23, title: index % 3 === 0 ? 'Alpha metadata' : 'Other' })
+  })
+  const postings = mixed.filter(item => item.id % 2 === 0).map(item => item.id)
+  const bodyMatches = new Set(postings)
+  for (const items of [mixed, mixed.slice().reverse(), mixed.slice().sort((a, b) => a.lastVisit - b.lastVisit)]) {
+    for (const limit of [0.5, 1, 4, 20, 1000]) {
+      const expected = items.filter(item => bodyMatches.has(item.id) || item.title.includes('Alpha'))
+        .sort((a, b) => global.calculateHistoryScore(b) - global.calculateHistoryScore(a))
+      const instrumentation = {}
+      configureDatabase(items, items.map(item => document(item, '', [])), { alpha: postings }, instrumentation)
+      const metrics = await fullText.fullTextPlacesSearch('alpha', (results, error) => assert.equal(error, null), { limit })
+      assert.deepEqual(instrumentation.idsLoaded, expected.slice(0, fullText.getCandidateLimit(limit)).map(item => item.id))
+      assert.equal(metrics.candidateCount, expected.length)
+      assert.equal(metrics.documentsLoaded, Math.min(expected.length, Math.floor(fullText.getCandidateLimit(limit))))
+    }
+  }
+})
+
+test('malformed history scores retain the legacy stable-sort behavior', async function () {
+  const items = Array.from({ length: 40 }, (_, index) => summary(index + 1, { lastVisit: index % 7 === 0 ? NaN : (index * 17) % 31 }))
+  const expected = items.slice().sort((a, b) => global.calculateHistoryScore(b) - global.calculateHistoryScore(a))
+  const instrumentation = {}
+  configureDatabase(items, items.map(item => document(item, '', [])), { alpha: items.map(item => item.id) }, instrumentation)
+  await fullText.fullTextPlacesSearch('alpha', (results, error) => assert.equal(error, null), { limit: 4 })
+  assert.deepEqual(instrumentation.idsLoaded, expected.slice(0, fullText.getCandidateLimit(4)).map(item => item.id))
+})
+
+test('full-text query releases posting-set entries before loading selected bodies', async function () {
+  const items = Array.from({ length: 100 }, (_, index) => summary(index + 1))
+  configureDatabase(items, items.map(item => document(item, 'alpha beta', ['alpha', 'beta'])), {
+    alpha: items.map(item => item.id), beta: items.map(item => item.id)
+  })
+  const sets = []
+  const instrumented = instrumentFullText({
+    Dexie: global.Dexie,
+    db: global.db,
+    historyInMemoryCache: items,
+    calculateHistoryScore: global.calculateHistoryScore,
+    setTimeout,
+    Set: class extends Set {
+      constructor (values) {
+        super(values)
+        if (Array.isArray(values) && typeof values[0] === 'number') sets.push(this)
+      }
+    }
+  })
+  const where = global.db.places.where
+  global.db.places.where = field => {
+    if (field === 'id') {
+      assert.equal(sets.length, 2)
+      assert.deepEqual(sets.map(set => set.size), [0, 0])
+    }
+    return where(field)
+  }
+  await instrumented.fullTextPlacesSearch('alpha beta', (results, error) => assert.equal(error, null), { limit: 4 })
+})
+
+test('candidate history scores are evaluated once per match, not across a full-library sort', async function () {
+  const items = Array.from({ length: 10000 }, (_, index) => summary(index + 1))
+  configureDatabase(items, items.map(item => document(item, '', [])), { alpha: items.map(item => item.id) })
+  let calls = 0
+  const calculate = global.calculateHistoryScore
+  const instrumented = instrumentFullText({
+    Dexie: global.Dexie,
+    db: global.db,
+    historyInMemoryCache: items,
+    calculateHistoryScore: (...args) => { calls++; return calculate(...args) }
+  })
+  await instrumented.fullTextPlacesSearch('alpha', (results, error) => assert.equal(error, null), { limit: 4 })
+  assert.ok(calls <= items.length + fullText.getCandidateLimit(4), `evaluated ${calls} scores`)
+})
+
 test('full-text matching includes metadata-only matches and preserves body relevance ordering', async function () {
   const items = [
     summary(1, { title: 'Alpha title', lastVisit: 10 }),

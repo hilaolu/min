@@ -2,6 +2,7 @@ function createPermissionManager ({ getTabIDFromWebContents, ipc, sendIPCToWindo
   var pendingPermissions = []
   var grantedPermissions = []
   var nextPermissionId = 1
+  const observedContents = new WeakSet()
 
   /*
 All permission requests are given to the renderer on each change,
@@ -29,6 +30,22 @@ it will figure out what updates to make
     grantedPermissions = grantedPermissions.filter(perm => perm.contents !== contents)
 
     sendPermissionsToRenderers()
+  }
+
+  function observeContents (contents) {
+    if (observedContents.has(contents)) return
+    observedContents.add(contents)
+    function onNavigation (event, url, isInPlace, isMainFrame) {
+      if (isMainFrame && !isInPlace) removePermissionsForContents(contents)
+    }
+    contents.on('did-start-navigation', onNavigation)
+    contents.once('destroyed', function () {
+      contents.removeListener('did-start-navigation', onNavigation)
+      observedContents.delete(contents)
+      // Always release records/callbacks, including after the last window has
+      // closed. sendPermissionsToRenderers already skips IPC with no windows.
+      removePermissionsForContents(contents)
+    })
   }
 
   /*
@@ -118,12 +135,9 @@ Is there already a pending request of the given type for this origin?
   Other permissions aren't supported for now to simplify the UI
   */
     if (['media', 'notifications', 'pointerLock'].includes(permission)) {
-    /*
-    If permission was previously granted for this origin in a different tab, new requests should be allowed
-    */
+      observeContents(webContents)
+      // Permissions granted for this origin in another tab can be reused.
       if (isPermissionGrantedForOrigin(requestOrigin, permission, details)) {
-        respond(true)
-
         if (!grantedPermissions.some(grant => grant.contents === webContents && grant.permission === permission)) {
           grantedPermissions.push({
             permissionId: nextPermissionId,
@@ -138,6 +152,7 @@ Is there already a pending request of the given type for this origin?
           sendPermissionsToRenderers()
           nextPermissionId++
         }
+        respond(true)
       } else if (permission === 'notifications' && hasPendingRequestForOrigin(requestOrigin, permission, details)) {
       /*
       Sites sometimes make a new request for each notification, which can generate multiple requests if the first one wasn't approved.
@@ -158,21 +173,6 @@ Is there already a pending request of the given type for this origin?
         sendPermissionsToRenderers()
         nextPermissionId++
       }
-
-      /*
-    Once this view is closed or navigated to a new page, these permissions should be revoked
-    */
-      webContents.on('did-start-navigation', function (e, url, isInPlace, isMainFrame, frameProcessId, frameRoutingId) {
-        if (isMainFrame && !isInPlace) {
-          removePermissionsForContents(webContents)
-        }
-      })
-      webContents.once('destroyed', function () {
-      // check whether the app is shutting down to avoid an electron crash (TODO remove this)
-        if (windows.getAll().length > 0) {
-          removePermissionsForContents(webContents)
-        }
-      })
     } else {
       respond(false)
     }
@@ -221,10 +221,14 @@ Is there already a pending request of the given type for this origin?
           pendingPermissions[i].contents.focus()
         }
 
-        pendingPermissions[i].granted = true
-        pendingPermissions[i].callback(true)
-        grantedPermissions.push(pendingPermissions[i])
-        pendingPermissions.splice(i, 1)
+        const permission = pendingPermissions.splice(i, 1)[0]
+        const respond = permission.callback
+        delete permission.callback
+        permission.granted = true
+        grantedPermissions.push(permission)
+        // The response may trigger navigation/destruction; publish the grant
+        // first so lifecycle cleanup cannot be undone after the callback.
+        respond(true)
 
         sendPermissionsToRenderers()
         break
