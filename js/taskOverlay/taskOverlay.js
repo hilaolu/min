@@ -19,6 +19,7 @@ var taskSwitcherButton = document.getElementById('switch-task-button')
 var addTaskButton = document.getElementById('add-task')
 var addTaskLabel = addTaskButton.querySelector('span')
 var taskOverlayNavbar = document.getElementById('task-overlay-navbar')
+var hideTimeout = null
 
 function addTaskFromMenu () {
   /* new tasks can't be created in focus mode */
@@ -158,6 +159,10 @@ var taskOverlay = {
       return
     }
 
+    // A previous close must not clear a newer overlay or shorten its transition.
+    clearTimeout(hideTimeout)
+    hideTimeout = null
+
     webviews.requestPlaceholder('taskOverlay')
 
     document.body.classList.add('task-overlay-is-shown')
@@ -183,10 +188,14 @@ var taskOverlay = {
       currentTabElement.focus()
     }
   },
-  render: function () {
-    empty(taskContainer)
+  clear: function () {
+    // Sortable and its document listeners retain tab rows even after DOM removal.
     this.sortableInstances.forEach(inst => inst.destroy())
     this.sortableInstances = []
+    empty(taskContainer)
+  },
+  render: function () {
+    this.clear()
 
     taskOverlay.addTabDragging(addTaskButton)
     taskOverlay.addTaskDragging()
@@ -216,9 +225,10 @@ var taskOverlay = {
       this.overlayElement.hidden = true
 
       // wait until the animation is complete to remove the tab elements
-      setTimeout(function () {
+      hideTimeout = setTimeout(function () {
+        hideTimeout = null
         if (!taskOverlay.isShown) {
-          empty(taskContainer)
+          taskOverlay.clear()
           webviews.hidePlaceholder('taskOverlay')
         }
       }, 250)
