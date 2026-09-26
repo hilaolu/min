@@ -2,7 +2,8 @@ const assert = require('node:assert/strict')
 const test = require('node:test')
 const v8 = require('node:v8')
 
-const { PlacesCache } = require('../js/places/placesCache.js')
+const { PlacesCache, projectPlace, publicPlaceFields } = require('../js/places/placesCache.js')
+const { getSearchTextCache } = require('../js/places/placesSearch.js')
 
 function createCache () {
   const events = []
@@ -14,7 +15,7 @@ function createCache () {
   }
   const cache = new PlacesCache({
     calculateScore: item => item.lastVisit + item.visitCount,
-    getSearchTextCache: item => ({ title: item.title.toLowerCase(), url: item.url.toLowerCase() }),
+    getSearchTextCache,
     tagIndex
   })
   return { cache, events }
@@ -48,6 +49,12 @@ test('Places cache retains only lightweight summaries and projects independent r
 
   assert.equal(results.length, 100)
   assert.ok(payloadSize < 32 * 1024, `projected payload was ${payloadSize} bytes`)
+  for (const item of results.concat(cache.getPublicByURL(results[0].url), cache.getRecentPublic())) {
+    assert.deepEqual(Object.keys(item), publicPlaceFields)
+    assert.equal('searchTextCache' in item, false)
+    assert.equal('searchTitle' in item, false)
+    assert.equal('searchURL' in item, false)
+  }
   for (const item of cache.items.concat(results)) {
     assert.equal('extractedText' in item, false)
     assert.equal('pageHTML' in item, false)
@@ -56,6 +63,30 @@ test('Places cache retains only lightweight summaries and projects independent r
   }
   results[0].tags.push('mutated')
   assert.deepEqual(cache.getById(results[0].id).tags, [])
+})
+
+test('summaries inline real normalized strings and refresh titles and replacement URLs', function () {
+  const { cache } = createCache()
+  const original = place(1, { title: 'CAFÉ+Guide_Été', url: 'https://www.Example.com/Café-Guide?q=secret' })
+  assert.deepEqual(getSearchTextCache(original), { title: 'cafe guide ete', url: 'example com cafe guide' })
+  const summary = cache.add(original)
+  assert.equal(summary.searchTitle, 'cafe guide ete')
+  assert.equal(summary.searchURL, 'example com cafe guide')
+  assert.equal('searchTextCache' in summary, false)
+  assert.deepEqual(projectPlace(summary), projectPlace(original))
+
+  const updated = cache.upsert({ ...original, title: 'RÉSUMÉ.New/Title', searchTitle: 'stale', searchURL: 'stale' })
+  assert.equal(updated.searchTitle, 'resume new title')
+  assert.equal(updated.searchURL, 'example com cafe guide')
+  assert.equal(cache.getById(1), updated)
+
+  // URLs are cache keys: replacing a URL uses remove + add, not an ID upsert.
+  cache.removeByURL(original.url)
+  const replacement = cache.add({ ...original, url: 'http://www.Example.org/À+New_Path?ignored=yes' })
+  assert.equal(replacement.searchURL, 'example org a new path')
+  assert.equal(replacement.searchTitle, 'cafe guide ete')
+  assert.equal(cache.getByURL(original.url), null)
+  assert.equal(cache.getById(1), replacement)
 })
 
 test('Places cache maintains ranking, URL and ID indexes, and tag lifecycle', function () {

@@ -166,7 +166,9 @@ function benchmarkOrdinarySearch (itemCount) {
     // Mix prefix and title matches so query boosts change the cache's order.
     if (index % 2 === 0) item.url = `https://benchmark.example.com/${index}`
     else item.title = `Benchmark page ${index}`
-    item.searchTextCache = placesSearch.getSearchTextCache(item)
+    const searchText = placesSearch.getSearchTextCache(item)
+    item.searchTitle = searchText.title
+    item.searchURL = searchText.url
     return item
   }).sort((a, b) => global.calculateHistoryScore(b) - global.calculateHistoryScore(a))
   const score = global.calculateHistoryScore

@@ -175,7 +175,7 @@ async function runPlacesWorkload () {
             expected: expected.slice(0, limit),
             ids: response.result.map(item => item.id),
             callbackId: response.callbackId,
-            publicOnly: response.result.every(item => !('searchTextCache' in item) && !('extractedText' in item) && !('score' in item))
+            publicOnly: response.result.every(item => !('searchTextCache' in item) && !('searchTitle' in item) && !('searchURL' in item) && !('extractedText' in item) && !('score' in item))
           }
         })
       } finally {
@@ -217,7 +217,7 @@ async function runPlacesWorkload () {
         expected,
         ids: response.result.map(item => item.id),
         callbackId: response.callbackId,
-        publicOnly: response.result.every(item => !('searchTextCache' in item) && !('extractedText' in item) && !('score' in item))
+        publicOnly: response.result.every(item => !('searchTextCache' in item) && !('searchTitle' in item) && !('searchURL' in item) && !('extractedText' in item) && !('score' in item))
       }
     })()`)
     assert.deepEqual(bookmarkTags.ids, bookmarkTags.expected)

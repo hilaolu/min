@@ -39,7 +39,9 @@ class PlacesCache {
 
   createSummary (item) {
     const summary = projectPlace(item)
-    summary.searchTextCache = this.getSearchTextCache(summary)
+    const searchText = this.getSearchTextCache(summary)
+    summary.searchTitle = searchText.title
+    summary.searchURL = searchText.url
     return summary
   }
 

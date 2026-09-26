@@ -4,6 +4,15 @@ const path = require('node:path')
 const test = require('node:test')
 const vm = require('node:vm')
 
+const { PlacesCache, projectPlace } = require('../js/places/placesCache.js')
+const { getSearchTextCache } = require('../js/places/placesSearch.js')
+
+function installSearchText (item) {
+  const searchText = getSearchTextCache(item)
+  item.searchTitle = searchText.title
+  item.searchURL = searchText.url
+}
+
 function loadPlacesSearch (history, globals = {}) {
   const context = vm.createContext({
     calculateHistoryScore: (item, boost = 0) => item.lastVisit * (1 + boost),
@@ -32,7 +41,7 @@ test('Places search formats history without ambient service globals', function (
     lastVisit: Date.now()
   }]
   const placesSearch = loadPlacesSearch(history)
-  history[0].searchTextCache = placesSearch.getSearchTextCache(history[0])
+  installSearchText(history[0])
 
   let allResults
   let matchingResults
@@ -41,6 +50,47 @@ test('Places search formats history without ambient service globals', function (
 
   assert.deepEqual(Array.from(allResults, result => result.url), ['https://example.com/docs'])
   assert.deepEqual(Array.from(matchingResults, result => result.url), ['https://example.com/docs'])
+})
+
+test('production summaries keep all old history and bookmarks searchable after metadata updates', function () {
+  const count = 20000
+  const cache = new PlacesCache({
+    calculateScore: item => item.lastVisit,
+    getSearchTextCache,
+    tagIndex: { addPage: function () {}, onChange: function () {} }
+  })
+  for (let id = 0; id < count; id++) {
+    cache.add({
+      id,
+      url: `https://www.Example.com/Àrchive/record${id}?ignored=yes`,
+      title: `CAFÉ+Guide ${id}`,
+      tags: [],
+      visitCount: 1,
+      lastVisit: id + 1,
+      isBookmarked: id % 10 === 0
+    }, { sort: false })
+  }
+  cache.sort()
+  const search = loadPlacesSearch(cache.items)
+  function find (query, options = {}) {
+    let found
+    search.searchPlaces(query, results => { found = Array.from(results) }, { limit: count, ...options })
+    return found
+  }
+  assert.equal(cache.items.length, count)
+  assert.equal(cache.byId.size, count)
+  assert.equal(cache.byURL.size, count)
+  assert.deepEqual(find('').map(item => item.id), cache.items.map(item => item.id))
+  assert.deepEqual(find('cafe guide').map(item => item.id), cache.items.map(item => item.id))
+  assert.deepEqual(find('archive', { searchBookmarks: true }).map(item => item.id), cache.items.filter(item => item.isBookmarked).map(item => item.id))
+  assert.deepEqual(find('record0').map(item => item.id), [0])
+
+  cache.upsert({ ...projectPlace(cache.getById(0)), title: 'Ancient RÉSUMÉ' })
+  assert.deepEqual(find('ancient resume', { searchBookmarks: true }).map(item => item.id), [0])
+  assert.equal(find('cafe guide').length, count - 1)
+  const publicResult = projectPlace(find('ancient resume')[0])
+  assert.equal('searchTitle' in publicResult, false)
+  assert.equal('searchURL' in publicResult, false)
 })
 
 test('Places search considers late cache entries before applying a small result bound', function () {
@@ -59,7 +109,7 @@ test('Places search considers late cache entries before applying a small result 
     lastVisit: 90
   })
   const placesSearch = loadPlacesSearch(history)
-  history.forEach(item => { item.searchTextCache = placesSearch.getSearchTextCache(item) })
+  history.forEach(installSearchText)
 
   let results
   placesSearch.searchPlaces('needle', value => { results = value }, { limit: 4 })
@@ -81,7 +131,7 @@ function createHistory (count) {
 
 function prepareSearch (history, globals) {
   const search = loadPlacesSearch(history, globals)
-  history.forEach(item => { item.searchTextCache = search.getSearchTextCache(item) })
+  history.forEach(installSearchText)
   return function (query, options) {
     let results
     let responses = 0

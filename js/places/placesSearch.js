@@ -73,10 +73,10 @@ function searchPlaces (searchText, callback, options) {
     if (limitToBookmarks && !item.isBookmarked) {
       return
     }
-    let itext = item.searchTextCache.url
+    let itext = item.searchURL
 
     if (item.url !== item.title) {
-      itext += ' ' + item.searchTextCache.title
+      itext += ' ' + item.searchTitle
     }
 
     if (item.tags) {
@@ -112,7 +112,7 @@ function searchPlaces (searchText, callback, options) {
       }
 
       if ((item.visitCount > 2 && item.lastVisit > oneWeekAgo) || item.lastVisit > oneDayAgo) {
-        const score = Math.max(quickScore.quickScore(item.searchTextCache.url.substring(0, 100), st), quickScore.quickScore(item.searchTextCache.title.substring(0, 50), st))
+        const score = Math.max(quickScore.quickScore(item.searchURL.substring(0, 100), st), quickScore.quickScore(item.searchTitle.substring(0, 50), st))
         if (score > 0.3) {
           addMatch(item, score * 0.33, order)
         }

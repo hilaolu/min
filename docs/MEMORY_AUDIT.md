@@ -86,7 +86,8 @@ acceptance were not performed.
 
 ## Further opportunities and refinement status
 
-Candidates 1–3 are source-derived opportunities, not implemented or measured.
+Candidates 1–2 are source-derived opportunities, not implemented or measured.
+Candidate 3 now has an isolated retained-heap comparison.
 The ownership refinements below are verified with lifecycle/count checks, not
 whole-app memory measurements.
 
@@ -109,14 +110,62 @@ whole-app memory measurements.
    browser windows. `connect` already supports recreation. This requires client
    lifetime accounting, reconnect tests and durable completion of pending writes.
 
-3. **Large history/bookmark libraries — reduce resident search metadata.**
-   `js/places/placesService.js:loadHistoryInMemory` loads every summary, and
-   `PlacesCache.createSummary` retains normalized title/URL strings in addition
-   to public metadata and ID/URL indexes. Investigate a more compact search
-   representation or a bounded hot cache with an IndexedDB fallback. Do not
-   simply truncate history or lose old-bookmark search. Full page bodies are
-   already excluded from the summary cache, and the service is shared across
-   browser windows; duplicating the cache per window would be a regression.
+3. **Implemented: large history/bookmark libraries — inline search metadata.**
+   `PlacesCache.createSummary` now copies the normalized strings returned by
+   `getSearchTextCache(item)` into `summary.searchTitle` and `summary.searchURL`,
+   rather than retaining a nested `{ title, url }` object per summary. The helper
+   API still returns `{ title, url }`; ordinary search reads the inline fields.
+   Public projections expose neither field. Normalized-string caches, all
+   history/bookmarks, ID/URL maps, bookmark indexes, matching and ranking are
+   preserved. No hot-cache bound, history trimming, index removal or per-window
+   duplication was introduced; full page bodies remain excluded.
+
+   **Measurement:** `scripts/benchmarkPlacesMemory.js` generates synthetic 20k
+   and 100k libraries without user data or network access. Its baseline subclasses
+   `PlacesCache` and overrides only `createSummary` to retain the nested layout;
+   the inline case uses the actual production class. Both use real normalization,
+   bookmark indexing, sorting, arrays and ID/URL maps. Each layout/count runs in
+   three fresh `process.execPath --expose-gc` subprocesses, preserving
+   `ELECTRON_RUN_AS_NODE=1`. The metric is median `heapUsed` growth from an empty
+   cache after yielding and two explicit GCs, **not RSS or peak memory**.
+
+   Electron **44.4.5**, bundled Node **24.21.0**, V8 **15.2.124.28-electron.0**,
+   Linux, produced these exact byte measurements:
+
+   | Summaries | Nested baseline | Production inline | Saved bytes | Reduction |
+   | --------: | --------------: | ----------------: | ----------: | --------: |
+   |    20,000 |      10,095,616 |         9,691,376 |     404,240 |     4.00% |
+   |   100,000 |      48,619,696 |        46,706,376 |   1,913,320 |     3.94% |
+
+   Both layouts retained exactly **20,000 / 100,000 summaries**, the same counts
+   in each ID/URL map, **2,000 / 10,000 indexed bookmarks**, and **40,000 / 200,000
+   normalized strings**. Post-measurement assertions verify every public field
+   and normalized string, map identity and ordered search-result digests across
+   layouts. Empty and normalized-title searches return all 20k/100k old records;
+   bookmark searches return all 2k/10k bookmarks, including the oldest record in
+   a targeted search. Prefix, out-of-order and nonmatching queries also agree.
+   The script fails unless median inline heap is lower in both cases. Savings
+   vary with runtime and data; these are not whole-browser memory guarantees.
+
+   Reproduce:
+
+   ```sh
+   DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
+     --expose-gc scripts/benchmarkPlacesMemory.js
+   ```
+
+   **Verification:** 40/40 focused Node tests (`placesCache`, `placesSearch`,
+   `placesService`, `fullTextSearch`) pass under Electron's bundled Node. Tests
+   cover normalization, title updates and URL replacement, projection privacy,
+   all 20k old records remaining searchable, and unchanged ranking/boost/tie
+   behavior. Changed-JS Standard lint (including both benchmark scripts),
+   Prettier's audit check and the scoped diff whitespace check pass.
+   `DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronPerformance.js`
+   passes, including ordinary-search and bookmark-suggestion `publicOnly`
+   assertions for both new fields (a GLib schema warning was nonfatal).
+   `scripts/benchmarkPerformance.js` also passes under Electron's Node. The
+   existing preload bundle was used; no rebuild, full test suite, whole-app RSS
+   profile or cross-platform check was performed for this refinement.
 
 4. **Implemented: dispose orphaned pending popups.**
    `main/pendingPopups.js` tracks unadopted views by their originating Browser
