@@ -9,6 +9,7 @@ const { app, webContents } = electron
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'min-background-tabs-'))
 app.setPath('userData', temporary)
 app.disableHardwareAcceleration()
+process.argv.push('--debug-browser')
 process.on('uncaughtException', error => { console.error(error); app.exit(1) })
 const main = require('../main/index.js')({ electron })
 const requests = []
@@ -78,7 +79,17 @@ async function run () {
   await until(async () => !(await tabIds()).includes(deferred[1]), 'close never-selected tab')
   assert.equal(requests.filter(url => url.startsWith('/page')).length, 1)
   assert.equal(webContents.getAllWebContents().length, initialContents + 1)
-  console.log(JSON.stringify({ backgroundTabs: 20, initiallyCreatedContents: 0, createdAfterSelection: 1, pageRequests: 1, settingsCheckbox: 'passed' }))
+  // The built-app developer menu must also tolerate an absent idle service.
+  main.places.destroy()
+  assert.equal(main.places.getWindow(), null)
+  const developer = electron.Menu.getApplicationMenu().items.find(item => item.label === 'Developer')
+  const inspectPlaces = developer.submenu.items.find(item => item.label === 'Inspect Places Service')
+  inspectPlaces.click(inspectPlaces, win)
+  const recreated = main.places.getWindow()
+  assert.ok(recreated)
+  await until(() => recreated.webContents.isDevToolsOpened(), 'on-demand Places inspector')
+  recreated.webContents.closeDevTools()
+  console.log(JSON.stringify({ backgroundTabs: 20, initiallyCreatedContents: 0, createdAfterSelection: 1, pageRequests: 1, settingsCheckbox: 'passed', placesInspector: 'passed' }))
 }
 
 run().then(async () => {

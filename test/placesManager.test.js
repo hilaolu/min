@@ -13,6 +13,7 @@ function createHarness () {
       this.destroyed = false
       this.messages = []
       this.webContents = new EventEmitter()
+      this.webContents.mainFrame = {}
       this.webContents.destroyed = false
       this.webContents.isDestroyed = () => this.webContents.destroyed
       this.webContents.postMessage = (channel, value, ports) => {
@@ -69,7 +70,7 @@ test('Places Manager queues connections until its hidden window is ready', funct
   assert.deepEqual(placesWindow.messages, [{
     channel: 'places-connect',
     ports: [port],
-    value: null
+    value: { generation: 1 }
   }])
   assert.equal(places.initialize(), placesWindow)
 })
@@ -183,6 +184,7 @@ test('Places Manager releases provisional listeners before each of 100 transfers
     assert.equal(port.listenerCount('close'), 0)
     assert.equal(placesWindow.messages.length, i + 1)
     assert.deepEqual(placesWindow.messages[i].ports, [port])
+    assert.deepEqual(placesWindow.messages[i].value, { generation: i + 1 })
   }
 
   sender.emit('destroyed')
@@ -284,4 +286,124 @@ test('Places Manager supports plain-object senders and ports without listener me
   assert.equal(places.connect({}, port), true)
   places.destroy()
   assert.equal(port.closeCount, 1)
+})
+
+test('Places Manager accepts idle only when ready, from its main frame, with the current generation', function (t) {
+  const harness = createHarness()
+  const places = createPlacesManager({ BrowserWindow: harness.BrowserWindow, pageURL: 'file:///places.html' })
+  t.after(() => places.destroy())
+  const target = places.initialize()
+  const event = { senderFrame: target.webContents.mainFrame }
+  target.webContents.emit('ipc-message', event, 'places-idle', { generation: 0 })
+  assert.equal(places.getWindow(), target)
+  assert.equal(target.destroyed, false)
+  target.webContents.emit('did-finish-load')
+
+  const unavailableFrame = { get senderFrame () { throw new Error('frame destroyed') } }
+  for (const [source, channel, data] of [
+    [{ senderFrame: {} }, 'places-idle', { generation: 0 }],
+    [{}, 'places-idle', { generation: 0 }],
+    [unavailableFrame, 'places-idle', { generation: 0 }],
+    [event, 'other-channel', { generation: 0 }],
+    [event, 'places-idle', undefined],
+    [event, 'places-idle', { generation: 1 }],
+    [event, 'places-idle', { generation: '0' }]
+  ]) {
+    assert.doesNotThrow(() => target.webContents.emit('ipc-message', source, channel, data))
+    assert.equal(places.getWindow(), target)
+    assert.equal(places.isReady(), true)
+    assert.equal(target.destroyed, false)
+  }
+
+  target.webContents.emit('ipc-message', event, 'places-idle', { generation: 0 })
+  assert.equal(target.destroyed, true)
+  assert.equal(places.getWindow(), null)
+  assert.equal(places.isReady(), false)
+  assert.equal(harness.windows.length, 1)
+})
+
+test('Places Manager refuses matching idle while ready connections are still being transferred', function (t) {
+  const harness = createHarness()
+  const places = createPlacesManager({ BrowserWindow: harness.BrowserWindow, pageURL: 'file:///places.html' })
+  t.after(() => places.destroy())
+  const sender = new EventEmitter()
+  const ports = [createPort(), createPort()]
+  for (const port of ports) places.connect(sender, port)
+  const target = places.getWindow()
+  const event = { senderFrame: target.webContents.mainFrame }
+  target.webContents.emit('ipc-message', event, 'places-idle', { generation: 0 })
+  assert.equal(places.getWindow(), target)
+  assert.equal(sender.listenerCount('destroyed'), 2)
+  const postMessage = target.webContents.postMessage
+  target.webContents.postMessage = function (channel, value, transferredPorts) {
+    postMessage(channel, value, transferredPorts)
+    if (value.generation === 1) {
+      assert.equal(places.isReady(), true)
+      target.webContents.emit('ipc-message', event, 'places-idle', value)
+      assert.equal(target.destroyed, false)
+      assert.equal(places.getWindow(), target)
+    }
+  }
+  target.webContents.emit('did-finish-load')
+  assert.deepEqual(target.messages.map(message => message.value), [{ generation: 1 }, { generation: 2 }])
+  assert.equal(sender.listenerCount('destroyed'), 0)
+  for (const port of ports) {
+    assert.equal(port.listenerCount('close'), 0)
+    assert.equal(port.closeCount, 0)
+  }
+  target.webContents.emit('ipc-message', event, 'places-idle', { generation: 2 })
+  assert.equal(target.destroyed, true)
+  assert.equal(places.getWindow(), null)
+})
+
+test('Places Manager rejects stale idle after a newer transfer or service replacement', function (t) {
+  const harness = createHarness()
+  const places = createPlacesManager({ BrowserWindow: harness.BrowserWindow, pageURL: 'file:///places.html' })
+  t.after(() => places.destroy())
+  const sender = new EventEmitter()
+  const first = createPort()
+  places.connect(sender, first)
+  const oldWindow = places.getWindow()
+  const oldEvent = { senderFrame: oldWindow.webContents.mainFrame }
+  oldWindow.webContents.emit('did-finish-load')
+  const second = createPort()
+  places.connect(sender, second)
+  assert.deepEqual(oldWindow.messages.map(message => message.value), [{ generation: 1 }, { generation: 2 }])
+  oldWindow.webContents.emit('ipc-message', oldEvent, 'places-idle', { generation: 1 })
+  assert.equal(oldWindow.destroyed, false)
+  assert.equal(places.getWindow(), oldWindow)
+
+  oldWindow.webContents.emit('ipc-message', oldEvent, 'places-idle', { generation: 2 })
+  assert.equal(oldWindow.destroyed, true)
+  assert.equal(places.getWindow(), null)
+  assert.equal(places.isReady(), false)
+  assert.equal(harness.windows.length, 1)
+
+  const third = createPort()
+  assert.equal(places.connect(sender, third), true)
+  const replacement = places.getWindow()
+  assert.notEqual(replacement, oldWindow)
+  assert.equal(harness.windows.length, 2)
+  assert.equal(places.isReady(), false)
+  assert.deepEqual(replacement.messages, [])
+  replacement.webContents.emit('did-finish-load')
+  assert.deepEqual(replacement.messages, [{ channel: 'places-connect', ports: [third], value: { generation: 1 } }])
+
+  // Even a generation matching the replacement cannot authorize an old window.
+  oldWindow.webContents.emit('ipc-message', oldEvent, 'places-idle', { generation: 1 })
+  oldWindow.webContents.emit('ipc-message', oldEvent, 'places-idle', { generation: 2 })
+  replacement.webContents.emit('ipc-message', oldEvent, 'places-idle', { generation: 1 })
+  assert.equal(places.getWindow(), replacement)
+  assert.equal(places.isReady(), true)
+  assert.equal(replacement.destroyed, false)
+  assert.equal(sender.listenerCount('destroyed'), 0)
+  for (const port of [first, second, third]) {
+    assert.equal(port.listenerCount('close'), 0)
+    assert.equal(port.closeCount, 0)
+  }
+
+  replacement.webContents.emit('ipc-message', { senderFrame: replacement.webContents.mainFrame }, 'places-idle', { generation: 1 })
+  assert.equal(replacement.destroyed, true)
+  assert.equal(places.getWindow(), null)
+  assert.equal(harness.windows.length, 2)
 })

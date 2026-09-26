@@ -85,6 +85,11 @@ async function loadService (initialRecords = []) {
   const tokenizeCalls = []
   const fullTextCalls = []
   const timers = []
+  const timerDelays = []
+  const intervals = []
+  const cleared = []
+  const taskCalls = []
+  const ipcMessages = []
   let connection
   const tagIndex = {
     addPage: function () {},
@@ -97,6 +102,8 @@ async function loadService (initialRecords = []) {
     reset: function () {}
   }
   const context = vm.createContext({
+    clearTimeout: id => cleared.push(['timeout', id]),
+    clearInterval: id => cleared.push(['interval', id]),
     console: { error: function () {}, warn: function () {} },
     db: database.db,
     Dexie: { Promise },
@@ -107,16 +114,27 @@ async function loadService (initialRecords = []) {
     getSearchTextCache: item => ({ title: item.title.toLowerCase(), url: item.url.toLowerCase() }),
     module: { exports: {} },
     require: function (request) {
-      if (request === 'electron') return { ipcRenderer: {} }
+      if (request === 'electron') {
+        return { ipcRenderer: { send: (channel, data) => ipcMessages.push({ channel, data }) } }
+      }
       if (request === './placesCache.js') return require('../js/places/placesCache.js')
       if (request === './placesServiceConnection.js') {
-        return function (options) { connection = options }
+        return function (options) {
+          connection = options
+          return {
+            runTask: work => {
+              const result = work()
+              taskCalls.push({ work, result })
+              return result
+            }
+          }
+        }
       }
       throw new Error(`unexpected require ${request}`)
     },
     searchPlaces: (text, respond) => respond([]),
-    setInterval: function () {},
-    setTimeout: work => { timers.push(work) },
+    setInterval: (work, delay) => { intervals.push({ work, delay }); return intervals.length },
+    setTimeout: (work, delay) => { timers.push(work); timerDelays.push(delay); return timers.length },
     tagIndex,
     tokenize: text => {
       tokenizeCalls.push(text)
@@ -126,7 +144,7 @@ async function loadService (initialRecords = []) {
   const source = fs.readFileSync(path.resolve(__dirname, '../js/places/placesService.js'), 'utf8')
   vm.runInContext(source, context, { filename: 'placesService.js' })
   await connection.ready
-  return { connection, database, fullTextCalls, timers, tokenizeCalls }
+  return { cleared, connection, database, fullTextCalls, intervals, ipcMessages, taskCalls, timerDelays, timers, tokenizeCalls }
 }
 
 function request (service, data) {
@@ -191,6 +209,62 @@ test('cleanup removes expired rows from storage and the resident summary cache',
 
   assert.equal(service.database.records.length, 0)
   assert.equal(responses[0].result, null)
+})
+
+test('startup and hourly maintenance run through the connection work barrier and return the cleanup promise', async function () {
+  const service = await loadService()
+  assert.deepEqual(service.timerDelays, [20000])
+  assert.deepEqual(service.intervals.map(interval => interval.delay), [60 * 60 * 1000])
+  assert.equal(service.taskCalls.length, 0)
+  let deletions = 0
+  for (const work of [service.timers[0], service.intervals[0].work]) {
+    let finishKeys
+    const keys = new Promise(resolve => { finishKeys = resolve })
+    service.database.db.places.where = field => {
+      assert.equal(field, 'lastVisit')
+      return {
+        below: () => ({
+          and: () => ({
+            primaryKeys: () => keys,
+            delete: () => { deletions++; return Promise.resolve() }
+          })
+        })
+      }
+    }
+    const count = service.taskCalls.length
+    const result = work()
+    assert.equal(service.taskCalls.length, count + 1)
+    assert.equal(service.taskCalls[count].work.name, 'cleanupHistoryDatabase')
+    assert.equal(result, service.taskCalls[count].result)
+    assert.equal(typeof result.then, 'function')
+    let settled = false
+    result.then(() => { settled = true })
+    await Promise.resolve()
+    assert.equal(settled, false)
+    assert.equal(deletions, count)
+    finishKeys([])
+    assert.equal(await result, 0)
+    assert.equal(deletions, count + 1)
+  }
+  assert.equal(service.taskCalls[0].work, service.taskCalls[1].work)
+})
+
+test('service forwards idle generation to main through places-idle IPC', async function () {
+  const service = await loadService()
+  assert.deepEqual(service.ipcMessages, [])
+  service.connection.onIdle(23)
+  assert.equal(service.ipcMessages.length, 1)
+  assert.equal(service.ipcMessages[0].channel, 'places-idle')
+  assert.equal(service.ipcMessages[0].data.generation, 23)
+  assert.deepEqual(service.cleared, [['timeout', 1], ['interval', 1]])
+  // An in-transit connection can invalidate retirement. Resume maintenance
+  // once, not on every request, and pause it again before announcing idle.
+  service.connection.onActive()
+  service.connection.onActive()
+  assert.deepEqual(service.timerDelays, [20000, 20000])
+  assert.equal(service.intervals.length, 2)
+  service.connection.onIdle(24)
+  assert.deepEqual(service.cleared.slice(2), [['timeout', 2], ['interval', 2]])
 })
 
 test('Places suggestions preserve score order, exclusions, bounds, and public projection', async function () {

@@ -38,8 +38,23 @@ function cleanupHistoryDatabase () { // removes old history entries
   })
 }
 
-setTimeout(cleanupHistoryDatabase, 20000) // don't run immediately on startup, since is might slow down searchbar search.
-setInterval(cleanupHistoryDatabase, 60 * 60 * 1000)
+// Maintenance writes participate in the same idle barrier as client requests.
+let cleanupTimeout = null
+let cleanupInterval = null
+function startMaintenance () {
+  if (cleanupInterval !== null) return
+  cleanupTimeout = setTimeout(() => placesConnection.runTask(cleanupHistoryDatabase), 20000)
+  cleanupInterval = setInterval(() => placesConnection.runTask(cleanupHistoryDatabase), 60 * 60 * 1000)
+}
+
+function stopMaintenance () {
+  clearTimeout(cleanupTimeout)
+  clearInterval(cleanupInterval)
+  cleanupTimeout = null
+  cleanupInterval = null
+}
+
+startMaintenance()
 
 const placesCache = new PlacesCache({ calculateScore: calculateHistoryScore, getSearchTextCache, tagIndex })
 const historyInMemoryCache = placesCache.items
@@ -382,8 +397,15 @@ function handleRequest (data, respond, requestContext = defaultRequestContext) {
   }
 }
 
-createPlacesServiceConnection({
+const placesConnection = createPlacesServiceConnection({
   handleRequest,
   ipc: ipcRenderer,
-  ready: historyReady
+  ready: historyReady,
+  onActive: startMaintenance,
+  onIdle: generation => {
+    // Stay quiescent while the idle notification is in transit to main. A new
+    // connection/work item resumes maintenance if this retirement loses a race.
+    stopMaintenance()
+    ipcRenderer.send('places-idle', { generation })
+  }
 })

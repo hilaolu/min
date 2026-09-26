@@ -101,6 +101,9 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
 
   app.on('session-created', installSessionPolicies)
   app.on('will-quit', places.destroy)
+  // The Browser Window registry owns quit-on-close outside macOS. Retiring the
+  // last hidden service window must not quit a resident app on macOS.
+  app.on('window-all-closed', function () {})
 
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
@@ -112,7 +115,6 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
     /* the installer launches the app to install registry items and shortcuts,
   but if that's happening, we shouldn't display anything */
     if (isInstallerRunning) {
-      places.initialize()
       return
     }
 
@@ -137,7 +139,6 @@ function createAppRuntime ({ buildAppMenu, commandPalette, createDockMenu, elect
     mainMenu = buildAppMenu()
     Menu.setApplicationMenu(mainMenu)
     createDockMenu()
-    places.initialize()
   })
 
   app.on('open-url', function (e, url) {

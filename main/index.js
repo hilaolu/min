@@ -232,7 +232,8 @@ function createMainProcess (options = {}) {
     createWindow,
     destroyAllViews: viewManager.destroyAllViews,
     electron,
-    getPlacesWindow: () => runtimeRef.current.getPlacesWindow(),
+    // The developer inspector can explicitly wake an absent idle service.
+    getPlacesWindow: places.initialize,
     getWindowWebContents,
     isDebuggingEnabled,
     isDevelopmentMode,

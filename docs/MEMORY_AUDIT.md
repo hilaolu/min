@@ -86,9 +86,9 @@ acceptance were not performed.
 
 ## Further opportunities and refinement status
 
-Candidate 1 implements only opt-in new-background-tab deferral; candidate 2
-remains a source-derived opportunity, not implemented or measured.
-Candidate 3 now has an isolated retained-heap comparison.
+All five original candidates now have a scoped implementation. Candidate 1 uses
+opt-in new-background-tab deferral, not destructive suspension of active pages.
+Candidate 3 has an isolated retained-heap comparison.
 The ownership refinements below are verified with lifecycle/count checks, not
 whole-app memory measurements.
 
@@ -127,13 +127,38 @@ whole-app memory measurements.
    globals/style issues outside this feature; those unrelated sections were not
    reformatted. The new checkbox section matches Prettier's output.
 
-2. **Idle app / no browser windows — retire the Places service.**
-   `main/main.js` initializes Places on startup and destroys it on quit;
-   `main/placesManager.js:initialize` creates a hidden BrowserWindow. Draining
-   writes and retiring it when no clients remain could remove an idle renderer
-   and its history cache, particularly while the macOS app stays open without
-   browser windows. `connect` already supports recreation. This requires client
-   lifetime accounting, reconnect tests and durable completion of pending writes.
+2. **Implemented: start Places on demand and retire it after clients leave.**
+   Places is created on its first connection, not unconditionally at startup or
+   during installer handling. Its service tracks ports, initialization, request
+   promises and background maintenance writes. With no clients or outstanding
+   work, a cancellable 30-second idle grace period begins. Before notifying main,
+   it stops maintenance timers so a write cannot start while retirement is in
+   transit. A new connection/work item resumes maintenance if retirement loses
+   the race. Main accepts retirement only from the current service's main frame
+   and latest connection generation, with no pending transfers. An in-transit
+   new port therefore cannot be destroyed by an obsolete idle notification.
+
+   Closing Chrome now actually disconnects its ports (refinement 6). The hidden
+   window, WebContents and resident history cache can then be released, especially
+   while the macOS app stays resident without browser windows. The window registry
+   retains control of non-macOS quit behavior; closing the last hidden service
+   does not implicitly quit a resident app. Reconnection creates the service and
+   reloads durable history. Live clients keep it warm. This trades cold reconnect
+   latency for idle memory, and does not change force-quit/crash guarantees.
+   The developer's Places inspector also wakes an absent service on demand;
+   the built-app background-tab fixture verifies that menu path.
+
+   Fake-clock tests cover initialization/failure, overlapping work, closed ports,
+   errors, teardown, maintenance pause/resume, stale generations/windows/frames,
+   queued transfers and recreation. The real IPC/IndexedDB smoke
+   `DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronPlacesIdle.js`
+   observed **zero idle WebContents**, recreation and **22 durable records** after
+   retirement, including 20 requests posted immediately before disconnection
+   without waiting for acknowledgements and a background write completed after
+   disconnection. Retirement took about 50 seconds: startup maintenance runs at
+   20 seconds and restarts the 30-second grace period. Counts are not whole-app
+   RSS measurements; native macOS lifecycle acceptance has not been run on this
+   Linux workspace.
 
 3. **Implemented: large history/bookmark libraries — inline search metadata.**
    `PlacesCache.createSummary` now copies the normalized strings returned by
@@ -242,3 +267,15 @@ images, the task overlay destroys Sortable/DOM state when hidden, closed-tab
 restore stacks are bounded, and restored tab content is created lazily. Removing
 Chromium isolation or forcing frequent GC is not a substitute for fixing object
 and process lifetimes.
+
+## Combined verification after refinements
+
+- **439/439** Node tests pass using Electron's bundled Node 24.
+- Project JS lint and `npm run build` pass.
+- Electron performance, window lifecycle, deferred background tabs, Places idle
+  and Settings authority smokes pass with `DISPLAY=:0`, using synthetic data and
+  temporary profiles. GLib schema and deprecated navigation-method warnings do
+  not fail these checks.
+- The full-app/Vault palette failure and legacy settings lint/format limitations
+  above remain; those checks are not claimed as passing. Native macOS behavior,
+  long-running browsing and whole-browser RSS still need profiling.

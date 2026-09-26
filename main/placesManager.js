@@ -2,6 +2,7 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
   let placesWindow = null
   let ready = false
   let pendingConnections = []
+  let connectionGeneration = 0
 
   function closePort (port) {
     if (port && typeof port.close === 'function') port.close()
@@ -42,7 +43,7 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
     detachPendingConnection(connection)
     const target = placesWindow
     try {
-      target.webContents.postMessage('places-connect', null, [connection.port])
+      target.webContents.postMessage('places-connect', { generation: ++connectionGeneration }, [connection.port])
     } catch (error) {
       closePort(connection.port)
       invalidate(target)
@@ -59,6 +60,7 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
     if (placesWindow && !isDestroyed(placesWindow)) return placesWindow
 
     ready = false
+    connectionGeneration = 0
     placesWindow = new BrowserWindow({
       width: 300,
       height: 300,
@@ -69,6 +71,16 @@ function createPlacesManager ({ BrowserWindow, pageURL }) {
       }
     })
     const initializedWindow = placesWindow
+    initializedWindow.webContents.on('ipc-message', function (event, channel, data) {
+      // A newly transferred port may still be in transit when an old idle
+      // notification arrives. Only the latest generation can retire the service.
+      if (placesWindow !== initializedWindow || channel !== 'places-idle' || !ready ||
+          data?.generation !== connectionGeneration || pendingConnections.length) return
+      try {
+        if (event.senderFrame !== initializedWindow.webContents.mainFrame) return
+      } catch (error) { return }
+      invalidate(initializedWindow)
+    })
     initializedWindow.webContents.once('did-finish-load', function () {
       if (placesWindow !== initializedWindow) return
       ready = true
