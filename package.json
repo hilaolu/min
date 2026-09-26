@@ -66,6 +66,7 @@
     "test:electron-pdf-bundle": "npm run buildPDFViewer && electron --no-sandbox test/electronPDFBundle.js",
     "test:electron-vault-app": "electron test/electronVaultApp.js",
     "test:electron-settings": "electron test/electronSettings.js",
+    "test:electron-vim": "npm run buildPreload && electron --no-sandbox test/electronVimMode.js",
     "lint:js": "standard --verbose \"js/**/*.js\" \"main/**/*.js\" \"test/**/*.js\" \"pages/markdown/*.js\" \"pages/vault/*.js\" \"pages/pdfViewer/*.js\" pages/settings/vaultSettings.js",
     "watch": "node ./scripts/watch.js",
     "startElectron": "electron . --development-mode",

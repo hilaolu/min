@@ -119,7 +119,6 @@ class VimStateStrategy {
   onEnter (ctx) {}
   onExit (ctx) {}
   handleKeydown (e, ctx) { return false }
-  handleKeyup (e, ctx) { return false }
 }
 
 class NormalStrategy extends VimStateStrategy {
@@ -231,16 +230,10 @@ class LinkHintStrategy extends VimStateStrategy {
   handleKeydown (e, ctx) {
     // Prevent page handlers and process immediately
     // Esc no longer exits; use Ctrl+C globally
+    if (e.ctrlKey || e.metaKey || e.altKey) return false
     if (e.key === 'Backspace') { ctx.bufferBackspace(); processLinkHintBuffer(); return true }
     const keyLower = e.key.toLowerCase()
     if (VIM_CONFIG.alphabet.includes(keyLower)) { ctx.bufferAppend(keyLower); processLinkHintBuffer(); return true }
-    return false
-  }
-
-  handleKeyup (e, ctx) {
-    const keyLower = e.key.toLowerCase()
-    // Esc no longer exits; use Ctrl+C globally
-    if (VIM_CONFIG.alphabet.includes(keyLower)) { /* handled in keydown */ return true }
     return false
   }
 }
@@ -265,17 +258,8 @@ class InputFocusStrategy extends VimStateStrategy {
   }
 
   handleKeydown (e, ctx) {
-    // Capture ALL input and prevent any state transitions
-    // Only Ctrl+C (handled globally by VimStateManager) can exit this mode
-
-    // Consume all keys to prevent normal page behavior
-    // No state transitions allowed in this mode
-    return true
-  }
-
-  handleKeyup (e, ctx) {
-    // Consume all keyup events as well
-    return true
+    // Leave editing to the page; global Vim controls still work in inputs.
+    return false
   }
 }
 
@@ -325,9 +309,13 @@ class VimStateManager {
   }
 
   processKeydown (e) {
+    // Leave IME input and unbound Alt/Meta combinations to the page. Some IMEs
+    // report keyCode 229 before isComposing becomes true.
+    if (e.isComposing || e.keyCode === 229 || e.altKey || e.metaKey) return false
+
     // Global Ctrl+P to toggle Passthrough
     if (e.ctrlKey && e.key === 'p') {
-      e.preventDefault(); e.stopPropagation()
+      if (e.repeat) return true
       if (this.current.getName() === 'PASSTHROUGH') {
         this.transition('NORMAL')
         HUD.show('NORMAL', 1200)
@@ -339,19 +327,18 @@ class VimStateManager {
 
     // Global Ctrl+C (disabled in Passthrough)
     if (e.ctrlKey && e.key === 'c' && this.current.getName() !== 'PASSTHROUGH') {
-      e.preventDefault(); e.stopPropagation()
       this.transition('NORMAL')
       exitToNormalMode()
       HUD.show('NORMAL', 1200)
       return true
     }
+    // Focus may predate initialization, or page handlers may hide focus events.
+    if (this.current.getName() === 'NORMAL' && isCurrentlyInInput()) {
+      this.transition('INPUT_FOCUS')
+    } else if (this.current.getName() === 'INPUT_FOCUS' && !isCurrentlyInInput()) {
+      this.transition('NORMAL')
+    }
     return this.current.handleKeydown(e, this.ctx) === true
-  }
-
-  processKeyup (e) {
-    // Allow LINK_HINT to consume keyup letters
-    if (this.current.handleKeyup) return this.current.handleKeyup(e, this.ctx) === true
-    return false
   }
 }
 
@@ -360,7 +347,7 @@ let vimManager = null
 // Initialize Vim mode
 function initVimMode () {
   // Internal app and vault pages provide their own keyboard controls.
-  if (['min:', 'vault:'].includes(window.location.protocol)) return
+  if (vimManager || ['min:', 'vault:'].includes(window.location.protocol)) return
   // Create hidden input for blocking keybindings
   blockKeybindings = document.createElement('input')
   blockKeybindings.style = 'position: fixed; top: 0; left: -9999px;'
@@ -394,7 +381,7 @@ function setupEventListeners () {
     if (vimManager && vimManager.current.getName() === 'INPUT_FOCUS') {
       // Small delay to check if focus moved to another input
       setTimeout(() => {
-        if (!isCurrentlyInInput()) {
+        if (vimManager.current.getName() === 'INPUT_FOCUS' && !isCurrentlyInInput()) {
           vimManager.transition('NORMAL')
         }
       }, 0)
@@ -409,20 +396,35 @@ function setupEventListeners () {
       blockKeybindings.blur()
     }
   }, false)
+}
 
-  // Keydown handler (capture phase)
-  document.addEventListener('keydown', function (e) {
-    if (vimManager) {
-      vimManager.processKeydown(e)
-    }
+function setupKeyboardEventListeners () {
+  // Own the entire keystroke, even if keydown changes mode or focus.
+  const consumedKeys = new Set()
+  const keyID = e => e.code || e.key
+  function consume (e) {
+    e.preventDefault()
+    e.stopImmediatePropagation()
+  }
+
+  // Register on window during preload, before any website capture listeners.
+  window.addEventListener('keydown', function (e) {
+    if (!vimManager && document.body) initVimMode()
+    const key = keyID(e)
+    if (vimManager && vimManager.processKeydown(e)) consumedKeys.add(key)
+    if (consumedKeys.has(key)) consume(e)
   }, true)
 
-  // Keyup handler (capture)
-  document.addEventListener('keyup', function (e) {
-    if (vimManager) {
-      vimManager.processKeyup(e)
-    }
+  window.addEventListener('keypress', function (e) {
+    if (consumedKeys.has(keyID(e))) consume(e)
   }, true)
+
+  window.addEventListener('keyup', function (e) {
+    if (consumedKeys.delete(keyID(e))) consume(e)
+  }, true)
+
+  // A release outside this window must not leave a stale suppressed key.
+  window.addEventListener('blur', () => consumedKeys.clear())
 }
 
 function updateSearchIndicator () {
@@ -711,7 +713,11 @@ function processLinkHintBuffer () {
 // Utility functions
 function isCurrentlyInInput () {
   const ae = document.activeElement || document.body
-  return (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
+  // activeElement is only the host for shadow-DOM editors (including closed
+  // roots such as annotation notes). Only query a focused element: Chromium
+  // may keep an editable selection after the editor has been blurred.
+  return ae !== blockKeybindings && (isFocusable(ae) ||
+    (ae !== document.body && document.queryCommandEnabled('insertText')))
 }
 
 function isFocusable (element) {
@@ -739,9 +745,12 @@ function exitToNormalMode () {
   document.body.focus()
 }
 
-// Initialize Vim mode when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initVimMode)
-} else {
-  initVimMode()
+// Reserve keyboard priority immediately; create DOM-dependent UI when ready.
+if (!['min:', 'vault:'].includes(window.location.protocol)) {
+  setupKeyboardEventListeners()
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initVimMode, { once: true })
+  } else {
+    initVimMode()
+  }
 }
