@@ -17,7 +17,7 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
 
   function getRecordForChromeContents (contents) {
     const record = contentOwners.get(contents)
-    return record && record.chrome.webContents === contents ? record : null
+    return record && record.chromeContents === contents ? record : null
   }
 
   function requireChromeOwner (contents) {
@@ -48,16 +48,16 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
   }
 
   function getChromeContents (window) {
-    return getRecord(window)?.chrome.webContents || null
+    return getRecord(window)?.chromeContents || null
   }
 
   function getAll () {
-    return records.filter(record => !record.closing).map(record => record.win)
+    return records.filter(record => !record.closing && !record.chromeContents.isDestroyed()).map(record => record.win)
   }
 
   function getCurrent () {
     const current = records
-      .filter(record => !record.closing)
+      .filter(record => !record.closing && !record.chromeContents.isDestroyed())
       .sort((a, b) => b.lastFocused - a.lastFocused)[0]
     return current ? current.win : null
   }
@@ -76,12 +76,13 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
 
     const record = getRecord(window)
     const contents = getChromeContents(window)
-    if (!record || !contents || window.isDestroyed()) {
+    if (!record || !contents || contents.isDestroyed() || window.isDestroyed()) {
       return
     }
 
     if (contents.isLoadingMainFrame()) {
       schedule(function () {
+        if (record.closed || contents.isDestroyed()) return
         if (contents.isLoadingMainFrame()) {
           record.pendingMessages.push({ action, data: data || {} })
           if (!record.waitingForLoad) {
@@ -145,6 +146,7 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
   }
 
   function resizeChrome (record) {
+    if (record.closed || record.win.isDestroyed() || record.chromeContents.isDestroyed()) return
     const bounds = record.win.getContentBounds()
     record.chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height })
   }
@@ -195,7 +197,11 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
     }
     record.closed = true
     releaseOwnedContents(record)
-    contentOwners.delete(record.chrome.webContents)
+    contentOwners.delete(record.chromeContents)
+    record.pendingMessages.length = 0
+    // BaseWindow does not own the lifetime of its WebContentsViews. Normally
+    // Chrome has already closed gracefully; this also handles forced closure.
+    if (!record.chromeContents.isDestroyed()) record.chromeContents.destroy()
 
     const index = records.indexOf(record)
     if (index !== -1) {
@@ -213,6 +219,28 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
 
   function create (customArgs = {}) {
     return createWithBounds(readWindowBounds(), customArgs)
+  }
+
+  function closeChrome (record) {
+    const contents = record.chromeContents
+    if (contents.isDestroyed()) return Promise.resolve(true)
+    return new Promise(resolve => {
+      function finish (allowed) {
+        contents.removeListener('destroyed', onDestroyed)
+        contents.removeListener('will-prevent-unload', onPrevented)
+        if (!allowed && !record.win.isDestroyed()) getContentView(record.win).addChildView(record.chrome, 0)
+        // Do not close the native window reentrantly inside WebContents teardown.
+        schedule(() => resolve(allowed), 0)
+      }
+      const onDestroyed = () => finish(true)
+      const onPrevented = () => finish(false)
+      contents.once('destroyed', onDestroyed)
+      contents.once('will-prevent-unload', onPrevented)
+      // Keep ownership registered until beforeunload has saved/synchronized the
+      // session. Destroying Chrome at 'closed' alone would skip those hooks.
+      removeChild(record, record.chrome)
+      contents.close({ waitForBeforeUnload: true })
+    })
   }
 
   function createWithBounds (bounds, customArgs = {}) {
@@ -256,6 +284,7 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
     })
     const record = {
       chrome,
+      chromeContents: chrome.webContents,
       closed: false,
       closing: false,
       id,
@@ -340,9 +369,10 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
         event.preventDefault()
         if (!record.preparingClose) {
           record.preparingClose = true
-          Promise.resolve(prepareClose(window)).then(allowed => {
+          Promise.resolve(prepareClose(window)).then(async allowed => {
+            if (allowed && !window.isDestroyed()) allowed = await closeChrome(record)
             record.preparingClose = false
-            if (allowed) { record.closeApproved = true; window.close() }
+            if (allowed && !window.isDestroyed()) { record.closeApproved = true; window.close() }
           }).catch(() => { record.preparingClose = false })
         }
         return
@@ -437,7 +467,7 @@ function createBrowserWindows ({ app, BaseWindow, browserChromePreloadPath, brow
     const record = requireChromeOwner(senderContents)
     detachSelectedTabContent(record)
     if (record.win.isFocused()) {
-      record.chrome.webContents.focus()
+      record.chromeContents.focus()
     }
   }
 

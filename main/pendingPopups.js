@@ -8,7 +8,7 @@ function createPendingPopups () {
     const entry = entries.get(id)
     if (!entry) return null
     entries.delete(id)
-    entry.view.webContents.removeListener('destroyed', entry.onDestroyed)
+    entry.contents.removeListener('destroyed', entry.onDestroyed)
     const owner = entry.owner
     owner.ids.delete(id)
     if (owner.ids.size === 0) {
@@ -22,7 +22,7 @@ function createPendingPopups () {
 
   function destroy (id) {
     const entry = remove(id)
-    if (entry && !entry.view.webContents.isDestroyed()) entry.view.webContents.destroy()
+    if (entry && !entry.contents.isDestroyed()) entry.contents.destroy()
   }
 
   return {
@@ -40,7 +40,7 @@ function createPendingPopups () {
         contents.once('render-process-gone', owner.dispose)
         window.once('closed', owner.dispose)
       }
-      const entry = { view, owner, onDestroyed: () => remove(id) }
+      const entry = { view, contents: view.webContents, owner, onDestroyed: () => remove(id) }
       entries.set(id, entry)
       owner.ids.add(id)
       view.webContents.once('destroyed', entry.onDestroyed)

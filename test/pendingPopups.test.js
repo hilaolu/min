@@ -81,3 +81,14 @@ test('destroyed popups, failed owners and rejected cross-window adoption leave n
   assert.equal(orphan.webContents.destroyCount, 1)
   checkReleased(source)
 })
+
+test('popup cleanup does not read the view getter after WebContents destruction', function () {
+  const popups = createPendingPopups()
+  const source = owner()
+  const popupContents = contents()
+  const view = { get webContents () { return popupContents.isDestroyed() ? undefined : popupContents } }
+  popups.add('popup', view, source.contents, source.window)
+  popupContents.destroy()
+  checkReleased(source)
+  assert.equal(popups.take('popup', source.contents), null)
+})

@@ -19,6 +19,16 @@ class RecordingWebContents extends EventEmitter {
 
   destroy () {
     this.destroyCount++
+    this.emit('destroyed')
+  }
+
+  isDestroyed () { return this.destroyCount > 0 }
+
+  close (options) {
+    this.closeOptions = options
+    this.emit('beforeunload')
+    if (this.preventUnload) this.emit('will-prevent-unload')
+    else this.destroy()
   }
 
   focus () {}
@@ -54,9 +64,9 @@ class RecordingContentView {
     this.removed = []
   }
 
-  addChildView (view) {
+  addChildView (view, index = this.children.length) {
     if (!this.children.includes(view)) {
-      this.children.push(view)
+      this.children.splice(index, 0, view)
     }
     this.added.push(view)
   }
@@ -84,6 +94,15 @@ class RecordingWindow extends EventEmitter {
 
   static getFocusedWindow () {
     return RecordingWindow.focusedWindow || null
+  }
+
+  close () {
+    let prevented = false
+    this.emit('close', { preventDefault: () => { prevented = true } })
+    if (!prevented) {
+      this.destroyed = true
+      this.emit('closed')
+    }
   }
 
   focus () {
@@ -128,7 +147,7 @@ class RecordingWindow extends EventEmitter {
   setTouchBar () {}
 }
 
-function createRecordingBrowserWindows () {
+function createRecordingBrowserWindows (options = {}) {
   const boundsToRead = []
   const writes = []
   let cleanupCount = 0
@@ -166,7 +185,8 @@ function createRecordingBrowserWindows () {
     },
     setTimeout: callback => callback(),
     userDataPath: '/tmp/min-test',
-    WebContentsView: RecordingView
+    WebContentsView: RecordingView,
+    ...options
   })
 
   return {
@@ -187,6 +207,8 @@ test('Browser Window Module owns construction, focus, lookup, and final cleanup'
   const recording = createRecordingBrowserWindows()
   const first = createWithBounds(recording, 10)
   const second = createWithBounds(recording, 30)
+  const firstChrome = recording.windows.getChromeContents(first)
+  const secondChrome = recording.windows.getChromeContents(second)
 
   first.focus()
   first.emit('focus')
@@ -206,6 +228,8 @@ test('Browser Window Module owns construction, focus, lookup, and final cleanup'
 
   assert.equal(recording.getCleanupCount(), 1)
   assert.equal(recording.getQuitCount(), 1)
+  assert.equal(firstChrome.destroyCount, 1)
+  assert.equal(secondChrome.destroyCount, 1)
 })
 
 test('Browser Window supplies immutable safe runtime configuration through its preload', function () {
@@ -359,4 +383,45 @@ test('Browser Chrome messages share one load listener and flush in order', funct
     { channel: 'second', data: { order: 2 } },
     { channel: 'third', data: { order: 3 } }
   ])
+})
+test('graceful Chrome closure preserves unload ownership, cancellation and other tab contents', async function () {
+  let approved = false
+  const recording = createRecordingBrowserWindows({ prepareClose: () => approved })
+  const window = createWithBounds(recording, 10)
+  const chrome = recording.windows.getChromeContents(window)
+  const chromeView = window.contentView.children[0]
+  const tab = new RecordingView()
+  recording.windows.registerTabContent(chrome, 'tab', tab)
+  recording.windows.presentTabContent(chrome, 'tab', tab, true)
+  const settle = () => new Promise(resolve => setImmediate(resolve))
+
+  window.close()
+  await settle()
+  assert.equal(chrome.destroyCount, 0)
+  assert.equal(window.isDestroyed(), false)
+  approved = true
+  chrome.preventUnload = true
+  let unloads = 0
+  chrome.on('beforeunload', () => {
+    unloads++
+    assert.equal(recording.windows.windowFromContents(chrome).win, window)
+    assert.equal(recording.windows.getAll().includes(window), true)
+  })
+  window.close()
+  window.close()
+  await settle()
+  assert.equal(unloads, 1)
+  assert.equal(window.isDestroyed(), false)
+  assert.equal(window.contentView.children[0], chromeView)
+  assert.equal(chrome.listenerCount('will-prevent-unload'), 0)
+
+  chrome.preventUnload = false
+  window.close()
+  await settle()
+  assert.equal(unloads, 2)
+  assert.deepEqual(chrome.closeOptions, { waitForBeforeUnload: true })
+  assert.equal(chrome.destroyCount, 1)
+  assert.equal(chrome.listenerCount('destroyed'), 0)
+  assert.equal(window.isDestroyed(), true)
+  assert.equal(tab.webContents.destroyCount, 0)
 })

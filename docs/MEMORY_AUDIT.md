@@ -143,6 +143,26 @@ whole-app memory measurements.
    These are isolated listener-count checks, not whole-app MB savings or proof
    that an entire service renderer was leaked.
 
+6. **Implemented: dispose closed Browser Chrome WebContents.**
+   Review confirmed that BaseWindow closure left Chrome alive and did not run
+   its session-saving `beforeunload` hook. After vault-close approval the window
+   manager now closes Chrome gracefully while ownership is still registered,
+   respects an unload veto, and disposes Chrome on forced closure as well. Tab
+   content remains independently owned so closing one window does not destroy
+   tabs that can move to another. Closed Chrome is excluded from live-window
+   queries. Stable WebContents references are necessary during destruction:
+   Electron clears `WebContentsView.webContents` when its contents die; pending
+   popup cleanup now handles this too.
+   `DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronWindowLifecycle.js`
+   verifies three open/close cycles, three synchronous unload notifications while
+   ownership is valid, pending-popup disposal, forced closure, and **zero retained
+   WebContents**. The original implementation failed the first disposal assertion.
+   This is a lifecycle count, not an RSS claim. Unit tests cover cancelled close,
+   unload veto, repeat close requests, and preservation of other tab contents.
+   The full app/Vault smoke timed out at its initial `>m note` palette lookup,
+   before lifecycle assertions; the same failure reproduced with the original
+   window/view modules from `ef546d97`. The build and focused lifecycle smoke pass.
+
 Existing bounds worth preserving: previews are limited to three 256-KiB encoded
 images, the task overlay destroys Sortable/DOM state when hidden, closed-tab
 restore stacks are bounded, and restored tab content is created lazily. Removing

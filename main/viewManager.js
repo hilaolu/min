@@ -85,7 +85,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     if (!eventTarget) {
       return
     }
-    getWindowWebContents(eventTarget).send('tab-content-event', {
+    const chrome = getWindowWebContents(eventTarget)
+    if (!chrome || chrome.isDestroyed()) return
+    chrome.send('tab-content-event', {
       tabId,
       type,
       payload
@@ -206,7 +208,9 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
         return
       }
 
-      getWindowWebContents(eventTarget).send('tab-content-message', {
+      const chrome = getWindowWebContents(eventTarget)
+      if (!chrome || chrome.isDestroyed()) return
+      chrome.send('tab-content-message', {
         id: id,
         name: channel,
         data: data,
