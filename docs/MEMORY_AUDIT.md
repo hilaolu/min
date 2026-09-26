@@ -1,0 +1,137 @@
+# Memory review
+
+Reviewed tab/view ownership, history-service startup and caches, page preloads,
+preview retention, and filtering at `69827b22`. This is a targeted source review
+and isolated heap measurement, **not a whole-browser RSS profile**. Existing
+`docs/vault/` edits and the untracked `tab-picker/` tree were left untouched.
+
+## Implemented: release disabled filtering data
+
+`main/filtering.js` retained the entire parsed EasyList/EasyPrivacy/custom list
+after tracker blocking was disabled. An in-flight load could also finish and
+install its data while disabled. Separately, the parser's process-wide separator
+cache retained strings from every list it had matched, even after replacement.
+
+The policy now:
+
+- Releases its active list on disable and teardown.
+- Invalidates outstanding generations: obsolete reads are not parsed, and
+  obsolete chunked parsing stops at its next scheduled chunk. Existing waiters
+  still settle; late callbacks cannot reinstall an obsolete list.
+- Owns separator caches weakly by filter-list object, allowing unused caches to
+  be collected without flushing another active list's cache.
+- Keeps active level changes (third-party/all requests) on the same list, and
+  preserves content-type blocking, exceptions and atomic list publication.
+
+**Trade-off:** re-enabling rereads/reparses the lists. Until ready it behaves like
+initial enable, rather than using the old rules retained across disable. No
+partially parsed list is published. This is not a recommendation to disable
+blocking: loading additional ads/trackers can increase page memory substantially.
+
+### Measurement
+
+`scripts/benchmarkFilteringMemory.js` uses only bundled filters, no user profile
+or network requests. Each of three cycles enables filtering, evaluates 60,842
+synthetic host-rule requests to warm separator caches, disables filtering, and
+measures `heapUsed` after yielding and two explicit garbage collections. All
+cycles, before and after, blocked the same 59,313 requests.
+
+Measured with Electron **44.4.5**, its bundled Node **24.21.0**, on Linux. The
+baseline used the original two modules from `69827b22` with the same workload.
+Values below are medians of growth above each process's initial disabled heap:
+
+| State                             |    Before |     After |
+| --------------------------------- | --------: | --------: |
+| Enabled, after matching workload  | 21.13 MiB | 20.51 MiB |
+| Disabled, after matching workload | 21.11 MiB |  3.64 MiB |
+
+This is approximately **17.5 MiB less retained heap after disabling**, not an
+equivalent guaranteed RSS reduction. Compiler/fixture overhead remains; the heap
+does not return completely to its cold baseline. Initial investigation with the
+system Node 20 produced larger numbers; those are not the Electron result above.
+
+Median load times were 335.56 ms before / 395.17 ms after; the 60,842-request
+matching batches took 884.72 / 888.93 ms. Three cycles are diagnostic, not a
+startup or latency guarantee. Releasing caches necessarily loses their warmth.
+
+Reproduce with a supported Node version:
+
+```sh
+node --expose-gc scripts/benchmarkFilteringMemory.js
+# Use the actual installed Electron/V8 runtime instead:
+DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
+  --expose-gc scripts/benchmarkFilteringMemory.js
+```
+
+### Verification
+
+- 391/391 Node tests pass using Electron's bundled Node:
+  `DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron --test test/*.test.js`.
+  The initial `npm test` under system Node 20.19.5 passed 390 tests but failed
+  the project's Node >=22.12.0 requirement; its chained lint did not run.
+- `npm run lint:js`, separate benchmark-script lint, parser syntax check,
+  `npm run build`, and `git diff --check` pass.
+- `DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronPerformance.js`
+  passes, including real request blocking/redirects. It emitted a GLib schema
+  warning but exited successfully.
+- A differential comparison against the original parser checked **243,368**
+  bundled-list decisions across script/image/XHR/popup requests, same-site and
+  third-party contexts, subdomains and misleading hostname prefixes: **zero
+  mismatches**. The committed focused tests additionally cover separator and
+  wildcard matching, exception caches, cancellation, late reads/builds, teardown
+  and rapid disable/re-enable.
+
+Whole-app RSS/peak-memory profiling, long-running browsing and cross-platform
+acceptance were not performed.
+
+## Further opportunities (not implemented or measured)
+
+These are source-derived candidates, not claimed savings or reproduced leaks.
+
+1. **Many background tabs / inactive tasks — defer or discard content.**
+   `js/browserUI.js:presentOpenedTab` creates WebContents even for new background
+   tabs. `switchToTask` only changes selection; it does not unload the previous
+   task. `js/webviews.js:setSelected` already supports recreating missing views,
+   as used by lazy session restoration. An opt-in background-load policy or
+   inactive-tab discard could avoid page/renderer allocations. It needs explicit
+   protection for unsaved forms/editors, media/WebRTC, downloads, popup adoption,
+   navigation history and cross-window ownership. Blindly destroying hidden
+   views risks data loss; first measure per-process memory with representative
+   sites and verify restoration, not just URL persistence.
+
+2. **Idle app / no browser windows — retire the Places service.**
+   `main/main.js` initializes Places on startup and destroys it on quit;
+   `main/placesManager.js:initialize` creates a hidden BrowserWindow. Draining
+   writes and retiring it when no clients remain could remove an idle renderer
+   and its history cache, particularly while the macOS app stays open without
+   browser windows. `connect` already supports recreation. This requires client
+   lifetime accounting, reconnect tests and durable completion of pending writes.
+
+3. **Large history/bookmark libraries — reduce resident search metadata.**
+   `js/places/placesService.js:loadHistoryInMemory` loads every summary, and
+   `PlacesCache.createSummary` retains normalized title/URL strings in addition
+   to public metadata and ID/URL indexes. Investigate a more compact search
+   representation or a bounded hot cache with an IndexedDB fallback. Do not
+   simply truncate history or lose old-bookmark search. Full page bodies are
+   already excluded from the summary cache, and the service is shared across
+   browser windows; duplicating the cache per window would be a regression.
+
+4. **Popup adoption interrupted by window closure — clean pending ownership.**
+   `main/viewManager.js` stores popup views in `temporaryPopupViews` until the
+   chrome adopts them. `destroyAllViews` only walks `viewMap`. Test a closing or
+   crashed owner before adoption; explicitly destroy orphaned temporary views if
+   confirmed. Avoid timeouts that could destroy a legitimate delayed popup.
+
+5. **Repeated Places reconnects — release provisional connection listeners.**
+   `main/placesManager.js:connect` attaches sender-destroyed/port-close listeners
+   capturing the connection. Successful transfer removes the pending-array entry
+   but does not explicitly detach those listeners. Check retained objects across
+   reconnects in a long-lived chrome renderer, then remove provisional listeners
+   on transfer/discard. This concerns JS connection wrappers, not proof that an
+   entire service renderer is leaked.
+
+Existing bounds worth preserving: previews are limited to three 256-KiB encoded
+images, the task overlay destroys Sortable/DOM state when hidden, closed-tab
+restore stacks are bounded, and restored tab content is created lazily. Removing
+Chromium isolation or forcing frequent GC is not a substitute for fixing object
+and process lifetimes.

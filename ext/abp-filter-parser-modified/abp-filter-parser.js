@@ -375,16 +375,22 @@ function parseFilter (input, parsedFilterData) {
  * Similar to str1.indexOf(filter, startingPos) but with
  * extra consideration to some ABP filter rules like ^.
  */
-var filterArrCache = {}
-function indexOfFilter (input, filter, startingPos) {
+// A process-wide string cache keeps strings from old lists alive after filtering
+// is disabled or reloaded. Associate cached splits with their owning list instead.
+var filterArrCache = new WeakMap()
+function indexOfFilter (input, filter, startingPos, filters) {
   if (filter.indexOf('^') == -1) { // no separator characters, no need to do the rest of the parsing
     return input.indexOf(filter, startingPos)
   }
-  if (filterArrCache[filter]) {
-    var filterParts = filterArrCache[filter]
-  } else {
-    var filterParts = filter.split('^')
-    filterArrCache[filter] = filterParts
+  var cache = filterArrCache.get(filters)
+  if (!cache) {
+    cache = new Map()
+    filterArrCache.set(filters, cache)
+  }
+  var filterParts = cache.get(filter)
+  if (!filterParts) {
+    filterParts = filter.split('^')
+    cache.set(filter, filterParts)
   }
   var index = startingPos
   var beginIndex = -1
@@ -428,10 +434,10 @@ function indexOfFilter (input, filter, startingPos) {
   return beginIndex
 }
 
-function matchWildcard (input, filter) {
+function matchWildcard (input, filter, filters) {
   let index = 0
   for (const part of filter.wildcardMatchParts) {
-    const newIndex = indexOfFilter(input, part, index)
+    const newIndex = indexOfFilter(input, part, index, filters)
     if (newIndex === -1) {
       return false
     }
@@ -606,8 +612,10 @@ function parse (input, parserData, callback, options = {}) {
   }
 
   if (options.async === false) {
-    processChunk(0, filters.length)
-    parserData.initialized = true
+    if (!options.shouldCancel || !options.shouldCancel()) {
+      processChunk(0, filters.length)
+      parserData.initialized = true
+    }
   } else {
     /* parse filters in chunks to prevent the main process from freezing */
 
@@ -617,6 +625,12 @@ function parse (input, parserData, callback, options = {}) {
     var targetMsPerChunk = 12
 
     function nextChunk () {
+      // Cancellation leaves the staged list unpublished but still completes
+      // the callback so callers waiting for the old generation can settle.
+      if (options.shouldCancel && options.shouldCancel()) {
+        if (callback) callback()
+        return
+      }
       var t1 = Date.now()
       processChunk(lastFilterIdx, lastFilterIdx + nextChunkSize)
       var t2 = Date.now()
@@ -699,7 +713,7 @@ function matchesFilters (filters, input, contextParams) {
     for (i = 0, len = hostFiltersToCheck.length; i < len; i++) {
       filter = hostFiltersToCheck[i]
 
-      if (isSameOriginHost(filter.host, currentHost) && indexOfFilter(input, filter.data) !== -1 && matchOptions(filter.options, input, contextParams, currentHost)) {
+      if (isSameOriginHost(filter.host, currentHost) && indexOfFilter(input, filter.data, undefined, filters) !== -1 && matchOptions(filter.options, input, contextParams, currentHost)) {
         // console.log(filter, 4)
 
         return true
@@ -718,9 +732,9 @@ function matchesFilters (filters, input, contextParams) {
       filter = nonAnchoredStringMatches[i]
       let matches
       if (filter.wildcardMatchParts) {
-        matches = matchWildcard(input, filter)
+        matches = matchWildcard(input, filter, filters)
       } else {
-        matches = indexOfFilter(input, filter.data, 0) !== -1
+        matches = indexOfFilter(input, filter.data, 0, filters) !== -1
       }
       if (matches && matchOptions(nonAnchoredStringMatches[i].options, input, contextParams, currentHost)) {
         // console.log(nonAnchoredStringMatches[i], 5)

@@ -84,6 +84,7 @@ function createFilteringPolicy ({
   var parsedFilterData = {}
   var filterListGeneration = 0
   var filterListReady = Promise.resolve()
+  var destroyed = false
   const performanceMetrics = {
     filterChecks: 0,
     filterListLoadCount: 0,
@@ -117,6 +118,7 @@ function createFilteringPolicy ({
       readFilterFile(path.join(rootDir, 'ext/filterLists/minFilters.txt')),
       readFilterFile(path.join(app.getPath('userData'), 'customFilters.txt'))
     ]).then(function (filterLists) {
+      if (generation !== filterListGeneration) return
       return new Promise(function (resolve) {
         parser.parse(filterLists.join('\n'), nextFilterData, function () {
           if (generation === filterListGeneration) parsedFilterData = nextFilterData
@@ -124,11 +126,21 @@ function createFilteringPolicy ({
             performanceMetrics.filterListReadyMs = clock() - loadStarted
           }
           resolve()
+        }, {
+          shouldCancel: () => generation !== filterListGeneration
         })
       })
     })
 
     return filterListReady
+  }
+
+  function releaseFilterList () {
+    // Invalidate reads/parsing as well as the active list, so a late callback
+    // cannot repopulate it after filtering is disabled or the policy is closed.
+    filterListGeneration++
+    parsedFilterData = {}
+    filterListReady = Promise.resolve()
   }
 
   function removeWWW (domain) {
@@ -272,8 +284,11 @@ function createFilteringPolicy ({
   }
 
   function setFilteringSettings (settings) {
+    if (destroyed) return
     if (settings.blockingLevel > 0 && !(enabledFilteringOptions.blockingLevel > 0)) { // we're enabling tracker filtering
       initFilterList()
+    } else if (!(settings.blockingLevel > 0) && enabledFilteringOptions.blockingLevel > 0) {
+      releaseFilterList()
     }
 
     enabledFilteringOptions.contentTypes = settings.contentTypes
@@ -295,6 +310,8 @@ function createFilteringPolicy ({
   }
 
   function destroy () {
+    destroyed = true
+    releaseFilterList()
     cancelInterval(blockedRequestTimer)
   }
 
