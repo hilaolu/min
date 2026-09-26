@@ -1,8 +1,10 @@
+const createPendingPopups = require('./pendingPopups.js')
+
 function createViewManager ({ app, BrowserWindow, createPrompt, electron, filterPopups, getWindowWebContents, ipc, path, rootDir, settings, vault, WebContentsView, windows }) {
   var viewMap = {} // id: view
   var viewStateMap = {} // id: view state
 
-  var temporaryPopupViews = {} // id: view
+  const temporaryPopupViews = createPendingPopups()
 
   if (vault?.configure) {
     vault.configure({
@@ -98,6 +100,10 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     }
 
     const viewPrefs = Object.assign({}, getDefaultViewWebPreferences(), webPreferences)
+    let view = existingViewId ? temporaryPopupViews.take(existingViewId, ownerContents) : null
+    if (existingViewId && !view) {
+      throw createError('TAB_CONTENT_NOT_FOUND', `Popup Tab Content not found for ${existingViewId}`)
+    }
 
     viewStateMap[id] = {
       loadedInitialURL: false,
@@ -106,16 +112,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       private: viewPrefs.partition !== 'persist:webcontent'
     }
 
-    let view
     if (existingViewId) {
-      view = temporaryPopupViews[existingViewId]
-      delete temporaryPopupViews[existingViewId]
-
-      if (!view) {
-        delete viewStateMap[id]
-        throw createError('TAB_CONTENT_NOT_FOUND', `Popup Tab Content not found for ${existingViewId}`)
-      }
-
       // the initial URL has already been loaded, so set the background color
       view.setBackgroundColor('#fff')
       viewStateMap[id].loadedInitialURL = true
@@ -147,6 +144,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     })
 
     view.webContents.setWindowOpenHandler(function (details) {
+      if (!getWindowFromViewContents(view)) return { action: 'deny' }
       if (details.url && !filterPopups(details.url)) {
         return {
           action: 'deny'
@@ -176,7 +174,10 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
           const popupView = new WebContentsView({ webPreferences: getDefaultViewWebPreferences(), webContents: options.webContents })
 
           var popupId = Math.random().toString()
-          temporaryPopupViews[popupId] = popupView
+          const ownerWindow = getWindowFromViewContents(view)
+          if (!temporaryPopupViews.add(popupId, popupView, ownerWindow && getWindowWebContents(ownerWindow), ownerWindow)) {
+            throw createError('BROWSER_WINDOW_NOT_FOUND', 'Popup owner closed before creation')
+          }
 
           sendTabContentEvent(view, id, 'popup-created', {
             popupId,
@@ -301,7 +302,14 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
     view.setBounds(bounds)
 
     viewMap[id] = view
-    windows.registerTabContent(ownerContents, id, view)
+    try {
+      windows.registerTabContent(ownerContents, id, view)
+    } catch (error) {
+      delete viewMap[id]
+      delete viewStateMap[id]
+      if (!view.webContents.isDestroyed()) view.webContents.destroy()
+      throw error
+    }
     if (vault?.watch) {
       vault.watch(view.webContents)
       view.webContents.on('before-input-event', (event, input) => {
@@ -336,6 +344,7 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
   }
 
   function destroyAllViews () {
+    temporaryPopupViews.destroyAll()
     for (const id in viewMap) {
       destroyView(id)
     }

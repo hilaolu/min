@@ -86,9 +86,9 @@ acceptance were not performed.
 
 ## Further opportunities and refinement status
 
-Candidates 1–4 are source-derived opportunities, not implemented or measured,
-and not claimed savings or reproduced leaks. Candidate 5 is now implemented with
-bounded listener-count verification, not a whole-app memory measurement.
+Candidates 1–3 are source-derived opportunities, not implemented or measured.
+The ownership refinements below are verified with lifecycle/count checks, not
+whole-app memory measurements.
 
 1. **Many background tabs / inactive tasks — defer or discard content.**
    `js/browserUI.js:presentOpenedTab` creates WebContents even for new background
@@ -118,11 +118,15 @@ bounded listener-count verification, not a whole-app memory measurement.
    already excluded from the summary cache, and the service is shared across
    browser windows; duplicating the cache per window would be a regression.
 
-4. **Popup adoption interrupted by window closure — clean pending ownership.**
-   `main/viewManager.js` stores popup views in `temporaryPopupViews` until the
-   chrome adopts them. `destroyAllViews` only walks `viewMap`. Test a closing or
-   crashed owner before adoption; explicitly destroy orphaned temporary views if
-   confirmed. Avoid timeouts that could destroy a legitimate delayed popup.
+4. **Implemented: dispose orphaned pending popups.**
+   `main/pendingPopups.js` tracks unadopted views by their originating Browser
+   Chrome/window. Closure, renderer crash, popup self-destruction and final
+   teardown release the pending entries; adopted views survive owner cleanup.
+   A shared listener set per owner avoids per-popup listener accumulation. Wrong
+   owners cannot consume pending popups, and failed tab registration destroys its
+   view instead of orphaning it. No expiry timer can kill a legitimate delayed
+   popup. Regression tests cover 100 pending popups, independent owners, adoption,
+   all cleanup paths, and the real view-manager command/event wiring.
 
 5. **Implemented: repeated Places reconnects — release provisional listeners.**
    `main/placesManager.js` now detaches its named sender-destroyed/port-close

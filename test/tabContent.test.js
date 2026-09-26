@@ -33,7 +33,7 @@ class RecordingWebContents extends EventEmitter {
   canGoBack () { return true }
   canGoForward () { return false }
   canGoToOffset () { return false }
-  destroy () { this.destroyed = true }
+  destroy () { this.destroyed = true; this.emit('destroyed') }
   focus () { this.calls.push(['focus']) }
   getURL () { return 'https://current.example' }
   goBack () { this.calls.push(['goBack']) }
@@ -70,12 +70,13 @@ function createFixture () {
     }
   }
   const chromeMessages = []
-  const chrome = {
+  const chrome = Object.assign(new EventEmitter(), {
     focus: () => {},
+    isDestroyed: () => false,
     send: (channel, message) => chromeMessages.push({ channel, message })
-  }
+  })
   const otherChrome = { send: () => {} }
-  const window = { isFocused: () => true }
+  const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, isFocused: () => true })
   const lifecycle = []
   const owners = new Map()
   const contentOwners = new Map([[chrome, window]])
@@ -125,7 +126,7 @@ function createFixture () {
     windows
   })
 
-  return { chrome, chromeMessages, createdViews, ipc, lifecycle, manager, otherChrome }
+  return { chrome, chromeMessages, createdViews, ipc, lifecycle, manager, otherChrome, window }
 }
 
 async function createContent (fixture, id = 'tab-1') {
@@ -139,6 +140,49 @@ async function createContent (fixture, id = 'tab-1') {
   })
   return fixture.createdViews.at(-1)
 }
+
+test('pending popup adoption transfers ownership and owner closure disposes only unadopted content', async function () {
+  const fixture = createFixture()
+  const opener = await createContent(fixture)
+  function popup () {
+    const action = opener.webContents.windowOpenHandler({ url: 'https://popup.example', features: 'width=300' })
+    assert.equal(action.action, 'allow')
+    const contents = action.createWindow({ webContents: new RecordingWebContents() })
+    return { contents, id: fixture.chromeMessages.at(-1).message.payload.popupId }
+  }
+  const first = popup()
+  await assert.rejects(fixture.manager.executeTabContentCommand(fixture.otherChrome, {
+    id: 'adopted', operation: 'lifecycle.create', payload: { existingTabContentId: first.id }
+  }), { code: 'TAB_CONTENT_NOT_OWNER' })
+  await fixture.manager.executeTabContentCommand(fixture.chrome, {
+    id: 'adopted', operation: 'lifecycle.create', payload: { existingTabContentId: first.id }
+  })
+  const pending = popup()
+  fixture.window.emit('closed')
+  assert.equal(first.contents.isDestroyed(), false)
+  assert.equal(pending.contents.isDestroyed(), true)
+  await assert.rejects(fixture.manager.executeTabContentCommand(fixture.chrome, {
+    id: 'missing', operation: 'lifecycle.create', payload: { existingTabContentId: pending.id }
+  }), { code: 'TAB_CONTENT_NOT_FOUND' })
+  await createContent(fixture, 'missing')
+  fixture.manager.destroyAllViews()
+  assert.equal(first.contents.isDestroyed(), true)
+})
+
+test('final teardown destroys pending popups and failed tab registration does not leak a view', async function () {
+  const fixture = createFixture()
+  const opener = await createContent(fixture)
+  const action = opener.webContents.windowOpenHandler({ url: 'https://popup.example', features: 'width=300' })
+  const pending = action.createWindow({ webContents: new RecordingWebContents() })
+  fixture.manager.destroyAllViews()
+  assert.equal(pending.isDestroyed(), true)
+  assert.equal(fixture.chrome.listenerCount('destroyed'), 0)
+  await assert.rejects(fixture.manager.executeTabContentCommand({}, {
+    id: 'retry', operation: 'lifecycle.create', payload: {}
+  }), { code: 'BROWSER_WINDOW_NOT_FOUND' })
+  assert.equal(fixture.createdViews.at(-1).webContents.isDestroyed(), true)
+  await createContent(fixture, 'retry')
+})
 
 test('Tab Content commands expose browser behavior without reflective dispatch', async function () {
   const fixture = createFixture()
