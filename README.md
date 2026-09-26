@@ -51,12 +51,12 @@ You can find prebuilt binaries for Min [here](https://github.com/minbrowser/min/
 
 If you want to develop Min:
 
-- Install [Node](https://nodejs.org) 20 (`nvm use` reads `.nvmrc`). CI uses the same major version.
+- Install [Node](https://nodejs.org) 22 (22.12.0 or newer; `nvm use` reads `.nvmrc`). CI uses the same major version.
 - Run `npm install` to install dependencies.
 - Start Min in development mode by running `npm run start`.
 - After you make changes, press `alt+ctrl+r` (or `opt+cmd+r` on Mac) to reload the browser UI.
 
-Development and packaging both use Electron 41.2.0. Keep `devDependencies.electron`
+Development and packaging both use Electron 44.4.5. Keep `devDependencies.electron`
 and `electronVersion` in `package.json` aligned when upgrading the runtime, and run
 the Node tests, build, and Electron acceptance tests against the new version.
 

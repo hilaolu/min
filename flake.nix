@@ -17,6 +17,6 @@
           min = minBrowser;
         };
         devShells.default =
-          pkgs.mkShell { buildInputs = with pkgs; [ nodejs_20 electron ]; };
+          pkgs.mkShell { buildInputs = with pkgs; [ nodejs_22 electron ]; };
       });
 }
