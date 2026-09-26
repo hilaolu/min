@@ -381,3 +381,10 @@ test('Tab Content lifecycle applies create, initial navigation, presentation, hi
   ])
   assert.equal(view.webContents.destroyed, true)
 })
+test('destroying never-created contents is idempotent without bypassing existing ownership', async function () {
+  const fixture = createFixture()
+  assert.equal(await fixture.manager.executeTabContentCommand(fixture.chrome, { id: 'deferred', operation: 'lifecycle.destroy' }), true)
+  assert.equal(fixture.createdViews.length, 0)
+  await createContent(fixture, 'owned')
+  await assert.rejects(fixture.manager.executeTabContentCommand(fixture.otherChrome, { id: 'owned', operation: 'lifecycle.destroy' }), { code: 'TAB_CONTENT_NOT_OWNER' })
+})

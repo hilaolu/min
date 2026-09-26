@@ -86,21 +86,46 @@ acceptance were not performed.
 
 ## Further opportunities and refinement status
 
-Candidates 1–2 are source-derived opportunities, not implemented or measured.
+Candidate 1 implements only opt-in new-background-tab deferral; candidate 2
+remains a source-derived opportunity, not implemented or measured.
 Candidate 3 now has an isolated retained-heap comparison.
 The ownership refinements below are verified with lifecycle/count checks, not
 whole-app memory measurements.
 
-1. **Many background tabs / inactive tasks — defer or discard content.**
-   `js/browserUI.js:presentOpenedTab` creates WebContents even for new background
-   tabs. `switchToTask` only changes selection; it does not unload the previous
-   task. `js/webviews.js:setSelected` already supports recreating missing views,
-   as used by lazy session restoration. An opt-in background-load policy or
-   inactive-tab discard could avoid page/renderer allocations. It needs explicit
-   protection for unsaved forms/editors, media/WebRTC, downloads, popup adoption,
-   navigation history and cross-window ownership. Blindly destroying hidden
-   views risks data loss; first measure per-process memory with representative
-   sites and verify restoration, not just URL persistence.
+1. **Implemented safe subset: defer new background tabs only when opted in.**
+   The strictly boolean `deferBackgroundTabs` setting defaults to `false`. The
+   settings checkbox, “Load new background tabs only when selected,” applies to
+   future tabs without a restart. `js/browserUI.js:presentOpenedTab` preserves
+   Browser Session model and tab-bar creation, but skips `webviews.add` only for
+   explicit HTTP(S), non-private tabs opened with `openInBackground === true`,
+   with no existing popup view to adopt. The policy reads the stored tab data.
+   Foreground tabs, blank tabs, internal/file/vault/about/data URLs, private tabs
+   and popup adoption stay eager. The existing `webviews.setSelected` creates
+   missing content on selection; closing an unselected deferred tab never needs
+   to create its content.
+
+   **Trade-off:** background pages and downloads wait until selection; opening
+   many links no longer preloads their pages. Changing the setting does not load
+   or unload already open tabs. There are no timers or suspension, and no
+   already-running tabs are unloaded. Automatic inactive-tab discard remains
+   intentionally unimplemented because it risks losing forms/editors, media,
+   WebRTC, downloads and navigation state; URL persistence is not restoration.
+
+   **Verification scope:** `test/backgroundTabs.test.js` exercises the policy and
+   real Browser Session / Browser UI / webviews lifecycle with a bounded stub
+   transport, including deferred model/rendered-tab counts, selection, early
+   closure and live setting changes. `test/settings.test.js` covers defaults,
+   strict validation and persistence. The built-app smoke
+   `DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronBackgroundTabs.js`
+   verifies the real Settings checkbox and 20 background model/DOM tabs with
+   **zero new WebContents or page requests**. Selecting one creates exactly one
+   WebContents/request; reselection and closing another never-selected tab create
+   no extra content. Destroying nonexistent content is idempotent, while existing
+   content still requires the correct owner. These are allocation/request counts,
+   not a renderer RSS measurement. Build, project lint and focused tests pass.
+   Standalone lint/format of the legacy settings JS/HTML still reports pre-existing
+   globals/style issues outside this feature; those unrelated sections were not
+   reformatted. The new checkbox section matches Prettier's output.
 
 2. **Idle app / no browser windows — retire the Places service.**
    `main/main.js` initializes Places on startup and destroys it on quit;

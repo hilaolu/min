@@ -493,6 +493,8 @@ function createViewManager ({ app, BrowserWindow, createPrompt, electron, filter
       hideCurrentView(sender)
       return true
     }
+    // Closing a never-selected deferred/restored tab has no content to destroy.
+    if (operation === 'lifecycle.destroy' && !viewMap[id]) return true
 
     const view = requireTabContent(sender, id)
     const webContents = view.webContents

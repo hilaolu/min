@@ -9,6 +9,7 @@ const schema = {
   customUserAgent: { default: null, validate: value => value === null || typeof value === 'string' },
   darkMode: { default: 2, validate: value => [-1, 0, 1, 2].includes(value) },
   darkThemeIsActive: { optional: true, validate: value => typeof value === 'boolean' },
+  deferBackgroundTabs: { default: false, validate: value => typeof value === 'boolean' },
   enableAutoplay: { default: false, validate: value => typeof value === 'boolean' },
   enableQUIC: { default: false, validate: value => typeof value === 'boolean' },
   filtering: {

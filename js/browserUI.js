@@ -2,6 +2,7 @@ const browserSession = require('tabState.js')
 var statistics = require('js/statistics.js')
 var searchEngine = require('js/util/searchEngine.js')
 var urlParser = require('js/util/urlParser.js')
+const shouldDeferBackgroundTab = require('tabLoadingPolicy.js')
 
 /* common actions that affect different parts of the UI (webviews, tabstrip, etc) */
 
@@ -56,7 +57,9 @@ function presentOpenedTab (result, options) {
   })
 
   tabBar.addTab(tabId)
-  webviews.add(tabId, options.existingViewId)
+  if (!shouldDeferBackgroundTab(browserSession.tabs.get(tabId), options, settings.get('deferBackgroundTabs'))) {
+    webviews.add(tabId, options.existingViewId)
+  }
 
   if (!options.openInBackground) {
     switchToTab(tabId, {

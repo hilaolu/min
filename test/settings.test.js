@@ -46,6 +46,36 @@ test('Settings owns defaults and persists legacy migrations', async function () 
   assert.equal(Object.hasOwn(storage.writes[0].filtering, 'trackers'), false)
 })
 
+test('background tab deferral defaults off, validates booleans, and persists changes', async function () {
+  for (const initial of [{}, { deferBackgroundTabs: 'true' }]) {
+    const storage = createMemoryStorage(JSON.stringify(initial))
+    const settings = createSettings({ ipc: createIPC(), storage })
+    assert.equal(settings.get('deferBackgroundTabs'), false)
+    assert.equal((await settings.initialize('/unused')).ok, true)
+    assert.equal(settings.get('deferBackgroundTabs'), false)
+    assert.equal(storage.writes.at(-1).deferBackgroundTabs, false)
+    const writesBeforeInvalid = storage.writes.length
+
+    for (const value of ['true', 'false', 1, 0, null, undefined, {}, []]) {
+      assert.equal((await settings.set('deferBackgroundTabs', value)).error.code, 'INVALID_SETTING_VALUE')
+      assert.equal(settings.get('deferBackgroundTabs'), false)
+    }
+    assert.equal(storage.writes.length, writesBeforeInvalid)
+
+    for (const value of [true, false]) {
+      assert.equal((await settings.set('deferBackgroundTabs', value)).ok, true)
+      assert.equal(settings.get('deferBackgroundTabs'), value)
+      assert.equal(storage.writes.at(-1).deferBackgroundTabs, value)
+      const reloaded = createSettings({
+        ipc: createIPC(),
+        storage: createMemoryStorage(JSON.stringify(storage.writes.at(-1)))
+      })
+      assert.equal((await reloaded.initialize('/unused')).ok, true)
+      assert.equal(reloaded.get('deferBackgroundTabs'), value)
+    }
+  }
+})
+
 test('Settings connection returns values and their authoritative revision together', async function () {
   const ipc = createIPC()
   const settings = createSettings({ authorize: () => true, ipc, storage: createMemoryStorage('{}') })

@@ -199,6 +199,22 @@
         >
       </div>
 
+      <div class="setting-section" id="section-defer-background-tabs">
+        <input
+          type="checkbox"
+          id="checkbox-defer-background-tabs"
+          aria-describedby="defer-background-tabs-help"
+        />
+        <label for="checkbox-defer-background-tabs"
+          >Load new background tabs only when selected</label
+        >
+        <div class="setting-secondary-label" id="defer-background-tabs-help">
+          Background pages and downloads wait until selection. Applies only to
+          future non-private HTTP(S) tabs, excluding popups. Already open tabs
+          are unchanged. No restart needed.
+        </div>
+      </div>
+
       <div class="setting-section" id="section-user-agent">
         <input type="checkbox" id="checkbox-user-agent" />
         <label for="checkbox-user-agent">Use a custom user agent</label>
