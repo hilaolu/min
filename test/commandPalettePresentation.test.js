@@ -42,18 +42,6 @@ function createWindow (width = 1000, height = 800) {
 }
 
 function createHarness () {
-  let now = 0
-  let nextTimer = 0
-  const timers = new Map()
-  function advance (milliseconds) {
-    now += milliseconds
-    for (const [id, timer] of timers) {
-      if (timer.at <= now) {
-        timers.delete(id)
-        timer.callback()
-      }
-    }
-  }
   const senderA = { id: 'sender-a' }
   const senderB = { id: 'sender-b' }
   const windowA = createWindow()
@@ -86,23 +74,15 @@ function createHarness () {
     }),
     pageURL: 'min://app/pages/commandPalette/overlay.html',
     preloadPath: '/app/main/commandPalettePreload.js',
-    schedule: (callback, delay) => {
-      const id = ++nextTimer
-      timers.set(id, { callback, at: now + delay })
-      return id
-    },
-    cancelSchedule: id => timers.delete(id),
     windows
   })
 
   return {
     attached,
-    advance,
     getView: () => createdView,
     presentation,
     senderA,
     senderB,
-    timers,
     windowA,
     windowB,
     windows
@@ -182,47 +162,55 @@ test('Command Palette presentation owns visibility, routing, layout, and teardow
   assert.equal(contents.destroyed, true)
 })
 
-test('hidden Command Palette is retired after 30 seconds, not on every close', function () {
+test('hidden Command Palette stays ready across long idle without retaining display payloads', function (t) {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   const harness = createHarness()
+  t.after(() => harness.presentation.destroy())
   harness.presentation.present(harness.senderA, { visible: false })
   assert.equal(harness.getView(), undefined)
-  assert.equal(harness.timers.size, 0)
 
-  harness.presentation.present(harness.senderA, { visible: true })
-  const contents = harness.getView().webContents
-  harness.advance(60000)
+  harness.presentation.present(harness.senderA, { visible: true, input: 'old', candidates: [{ title: 'Old result' }] })
+  const view = harness.getView()
+  const contents = view.webContents
+  contents.emit('did-finish-load')
+  t.mock.timers.tick(60000)
   assert.equal(contents.isDestroyed(), false, 'a visible palette must not expire')
   harness.presentation.present(harness.senderA, { visible: false })
   assert.equal(harness.attached.size, 0)
-  assert.equal(harness.timers.size, 1)
-  harness.advance(29999)
-  assert.equal(contents.isDestroyed(), false)
-  harness.presentation.present(harness.senderA, { visible: false })
-  harness.advance(1)
-  assert.equal(contents.isDestroyed(), true, 'redundant hide must not postpone retirement')
-  assert.equal(harness.timers.size, 0)
+  assert.deepEqual(contents.messages.at(-1).state, {
+    visible: false, open: false, input: '', candidates: [], selectedIndex: 0
+  })
   assert.equal(harness.presentation.recenter(), false)
+
+  // Exercise both the former 30-second retirement and a much longer idle.
+  for (const duration of [30000, 30 * 60 * 1000]) {
+    t.mock.timers.tick(duration)
+    assert.equal(contents.isDestroyed(), false, 'idle must not force a cold renderer start')
+    harness.presentation.present(harness.senderA, { visible: true, input: 'fresh', candidates: [{ title: 'Fresh result' }] })
+    assert.equal(harness.getView(), view)
+    // No new did-finish-load event: state must be delivered immediately.
+    assert.equal(contents.messages.at(-1).state.input, 'fresh')
+    assert.equal(contents.messages.at(-1).state.candidates[0].title, 'Fresh result')
+    harness.presentation.present(harness.senderA, { visible: false })
+  }
 })
 
-test('quick reopen reuses Command Palette content and cancels the old idle deadline', function () {
+test('repeated reopen reuses one Command Palette and one owner-close listener', function () {
   const harness = createHarness()
   harness.presentation.present(harness.senderA, { visible: true })
   const view = harness.getView()
   const contents = view.webContents
   for (let cycle = 0; cycle < 3; cycle++) {
     harness.presentation.present(harness.senderA, { visible: false })
-    harness.advance(20000)
     harness.presentation.present(harness.senderA, { visible: true })
     assert.equal(harness.getView(), view)
-    assert.equal(harness.timers.size, 0)
-    harness.advance(20000)
     assert.equal(contents.isDestroyed(), false)
+    assert.equal(harness.windowA.listenerCount('closed'), 1)
   }
   harness.presentation.present(harness.senderA, { visible: false })
-  harness.advance(29999)
-  assert.equal(contents.isDestroyed(), false)
-  harness.advance(1)
+  harness.presentation.destroy()
   assert.equal(contents.isDestroyed(), true)
+  assert.equal(harness.windowA.listenerCount('closed'), 0)
 })
 
 test('hidden presentation drops payloads and obsolete loads cannot ready a replacement view', function () {
@@ -239,7 +227,7 @@ test('hidden presentation drops payloads and obsolete loads cannot ready a repla
   assert.deepEqual(oldContents.messages[0].state, {
     visible: false, open: false, input: '', candidates: [], selectedIndex: 0
   })
-  harness.advance(30000)
+  harness.presentation.destroy()
   assert.equal(oldContents.isDestroyed(), true)
 
   harness.presentation.present(harness.senderA, { visible: true, input: 'new query', candidates: [{ title: 'new result' }] })
@@ -271,45 +259,118 @@ test('Command Palette follows its current owner and releases closed-window liste
   assert.equal(contents.isDestroyed(), true)
   assert.equal(harness.windowB.listenerCount('closed'), 0)
   assert.equal(harness.attached.size, 0)
-  assert.equal(harness.timers.size, 0)
 })
 
-test('failed attachment retires an unused view without disturbing a different owner', function () {
+test('hidden Command Palette is destroyed when its last owner closes, even with other windows open', function () {
   const harness = createHarness()
-  const attach = harness.windows.attachOverlay
-  harness.windows.attachOverlay = () => false
-  assert.equal(harness.presentation.present(harness.senderA, { visible: true }).error.code, 'COMMAND_PALETTE_ATTACH_FAILED')
-  const unusedContents = harness.getView().webContents
-  harness.advance(30000)
-  assert.equal(unusedContents.isDestroyed(), true)
-
-  harness.windows.attachOverlay = attach
   harness.presentation.present(harness.senderA, { visible: true })
-  const ownedContents = harness.getView().webContents
-  harness.windows.attachOverlay = () => false
-  assert.equal(harness.presentation.present(harness.senderB, { open: true, visible: true }).error.code, 'COMMAND_PALETTE_ATTACH_FAILED')
+  const contents = harness.getView().webContents
+  harness.presentation.present(harness.senderA, { visible: false })
+  harness.presentation.present(harness.senderB, { visible: false })
   assert.equal(harness.windowA.listenerCount('closed'), 1)
   assert.equal(harness.windowB.listenerCount('closed'), 0)
-  harness.advance(60000)
-  assert.equal(ownedContents.isDestroyed(), false)
+  harness.windowA.emit('close') // A canceled close must leave the warm view intact.
+  assert.equal(contents.isDestroyed(), false)
+  harness.windowA.emit('closed')
+  assert.equal(contents.isDestroyed(), true)
+  assert.equal(harness.windowA.listenerCount('closed'), 0)
+  assert.equal(harness.windowB.destroyed, false)
+})
+
+test('hidden Command Palette can transfer to another window without an explicit open flag', function () {
+  const harness = createHarness()
+  harness.presentation.present(harness.senderA, { visible: true })
+  const view = harness.getView()
+  harness.presentation.present(harness.senderA, { visible: false })
+  // Candidate updates can precede the explicit open state from Chrome.
+  assert.deepEqual(harness.presentation.present(harness.senderB, { visible: true, input: '>w' }), { ok: true })
+  assert.equal(harness.getView(), view)
+  assert.equal(harness.windowA.listenerCount('closed'), 0)
+  assert.equal(harness.windowB.listenerCount('closed'), 1)
+  assert.equal(harness.windowB.chromeFocusCount, 1)
+  harness.windowA.emit('closed')
+  assert.equal(view.webContents.isDestroyed(), false)
+  assert.equal(harness.presentation.present(harness.senderA, { visible: false }).error.code, 'COMMAND_PALETTE_NOT_OWNER')
   harness.presentation.destroy()
 })
 
-test('explicit Command Palette teardown cancels retirement and permits a fresh presentation', function () {
+test('failed attachment disposes a view that was never owned', function () {
+  const harness = createHarness()
+  harness.windows.attachOverlay = () => false
+  assert.equal(harness.presentation.present(harness.senderA, { visible: true }).error.code, 'COMMAND_PALETTE_ATTACH_FAILED')
+  assert.equal(harness.getView().webContents, null, 'a view that was never owned must be destroyed')
+  assert.equal(harness.windowA.listenerCount('closed'), 0)
+  assert.equal(harness.windowA.chromeFocusCount, 0)
+  assert.equal(harness.attached.size, 0)
+  harness.presentation.destroy()
+})
+
+test('failed transfer preserves the current owner, layout, state and focus', function (t) {
+  const harness = createHarness()
+  t.after(() => harness.presentation.destroy())
+  harness.presentation.present(harness.senderA, { visible: true, input: 'original', candidates: [{ title: 'Original result' }] })
+  const view = harness.getView()
+  const ownedContents = view.webContents
+  ownedContents.emit('did-finish-load')
+  const originalBounds = view.bounds
+  const originalState = ownedContents.messages.at(-1).state
+  const attach = harness.windows.attachOverlay
+  harness.windows.attachOverlay = () => false
+  const failedState = { open: true, visible: true, input: 'rejected', candidates: [{ title: 'Rejected result' }] }
+  assert.equal(harness.presentation.present(harness.senderB, failedState).error.code, 'COMMAND_PALETTE_ATTACH_FAILED')
+  assert.deepEqual(view.bounds, originalBounds, 'failed transfer must not resize the current owner\'s palette')
+  assert.equal(harness.attached.get('command-palette').window, harness.windowA)
+  assert.equal(harness.windowA.listenerCount('closed'), 1)
+  assert.equal(harness.windowB.listenerCount('closed'), 0)
+  assert.equal(harness.windowA.chromeFocusCount, 1)
+  assert.equal(harness.windowB.chromeFocusCount, 0)
+  assert.equal(ownedContents.isDestroyed(), false)
+  assert.equal(ownedContents.messages.length, 1, 'rejected state must not be delivered')
+  ownedContents.emit('did-finish-load')
+  assert.deepEqual(ownedContents.messages.at(-1).state, originalState)
+
+  harness.presentation.present(harness.senderA, { visible: false })
+  assert.equal(harness.presentation.present(harness.senderB, failedState).error.code, 'COMMAND_PALETTE_ATTACH_FAILED')
+  assert.equal(ownedContents.isDestroyed(), false, 'failed transfer must preserve a warm hidden view')
+  assert.deepEqual(view.bounds, originalBounds)
+  assert.equal(harness.attached.size, 0)
+  assert.equal(harness.presentation.recenter(), false)
+  ownedContents.emit('did-finish-load')
+  assert.deepEqual(ownedContents.messages.at(-1).state, {
+    visible: false, open: false, input: '', candidates: [], selectedIndex: 0
+  })
+  assert.equal(harness.windowA.listenerCount('closed'), 1)
+  assert.equal(harness.windowB.listenerCount('closed'), 0)
+  assert.equal(harness.windowB.chromeFocusCount, 0)
+
+  harness.windows.attachOverlay = attach
+  assert.deepEqual(harness.presentation.present(harness.senderB, { visible: true, input: 'retry' }), { ok: true })
+  assert.equal(harness.getView(), view)
+  assert.equal(ownedContents.messages.at(-1).state.input, 'retry')
+  assert.deepEqual(view.bounds, { x: 0, y: 20, width: 500, height: 260 })
+  assert.equal(harness.windowA.listenerCount('closed'), 0)
+  assert.equal(harness.windowB.listenerCount('closed'), 1)
+  assert.equal(harness.windowB.chromeFocusCount, 1)
+  harness.windowA.emit('closed')
+  assert.equal(ownedContents.isDestroyed(), false)
+  harness.presentation.present(harness.senderB, { visible: false })
+  harness.windowB.emit('closed')
+  assert.equal(ownedContents.isDestroyed(), true)
+})
+
+test('explicit Command Palette teardown releases the hidden owner and permits a fresh presentation', function () {
   const harness = createHarness()
   harness.presentation.present(harness.senderA, { visible: true })
   const oldView = harness.getView()
   const contents = oldView.webContents
   harness.presentation.present(harness.senderA, { visible: false })
-  assert.equal(harness.windowA.listenerCount('closed'), 0)
-  assert.equal(harness.timers.size, 1)
+  assert.equal(harness.windowA.listenerCount('closed'), 1)
   harness.presentation.destroy()
   harness.presentation.destroy()
   assert.equal(contents.isDestroyed(), true)
-  assert.equal(harness.timers.size, 0)
+  assert.equal(harness.windowA.listenerCount('closed'), 0)
   harness.presentation.present(harness.senderA, { visible: true, input: 'fresh' })
   assert.notEqual(harness.getView(), oldView)
-  harness.advance(60000)
   assert.equal(harness.getView().webContents.isDestroyed(), false)
   harness.presentation.destroy()
 })

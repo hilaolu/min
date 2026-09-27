@@ -1,26 +1,13 @@
-function createCommandPalettePresentation ({ WebContentsView, getWindowWebContents, pageURL, preloadPath, windows, idleDelay = 30000, schedule = setTimeout, cancelSchedule = clearTimeout }) {
+function createCommandPalettePresentation ({ WebContentsView, getWindowWebContents, pageURL, preloadPath, windows }) {
   const overlayId = 'command-palette'
   const preferredSize = { width: 600, height: 450 }
   let view = null
+  // Keep the single presentation warm until its last owning window closes.
+  // Retiring it on an idle timer puts a renderer cold start on the next open.
+  // Hidden state still releases display payloads and does not lock ownership.
   let owner = null
   let loaded = false
   let latestState = normalizeState({})
-  let idleTimer = null
-
-  function cancelIdle () {
-    if (idleTimer !== null) cancelSchedule(idleTimer)
-    idleTimer = null
-  }
-
-  function considerIdle () {
-    if (!view || owner || idleTimer !== null) return
-    // Keep rapid reopen warm, but don't keep a hidden renderer for the entire
-    // browser session. All authoritative command/input state lives in Chrome.
-    idleTimer = schedule(function () {
-      idleTimer = null
-      if (!owner) destroy()
-    }, idleDelay)
-  }
 
   function setOwner (window) {
     if (owner === window) return
@@ -136,7 +123,7 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
 
     const nextState = normalizeState(state)
     if (!nextState.visible) {
-      if (owner && owner !== source.win) {
+      if (latestState.visible && owner && owner !== source.win) {
         return errorResult('COMMAND_PALETTE_NOT_OWNER', 'Command palette belongs to another Browser Window')
       }
       latestState = nextState
@@ -144,25 +131,23 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
       if (owner && view && windows.isOverlayAttached(overlayId, view)) {
         windows.detachOverlay(overlayId, view)
       }
-      setOwner(null)
-      considerIdle()
       return { ok: true }
     }
 
-    const previousState = latestState
-    if (owner && owner !== source.win && !nextState.open) {
+    if (latestState.visible && owner && owner !== source.win && !nextState.open) {
       return errorResult('COMMAND_PALETTE_NOT_OWNER', 'Command palette belongs to another Browser Window')
     }
-    latestState = nextState
     ensureView()
     const wasAttached = windows.isOverlayAttached(overlayId, view) && owner === source.win
+    // Size before reattachment so Electron resumes painting the detached view.
     setBounds(source.win)
     if (!wasAttached && !windows.attachOverlay(overlayId, view, source.win)) {
-      latestState = previousState
-      considerIdle()
+      // A failed transfer must leave the current owner's layout intact.
+      if (owner) setBounds(owner)
+      else destroy()
       return errorResult('COMMAND_PALETTE_ATTACH_FAILED', 'Command palette could not be attached')
     }
-    cancelIdle()
+    latestState = nextState
     setOwner(source.win)
     deliver()
     if (!wasAttached) focusBrowserChrome(source.win)
@@ -170,13 +155,12 @@ function createCommandPalettePresentation ({ WebContentsView, getWindowWebConten
   }
 
   function recenter (window) {
-    if (!view || !owner || (window && window !== owner)) return false
+    if (!view || !owner || !latestState.visible || (window && window !== owner)) return false
     setBounds(owner)
     return true
   }
 
   function destroy () {
-    cancelIdle()
     if (view && windows.isOverlayAttached(overlayId, view)) {
       windows.detachOverlay(overlayId, view)
     }

@@ -17,7 +17,7 @@ let stage = 'ready'
 const deadline = setTimeout(() => {
   console.error('Command Palette memory timeout: ' + stage)
   app.exit(1)
-}, 30000)
+}, 90000)
 
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 async function waitFor (check) {
@@ -78,7 +78,6 @@ async function run () {
     getWindowWebContents: windows.getChromeContents,
     pageURL: pathToFileURL(path.join(__dirname, '../pages/commandPalette/overlay.html')).href,
     preloadPath: path.join(__dirname, '../main/commandPalettePreload.js'),
-    idleDelay: 1000, // Unit tests check the production 30-second deadline.
     windows
   })
   try {
@@ -105,6 +104,7 @@ async function run () {
       await chromeA.executeJavaScript('input.value = ">"; window.entered = null; input.focus()')
       tabContents.focus()
       assert.equal(webContents.getFocusedWebContents(), tabContents)
+      const started = performance.now()
       assert.deepEqual(presentation.present(chromeA, {
         open: true,
         visible: true,
@@ -112,45 +112,64 @@ async function run () {
         candidates: [{ id: cycle, title: 'Result ' + cycle }]
       }), { ok: true })
       const contents = paletteContents
-      const ready = new Promise(resolve => contents.once('did-finish-load', resolve))
-      assert.notEqual(contents, previousContents, 'cold reopen creates fresh content')
+      const ready = contents.isLoadingMainFrame()
+        ? new Promise(resolve => contents.once('did-finish-load', resolve))
+        : Promise.resolve()
+      if (previousContents) assert.equal(contents, previousContents, 'idle reopen must reuse ready content')
       assert.equal(webContents.getFocusedWebContents(), chromeA)
       // Keys must reach Chrome immediately, without waiting for a cold overlay.
       chromeA.sendInputEvent({ type: 'char', keyCode: 'w' })
       chromeA.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' })
       chromeA.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' })
+      await ready
+      stage = 'render fresh state'
+      await waitFor(async () => (await contents.executeJavaScript('document.querySelector(".command-suggestion-title")?.textContent')) === 'Result ' + cycle)
+      // Diagnostic wall time includes IPC/polling, not a frame-time guarantee.
+      const openToResultMs = performance.now() - started
+      assert.equal(await contents.executeJavaScript('document.getElementById("command-palette-input").value'), 'cycle ' + cycle)
       // Input dispatch and evaluation use different IPC queues. Wait only for
       // observation, never before sending the keys (and never resend them).
       stage = 'observe immediate keys in cycle ' + cycle
       await waitFor(async () => (await chromeA.executeJavaScript('window.entered')) !== null)
       assert.equal(await chromeA.executeJavaScript('window.entered'), '>w')
-      await ready
-      stage = 'render fresh state'
-      await waitFor(async () => (await contents.executeJavaScript('document.querySelector(".command-suggestion-title")?.textContent')) === 'Result ' + cycle)
-      assert.equal(await contents.executeJavaScript('document.getElementById("command-palette-input").value'), 'cycle ' + cycle)
       assert.equal(webContents.getAllWebContents().length, baseline.webContents + 1)
       const palettePID = contents.getOSProcessId()
 
       presentation.present(chromeA, { visible: false })
-      presentation.present(chromeA, { open: true, visible: true, candidates: [{ title: 'Warm result' }] })
+      presentation.present(chromeA, { open: true, visible: true, input: 'warm query', candidates: [{ title: 'Warm result' }] })
       assert.equal(paletteContents, contents, 'quick reopen reuses content')
-      await pause(1100)
-      assert.equal(contents.isDestroyed(), false, 'the canceled timer must not destroy visible content')
+      stage = 'render quick reopen in cycle ' + cycle
+      try {
+        await waitFor(async () => (await contents.executeJavaScript('document.querySelector(".command-suggestion-title")?.textContent')) === 'Warm result')
+      } catch (error) {
+        console.error('Warm palette render diagnostics', await contents.executeJavaScript('({ input: input.value, visible: isVisible, candidates: currentCandidates, renderScheduled, visibility: document.visibilityState, suggestions: suggestions.innerHTML })'))
+        throw error
+      }
+      assert.equal(await contents.executeJavaScript('document.getElementById("command-palette-input").value'), 'warm query')
+      assert.equal(await contents.executeJavaScript('document.visibilityState'), 'visible')
       presentation.present(chromeA, { visible: false })
       stage = 'clear hidden DOM'
       await waitFor(async () => (await contents.executeJavaScript('document.querySelectorAll(".command-suggestion").length')) === 0)
+      assert.equal(await contents.executeJavaScript('document.getElementById("command-palette-input").value'), '')
       const hidden = resources()
-      await pause(1200)
-      const retired = resources()
-      console.log(JSON.stringify({ cycle, baseline, palettePID, hidden, retired }))
-      assert.equal(contents.isDestroyed(), true, 'idle palette WebContents must be destroyed')
-      assert.equal(retired.webContents, baseline.webContents)
+      stage = 'wait past the former idle deadline'
+      await pause(cycle === 0 ? 31000 : 100)
+      const afterIdle = resources()
+      console.log(JSON.stringify({ cycle, openToResultMs, baseline, palettePID, hidden, afterIdle }))
+      assert.equal(contents.isDestroyed(), false, 'idle palette must stay warm while its window is alive')
+      assert.equal(contents.getOSProcessId(), palettePID, 'idle must not restart the renderer')
+      assert.equal(afterIdle.webContents, baseline.webContents + 1)
       assert.equal(windows.windowFromContents(contents), undefined)
       assert.equal(chromeA.isDestroyed(), false)
       assert.equal(chromeB.isDestroyed(), false)
       assert.equal(tabContents.isDestroyed(), false)
       previousContents = contents
     }
+
+    stage = 'dispose warm hidden content'
+    presentation.destroy()
+    await waitFor(() => previousContents.isDestroyed())
+    assert.equal(webContents.getAllWebContents().length, baseline.webContents)
 
     stage = 'dispose before the overlay finishes loading'
     presentation.present(chromeA, { open: true, visible: true })
@@ -164,16 +183,19 @@ async function run () {
     presentation.present(chromeA, { open: true, visible: true })
     const transferredContents = paletteContents
     await new Promise(resolve => transferredContents.once('did-finish-load', resolve))
+    presentation.present(chromeA, { visible: false })
     presentation.present(chromeB, { open: true, visible: true })
+    assert.equal(paletteContents, transferredContents, 'a hidden view can be reused by another window')
     windowA.destroy()
     assert.equal(transferredContents.isDestroyed(), false, 'closing an old owner must not destroy the new owner\'s view')
+    presentation.present(chromeB, { visible: false })
     windowB.destroy()
     await waitFor(() => transferredContents.isDestroyed() && chromeA.isDestroyed() && chromeB.isDestroyed())
     assert.equal(tabContents.isDestroyed(), false, 'presentation cleanup never unloads tabs')
     tabContents.destroy()
     await waitFor(() => tabContents.isDestroyed())
     assert.equal(webContents.getAllWebContents().length, 0)
-    console.log('Command Palette idle disposal, recreation, focus and owner cleanup passed')
+    console.log('Command Palette idle reuse, payload cleanup, focus and owner cleanup passed')
   } finally {
     presentation.destroy()
     for (const window of windows.getAll()) window.destroy()

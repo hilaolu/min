@@ -282,18 +282,22 @@ and process lifetimes.
 
 ## Additional review at `f2653298`: idle Command Palette
 
+**Historical policy:** the 30-second retirement described here was superseded
+by the responsiveness follow-up below. Its memory measurements are not savings
+claimed by the current warm-palette policy.
+
 `main/commandPaletteOverlay.js` detached the palette on hide but retained its
 WebContents until **all** browser windows closed. Closing its owning window while
 another window remained open also left the presentation alive. This is separate
 from the task switcher cleanup above.
 
-The presentation now destroys its hidden view after **30 seconds** without a
-reopen. Quick reopen reuses the view and cancels retirement; repeated hidden
-updates cannot postpone retirement. A final owner-window close disposes it
-immediately. Ownership transfers remove the old close listener. Hidden state
-discards copied input/candidate payloads, and teardown resets readiness/state so
-an obsolete load callback cannot ready a replacement view. An unused view from a
-failed attachment also retires.
+The initial change destroyed its hidden view after **30 seconds** without a
+reopen. Quick reopen reused the view and canceled retirement; repeated hidden
+updates could not postpone retirement. A final owner-window close disposed it
+immediately. Ownership transfers removed the old close listener. Hidden state
+discarded copied input/candidate payloads, and teardown reset readiness/state so
+an obsolete load callback could not ready a replacement view. An unused view from
+a failed attachment also retired.
 
 Only the display-only presentation is disposed. Browser Chrome still owns input,
 commands and REPL state; tabs, forms, downloads and page renderers are untouched.
@@ -308,8 +312,9 @@ forced production GC, reduced sandboxing or change to site isolation.
 registry, overlay HTML and sandboxed preload with two minimal Chrome fixtures and
 one synthetic tab. It uses a temporary profile, local/data URLs and no user data
 or network. The overlay HTML is loaded as a local file, not a full Min session;
-renderer sharing in other configurations can differ. The smoke shortens idle
-retirement to one second; fake-clock unit tests verify the production 30 seconds.
+renderer sharing in other configurations can differ. The original smoke shortened
+idle retirement to one second; fake-clock unit tests verified the production 30
+seconds. The current smoke instead checks warm reuse after 31 seconds idle.
 
 On Linux / Electron 44.4.5 / bundled Node 24.21.0, three fresh processes completed
 three open/hide/retire cycles each:
@@ -337,22 +342,56 @@ three open/hide/retire cycles each:
   keys; all three subsequent fresh runs passed. The later pre-load-disposal
   extension also passes. Electron's GLib schema warning remains nonfatal.
 
-Reproduce:
+Run the current lifecycle regression:
 
 ```sh
 DISPLAY=:0 ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron \
   --test test/commandPalettePresentation.test.js
 DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronCommandPaletteMemory.js
-# Optional regression comparison; expected to fail the idle-disposal assertion:
+# Optional regression comparison; expected to fail the warm-idle assertion:
 baseline=$(mktemp --suffix=.js)
-git show f2653298:main/commandPaletteOverlay.js > "$baseline"
+git show fd471fde:main/commandPaletteOverlay.js > "$baseline"
 DISPLAY=:0 node_modules/.bin/electron --no-sandbox test/electronCommandPaletteMemory.js \
   --presentation-source="$baseline"
 ```
 
 Long-running real browsing, cross-platform acceptance, cold-open latency and
-whole-browser memory profiling were not performed for this change. Existing
+whole-browser memory profiling were not performed for the initial change. Existing
 `docs/vault/` work and the untracked `tab-picker/` tree remain untouched.
+
+### Responsiveness follow-up: keep the palette warm
+
+The idle retirement introduced a renderer/page cold start when reopening the
+palette after 30 seconds. The presentation now keeps **one shared, lazily created
+view** ready while its last owning Browser Window remains alive. Hiding still
+detaches it and clears copied input, candidates and rendered results, including
+the read-only input value. A hidden view can transfer to another window without
+reloading; final owner closure or explicit teardown destroys it. A view whose
+initial attachment fails is destroyed immediately. Failed transfers preserve the
+previous owner's layout, state and focus. Bounds are applied before reattachment
+to preserve Electron's visibility/painting behavior, then restored if attachment
+fails. Other memory optimizations are unchanged.
+
+This deliberately gives up the palette renderer retirement savings measured
+above (roughly 21 MiB PSS in that fixture), rather than merely delaying the same
+cold-start problem with a longer timeout. No additional views are prewarmed.
+
+Verification on Linux / Electron 44.4.5:
+
+- Four updated lifecycle assertions failed before the idle fix; the added
+  failed-transfer layout assertion also failed before the refinement. All **486
+  Node tests**, project JS lint and the full build pass afterward.
+- The Electron lifecycle smoke reuses the same WebContents and renderer PID
+  after **31 seconds idle** and across repeated opens. Hidden DOM/input cleanup,
+  ownership transfer, immediate keyboard routing and final cleanup pass. The
+  separate immediate-focus smoke also passes, both with `DISPLAY=:0`.
+- The final diagnostic run observed **97.0 ms** from initial open to result
+  observation, **3.2 ms** after the 31-second idle, and **28.5 ms** on another warm
+  reopen. These timings include IPC and polling, not pure paint time or a latency
+  guarantee. The fixture retains one extra WebContents while warm and reaches
+  zero after closing its windows and synthetic tab.
+- Nonfatal MockTimers/GLib warnings remain. Cross-platform behavior, sustained
+  browsing and whole-browser memory/latency have not been profiled for this fix.
 
 ### Follow-up: the four additional candidates, implemented in order
 
