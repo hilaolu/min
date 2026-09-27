@@ -1,4 +1,5 @@
 const { readRuntimeArgument } = require('./browserChromeRuntime.js')
+const { CHANNEL: CLIPBOARD_CHANNEL } = require('./rendererHostClipboard.js')
 const { ASYNC_CHANNEL: FILE_ASYNC_CHANNEL, SYNC_CHANNEL: FILE_SYNC_CHANNEL, USER_SCRIPTS_CHANGED_CHANNEL } = require('./rendererHostFiles.js')
 
 const BROWSER_COMMAND_CHANNELS = new Map([
@@ -298,14 +299,10 @@ function createBrowserChromeHost (argv, ipc, utilities = {}) {
       return connectToPlaces()
     },
     copyPageLink: function (link) {
-      utilities.clipboard.write({
-        bookmark: typeof link.title === 'string' ? link.title : '',
-        html: typeof link.html === 'string' ? link.html : '',
-        text: typeof link.url === 'string' ? link.url : ''
-      })
+      return ipc.invoke(CLIPBOARD_CHANNEL, 'copy-page-link', link)
     },
     copyText: function (value) {
-      utilities.clipboard.writeText(String(value))
+      return ipc.invoke(CLIPBOARD_CHANNEL, 'copy-text', String(value))
     },
     createWindow: function (options = {}) {
       const request = {}
@@ -481,7 +478,7 @@ function createBrowserChromeHost (argv, ipc, utilities = {}) {
       ipc.send('quit')
     },
     readClipboardText: function () {
-      return utilities.clipboard.readText()
+      return ipc.invoke(CLIPBOARD_CHANNEL, 'read-text')
     },
     releaseDownload: function (id) {
       const downloadPath = downloadPathsById.get(id)
@@ -598,7 +595,7 @@ function installBrowserChromeHost ({ argv, contextBridge, contextIsolated, ipc, 
 }
 
 if (process.type === 'renderer') {
-  const { clipboard, contextBridge, ipcRenderer, shell, webUtils } = require('electron')
+  const { contextBridge, ipcRenderer, shell, webUtils } = require('electron')
   const { pathToFileURL } = require('url')
   installBrowserChromeHost({
     argv: process.argv,
@@ -608,7 +605,6 @@ if (process.type === 'renderer') {
     target: window,
     utilities: {
       addTeardownListener: callback => window.addEventListener('unload', callback, { once: true }),
-      clipboard,
       MessageChannel: window.MessageChannel,
       pathToFileURL,
       shell,

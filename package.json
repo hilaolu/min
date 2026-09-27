@@ -61,6 +61,7 @@
     "test": "npm run test:node && npm run lint:js",
     "test:electron-performance": "npm run buildPreload && electron --no-sandbox test/electronPerformance.js",
     "test:node": "node --test test/*.test.js",
+    "test:electron-clipboard": "electron --no-sandbox test/electronClipboard.js",
     "test:electron-vault": "electron test/electronVault.js",
     "test:electron-vault-pages": "npm run buildPDFViewer && electron test/electronVaultPages.js",
     "test:electron-pdf-bundle": "npm run buildPDFViewer && electron --no-sandbox test/electronPDFBundle.js",

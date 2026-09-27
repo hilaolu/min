@@ -48,8 +48,8 @@ module.exports = {
           if (node.id === 'tab-editor-input') {
             inputMenu[1].push({
               label: 'Paste and Go',
-              click: function () {
-                searchbar.openURL(rendererHost.readClipboardText())
+              click: async function () {
+                searchbar.openURL(await rendererHost.readClipboardText())
               }
             })
           }

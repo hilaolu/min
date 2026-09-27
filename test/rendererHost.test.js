@@ -6,6 +6,7 @@ const { createRequire } = require('node:module')
 
 const { createBrowserChromeHost, installBrowserChromeHost } = require('../main/browserChromePreload.js')
 const { createRuntimeArgument, readRuntimeArgument } = require('../main/browserChromeRuntime.js')
+const { CHANNEL: CLIPBOARD_CHANNEL } = require('../main/rendererHostClipboard.js')
 const { ASYNC_CHANNEL: FILE_ASYNC_CHANNEL, SYNC_CHANNEL: FILE_SYNC_CHANNEL, USER_SCRIPTS_CHANGED_CHANNEL } = require('../main/rendererHostFiles.js')
 const { createInMemoryRendererHost, createRendererHost } = require('../js/rendererHost.js')
 
@@ -437,7 +438,7 @@ test('Renderer Host keeps download paths inside the production Adapter', async f
 test('Renderer Host normalizes permissions, clipboard, dropped files, prompt, and Places', async function () {
   const listeners = new Map()
   const calls = []
-  const clipboardWrites = []
+  const clipboardCalls = []
   const placesListeners = new Map()
   const placesMessages = []
   const port1 = {}
@@ -448,7 +449,10 @@ test('Renderer Host normalizes permissions, clipboard, dropped files, prompt, an
     start: () => {}
   }
   const ipc = {
-    invoke: () => Promise.resolve(true),
+    invoke: function (channel, operation, value) {
+      clipboardCalls.push({ channel, operation, value })
+      return Promise.resolve(operation === 'read-text' ? 'clipboard text' : undefined)
+    },
     on: (channel, listener) => listeners.set(channel, listener),
     postMessage: (channel, value, ports) => calls.push({ channel, ports, value }),
     removeListener: () => {},
@@ -456,11 +460,6 @@ test('Renderer Host normalizes permissions, clipboard, dropped files, prompt, an
     sendSync: channel => channel === 'prompt' ? { name: 'renamed' } : {}
   }
   const utilities = {
-    clipboard: {
-      readText: () => 'clipboard text',
-      write: value => clipboardWrites.push(value),
-      writeText: value => clipboardWrites.push(value)
-    },
     MessageChannel: function () { return { port1, port2 } },
     pathToFileURL: value => ({ href: `file://${value}` }),
     webUtils: { getPathForFile: () => '/tmp/example file.txt' }
@@ -493,14 +492,15 @@ test('Renderer Host normalizes permissions, clipboard, dropped files, prompt, an
   const menuResult = host.showContextMenu({ id: 7, template: [] })
   listeners.get('context-menu-item-selected')({}, { itemId: 3, menuId: 7 })
   assert.equal(await menuResult, 3)
-  host.copyText(42)
-  host.copyPageLink({ html: '<a>Example</a>', title: 'Example', url: 'https://example.com' })
-  assert.equal(host.readClipboardText(), 'clipboard text')
+  await host.copyText(42)
+  await host.copyPageLink({ html: '<a>Example</a>', title: 'Example', url: 'https://example.com' })
+  assert.equal(await host.readClipboardText(), 'clipboard text')
   assert.equal(host.getDroppedFileURL({}), 'file:///tmp/example file.txt')
   assert.equal(host.promptForTagRename(), 'renamed')
-  assert.deepEqual(clipboardWrites, [
-    '42',
-    { bookmark: 'Example', html: '<a>Example</a>', text: 'https://example.com' }
+  assert.deepEqual(clipboardCalls, [
+    { channel: CLIPBOARD_CHANNEL, operation: 'copy-text', value: '42' },
+    { channel: CLIPBOARD_CHANNEL, operation: 'copy-page-link', value: { html: '<a>Example</a>', title: 'Example', url: 'https://example.com' } },
+    { channel: CLIPBOARD_CHANNEL, operation: 'read-text', value: undefined }
   ])
 
   const connection = host.connectPlaces()

@@ -13,6 +13,7 @@ const createPermissionManager = require('./permissionManager.js')
 const createPlacesManager = require('./placesManager.js')
 const createProtocolPolicy = require('./minInternalProtocol.js')
 const createProxyPolicy = require('../js/util/proxy.js')
+const { installRendererHostClipboard } = require('./rendererHostClipboard.js')
 const { createRendererHostFiles } = require('./rendererHostFiles.js')
 const createSessionPolicies = require('./sessionPolicies.js')
 const createSettings = require('../js/util/settings/settingsMain.js')
@@ -80,6 +81,13 @@ function createMainProcess (options = {}) {
     WebContentsView: electron.WebContentsView
   })
   const getWindowWebContents = windows.getChromeContents
+
+  installRendererHostClipboard({
+    clipboard: electron.clipboard,
+    ClipboardItem: electron.ClipboardItem,
+    ipc,
+    isChrome: contents => windows.getAll().some(window => windows.getChromeContents(window) === contents)
+  })
 
   const rendererHostFiles = createRendererHostFiles({
     atomicWriter: writeFileAtomic,
