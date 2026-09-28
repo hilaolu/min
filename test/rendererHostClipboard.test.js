@@ -9,36 +9,28 @@ function harness (overrides = {}) {
   const calls = []
   const sender = { isDestroyed: () => false, mainFrame: { url: 'min://app/index.html' } }
   const event = { sender, senderFrame: sender.mainFrame }
-  class ClipboardItem {
-    constructor (formats) { this.formats = formats }
-  }
   let handler
   installRendererHostClipboard({
     clipboard: {
-      write: async function (items) {
-        assert.equal(items.length, 1)
-        assert.ok(items[0] instanceof ClipboardItem)
-        calls.push(['write', items[0].formats])
-      },
-      writeText: async function (text) { calls.push(['writeText', text]) },
-      readText: async function () { calls.push(['readText']); return 'clipboard text' },
+      write: function (data) { calls.push(['write', data]) },
+      writeText: function (text) { calls.push(['writeText', text]) },
+      readText: function () { calls.push(['readText']); return 'clipboard text' },
       ...overrides
     },
-    ClipboardItem,
     ipc: { handle: function (channel, callback) { assert.equal(channel, CHANNEL); handler = callback } },
     isChrome: contents => contents === sender
   })
   return { calls, event, request: (operation, value, source = event) => handler(source, operation, value) }
 }
 
-test('page links write text, HTML and native bookmarks in one Electron 44 clipboard transaction', async function () {
+test('page links write text, HTML and native bookmarks in one Electron 43 clipboard transaction', async function () {
   const { calls, request } = harness()
   const link = { url: 'https://example.com/?q=one&other=two#section', title: 'Example', html: '<a>Example</a>' }
   await request('copy-page-link', link)
   assert.deepEqual(calls, [['write', {
-    'text/plain': link.url,
-    'text/html': link.html,
-    'electron application/bookmark': { title: link.title, url: link.url }
+    text: link.url,
+    html: link.html,
+    bookmark: link.title
   }]])
 })
 
@@ -49,9 +41,9 @@ test('clipboard bridge normalizes optional link metadata and text values', async
   assert.equal(await request('read-text'), 'clipboard text')
   assert.deepEqual(calls, [
     ['write', {
-      'text/plain': 'https://example.com',
-      'text/html': '',
-      'electron application/bookmark': { title: '', url: 'https://example.com' }
+      text: 'https://example.com',
+      html: '',
+      bookmark: ''
     }],
     ['writeText', '42'],
     ['readText']
@@ -66,7 +58,7 @@ test('invalid page links leave the existing clipboard untouched', async function
   assert.deepEqual(calls, [])
 })
 
-test('clipboard bridge waits for native writes and propagates native errors', async function () {
+test('clipboard bridge waits for pending native writes', async function () {
   let completeWrite
   const pendingWrite = new Promise(resolve => { completeWrite = resolve })
   const { request } = harness({ write: () => pendingWrite })
@@ -77,11 +69,15 @@ test('clipboard bridge waits for native writes and propagates native errors', as
   completeWrite()
   await copying
   assert.equal(completed, true)
+})
 
+test('clipboard bridge rejects synchronous native errors and asynchronous failures', async function () {
   for (const [operation, method] of [['copy-page-link', 'write'], ['copy-text', 'writeText'], ['read-text', 'readText']]) {
     const failure = new Error('Clipboard unavailable')
-    const failed = harness({ [method]: () => Promise.reject(failure) })
-    await assert.rejects(failed.request(operation, { url: 'https://example.com' }), error => error === failure)
+    for (const implementation of [() => { throw failure }, () => Promise.reject(failure)]) {
+      const failed = harness({ [method]: implementation })
+      await assert.rejects(failed.request(operation, { url: 'https://example.com' }), error => error === failure)
+    }
   }
 })
 

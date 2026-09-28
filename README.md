@@ -56,8 +56,9 @@ If you want to develop Min:
 - Start Min in development mode by running `npm run start`.
 - After you make changes, press `alt+ctrl+r` (or `opt+cmd+r` on Mac) to reload the browser UI.
 
-Development and packaging both use Electron 44.4.5. Keep `devDependencies.electron`
-and `electronVersion` in `package.json` aligned when upgrading the runtime, and run
+Development and packaging both use Electron 43.7.5 to support macOS 12 (Monterey).
+Electron 44 and newer require macOS 13 or later. Keep `devDependencies.electron`
+and `electronVersion` in `package.json` aligned when changing the runtime, and run
 the Node tests, build, and Electron acceptance tests against the new version.
 
 ### Building binaries

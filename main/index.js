@@ -84,7 +84,6 @@ function createMainProcess (options = {}) {
 
   installRendererHostClipboard({
     clipboard: electron.clipboard,
-    ClipboardItem: electron.ClipboardItem,
     ipc,
     isChrome: contents => windows.getAll().some(window => windows.getChromeContents(window) === contents)
   })

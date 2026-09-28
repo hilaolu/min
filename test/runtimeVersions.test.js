@@ -16,6 +16,10 @@ test('development and packaged Electron versions match', function () {
   assert.equal(pkg.electronVersion, pkg.devDependencies.electron)
 })
 
+test('macOS Monterey support keeps the runtime on Electron 43', function () {
+  assert.equal(pkg.electronVersion.split('.')[0], '43', 'Electron 44 and newer require macOS 13 or later')
+})
+
 test('installed Electron matches the declared runtime', function () {
   assert.equal(electronPackage.version, pkg.devDependencies.electron)
 })
